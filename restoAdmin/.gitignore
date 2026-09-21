@@ -1,0 +1,16 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+pyserver/.venv/
+__pycache__/
+*.pyc
+core-api-495501-4096e683bc08.json
+
+# APK release binaries - large, versioned, copied straight to the server
+# (never committed) - only latest.json (small metadata) may be tracked.
+server/public/uploads/app-releases/*.apk

@@ -1,0 +1,6 @@
+{
+  "name": "Restaurant Dashboard",
+  "description": "Interactive restaurant floor plan dashboard for tracking table reservations, room bookings, and pending/served orders across multiple floors.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
