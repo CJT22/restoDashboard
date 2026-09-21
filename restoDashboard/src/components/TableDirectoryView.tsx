@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { TableRoom } from '../types';
+import { TableRoom, TableStatus } from '../types';
+import { getStatusColors } from '../utils/statusColors';
 import {
   Search,
   Flame,
@@ -20,7 +21,7 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
   onSelectFloor,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'occupied' | 'available' | 'pending_only'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | TableStatus | 'pending_only'>('all');
 
   const filteredTables = tables.filter((table) => {
     // Floor filter
@@ -135,6 +136,24 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
           >
             Available
           </button>
+
+          <button
+            onClick={() => setStatusFilter('reserved')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+              statusFilter === 'reserved' ? 'bg-blue-500/20 text-blue-300' : 'text-slate-400 hover:text-white bg-white/5'
+            }`}
+          >
+            Reserved
+          </button>
+
+          <button
+            onClick={() => setStatusFilter('not_available')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
+              statusFilter === 'not_available' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400 hover:text-white bg-white/5'
+            }`}
+          >
+            Not Available
+          </button>
         </div>
       </div>
 
@@ -168,12 +187,10 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
                   </div>
 
                   {/* Status badge */}
-                  <span className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase ${
-                    table.status === 'occupied'
-                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                      : 'bg-emerald-500/20 text-emerald-300'
-                  }`}>
-                    {table.status}
+                  <span
+                    className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase border ${getStatusColors(table.status).activeButtonClass}`}
+                  >
+                    {getStatusColors(table.status).label}
                   </span>
                 </div>
 

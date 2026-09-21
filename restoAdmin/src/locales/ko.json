@@ -1627,7 +1627,10 @@
 			"search_placeholder": "검색..."
 		},
 		"branch": "지점",
-		"actions": "작업"
+		"actions": "작업",
+		"dashboard_link": "대시보드",
+		"linked": "연동됨",
+		"dashboard_link_tooltip": "restoDashboard 구역 {{zoneId}}에 연동됨"
 	},
 	"employee": {
 		"manage_employee": "직원 관리",

@@ -1,4 +1,7 @@
-export type TableStatus = 'available' | 'occupied';
+// 'reserved'/'not_available' mirror restoAdmin's own STATUS enum (see
+// restoAdmin/src/components/users/Tables.tsx) so a zone linked to an admin
+// table can represent any state admin can put it in without losing information.
+export type TableStatus = 'available' | 'occupied' | 'reserved' | 'not_available';
 
 export type OrderItemCategory = 'starter' | 'main' | 'drink' | 'dessert';
 
@@ -30,6 +33,14 @@ export interface TableRoom {
   serverName?: string;
   notes?: string;
   orders: OrderItem[];
+  // When set, this zone is linked to that restoAdmin restaurant_tables.IDNo
+  // (Blue Moon branch only) — its status stays in sync with restoAdmin's
+  // Table Settings in both directions. See src/services/adminSync.ts.
+  adminTableId?: number;
+  // Display name (restoAdmin's TABLE_NUMBER, e.g. "OUTSIDE", "BAR") for the
+  // linked table above, so the UI can show what a zone is synced to without
+  // an extra lookup. Kept in sync alongside adminTableId.
+  adminTableName?: string;
   // Zone geometry on the interactive map: x/y is the top-left corner,
   // all four values are percentages (0-100) of the floor plan container.
   x: number;

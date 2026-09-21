@@ -1,0 +1,143 @@
+# Changelog
+
+All notable changes across this repository are documented in this file.
+
+This changelog was moved here from `restoDashboard/CHANGELOG.md` so that changes to **both**
+[restoAdmin/](restoAdmin/) and [restoDashboard/](restoDashboard/) are tracked in one place. Every
+entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links there were rewritten
+to be relative to this new root location. Going forward, each bullet is tagged with which app it
+touches (see [CLAUDE.md](CLAUDE.md) for the convention).
+
+## [1.5.0]
+
+### Added
+- **[restoAdmin + restoDashboard]** A restoDashboard floor-plan zone can now be optionally linked to a specific Blue Moon table/room in restoAdmin's Table Settings, keeping status in sync in both directions — toggling Available/Occupied/Reserved/Not Available in either app updates the other, including restoAdmin's order pipeline's automatic status flips (order created → Occupied, settled → Available).
+  - **[restoAdmin]** `restaurant_tables` gained `DASHBOARD_ZONE_ID`/`DASHBOARD_LINKED_AT` columns, added idempotently on boot like the other self-healing schema tweaks ([ensureSchema.js](restoAdmin/server/utils/ensureSchema.js), [app.js](restoAdmin/server/app.js)), plus a new `PATCH /restaurant_table/:id/dashboard-link` endpoint to set/clear the link ([tableRoutes.js](restoAdmin/server/routes/tableRoutes.js), [tableController.js](restoAdmin/server/controllers/tableController.js), [tableModel.js](restoAdmin/server/models/tableModel.js)).
+  - **[restoAdmin]** Table Settings shows a read-only "Linked" badge for any table with a dashboard link — no new interactive functionality, purely a visibility indicator ([Tables.tsx](restoAdmin/src/components/users/Tables.tsx), locale files under [src/locales/](restoAdmin/src/locales/)).
+  - **[restoDashboard]** A new backend (`server/`) holds the restoAdmin service-account credentials and proxies/bridges everything the browser needs, so restoAdmin credentials never reach the browser bundle: it authenticates to restoAdmin's JWT login, exposes `/api/admin/tables`, `/api/admin/link`, and `/api/admin/tables/:id/status` to the frontend, and forwards restoAdmin's realtime `table_updated` Socket.IO events (joined as an ordinary client, same as restoAdmin's own kitchen/cashier/waiter apps) to the browser over Server-Sent Events at `/api/admin/stream` ([index.ts](restoDashboard/server/index.ts), [adminClient.ts](restoDashboard/server/adminClient.ts), [socketBridge.ts](restoDashboard/server/socketBridge.ts)). It's stateless — restoAdmin's `DASHBOARD_ZONE_ID` column is the only source of truth for the link.
+  - **[restoDashboard]** `EditTableModal` gains an optional "Link to Blue Moon Table" picker for existing zones, backed by a new `src/services/adminSync.ts` that also maps between restoAdmin's 0-3 status enum and the dashboard's `TableStatus` strings ([EditTableModal.tsx](restoDashboard/src/components/EditTableModal.tsx), [adminSync.ts](restoDashboard/src/services/adminSync.ts)).
+  - **[restoDashboard]** `App.tsx` pushes a linked zone's status to restoAdmin on change, reconciles linked zones against restoAdmin once on load, and subscribes to the SSE stream for live incoming updates — all fire-and-forget so the dashboard keeps working fully offline/local when the sync backend or restoAdmin aren't reachable ([App.tsx](restoDashboard/src/App.tsx)).
+  - **[restoDashboard]** The "Synced" badge in the zone detail modal now reads "Synced to: {restoAdmin table name}" (e.g. "Synced to: OUTSIDE") instead of a plain "Synced" label that only showed which table via a hover tooltip. The linked table's name (`TABLE_NUMBER`) is captured on `TableRoom.adminTableName` when linking and refreshed during the existing load-time reconciliation, so it stays correct if the table is renamed in restoAdmin ([types.ts](restoDashboard/src/types.ts), [EditTableModal.tsx](restoDashboard/src/components/EditTableModal.tsx), [TableDetailModal.tsx](restoDashboard/src/components/TableDetailModal.tsx), [App.tsx](restoDashboard/src/App.tsx)).
+  - **[restoAdmin]** Table Settings now updates live instead of requiring a manual refresh to see status changes pushed from restoDashboard (or from anything else that changes a table — Table Settings edits by another user, or the order pipeline's auto status flips). `Tables.tsx` opens its own `socket.io-client` connection, joins the same per-branch rooms restoAdmin's kitchen/cashier/waiter clients already use for whichever branch(es) are currently visible (derived from the fetched rows, so it works for both a single-branch filter and the admin "All branches" view), and patches the matching row in place on `table_updated` instead of refetching ([Tables.tsx](restoAdmin/src/components/users/Tables.tsx)). This is a general improvement to Table Settings, not limited to dashboard-linked tables — it reuses the same event restoAdmin already emits for every table mutation.
+  - **[restoAdmin + restoDashboard]** Added a root [README.md](README.md) covering setup for both apps (previously only restoDashboard had one, and restoAdmin's own didn't cover its Node API/PyServer/DB setup), plus [docs/blue-moon-integration.md](docs/blue-moon-integration.md) explaining the architecture and reasoning behind this integration for whoever picks it up next — kept separate from the README since the README is setup-focused and GitHub-facing.
+
+### Fixed
+- **[restoDashboard]** Linking a zone to a Blue Moon table didn't push that zone's actual status to restoAdmin — `setAdminLink` only writes the `DASHBOARD_ZONE_ID` pointer, and `App.tsx`'s push-to-admin logic only fires on a subsequent status *change*, which the linking action itself usually isn't. Every newly-linked table was left showing whatever status it already had in restoAdmin (typically "Available") regardless of the dashboard's real state. `EditTableModal` now also pushes the zone's current status whenever it saves with a link in place — both on establishing a new link and on re-saving an already-linked zone unchanged, which doubles as a manual per-zone fix ([EditTableModal.tsx](restoDashboard/src/components/EditTableModal.tsx)). Added a "Resync Linked Tables to Admin" button in the sidebar (only shown once at least one zone is linked) to bulk-fix any zones already stuck from before this fix, or recover from a drift/failed push without re-opening each one individually ([Sidebar.tsx](restoDashboard/src/components/Sidebar.tsx), [App.tsx](restoDashboard/src/App.tsx)).
+
+### Fixed
+- **[restoDashboard]** The "Link to Blue Moon Table" dropdown's option list was unreadable (white text on the browser's default white popup background) and its arrow sat far from the text — the `<select>` only had Tailwind classes applied to itself, which native option-list popups render with OS/browser chrome and mostly ignore. Each `<option>` now sets its own dark background/text color directly (which browsers do honor), and the native arrow is hidden (`appearance-none`) in favor of a positioned `ChevronDown` icon ([EditTableModal.tsx](restoDashboard/src/components/EditTableModal.tsx)).
+
+### Changed
+- **[restoDashboard]** Zone status extended from 2 states (Available/Occupied) to 4 (adding Reserved/Not Available), mirroring restoAdmin's own enum so a linked zone never loses information ([types.ts](restoDashboard/src/types.ts), [statusColors.ts](restoDashboard/src/utils/statusColors.ts), [TableDetailModal.tsx](restoDashboard/src/components/TableDetailModal.tsx), [EditTableModal.tsx](restoDashboard/src/components/EditTableModal.tsx), [FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [TableDirectoryView.tsx](restoDashboard/src/components/TableDirectoryView.tsx)). Unlinked zones can use all 4 states too; only linking behavior is new.
+- **[restoAdmin + restoDashboard]** `CHANGELOG.md`/`CLAUDE.md` moved from `restoDashboard/` to the repo root so changes to either app are tracked in one shared history, with each entry now tagged by which app it touches (see this file's intro and [CLAUDE.md](CLAUDE.md)).
+
+## [1.4.0]
+
+### Added
+- **Floor plan pins replaced with draggable, resizable rectangular zones.** In Edit Mode, click-and-hold on blank canvas then drag to draw a rectangular zone (like a marquee-select tool) instead of clicking to drop a fixed-size circular pin; releasing the drag opens the same name/code/capacity/status modal, now pre-filled with the drawn size. Existing zones can still be dragged to reposition, and now also expose 8 resize handles (4 corners + 4 edge midpoints) on hover so width and height can be adjusted independently or together — the hover quick-action toolbar stays limited to rename/delete, with resizing living on the zone's own border instead of a third icon ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **The live draw preview changes color to signal whether the zone being drawn will actually be created.** It renders blue (`sky`) while the dragged rectangle is at or above the minimum creatable size, and flips to red (`rose`) once it's too small, so the size cutoff introduced with zone drawing is visible in the moment instead of only discovered after releasing the drag ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+
+### Fixed
+- **Dragging out a new zone no longer triggers other zones' hover effects along the way.** Existing zones sat under the cursor as the marquee crossed them mid-drag, popping their edit-mode resize handles/rename-delete toolbar (a plain CSS `:hover` effect, not gated by app state) or the non-edit hover preview card. Existing zones now get `pointer-events-none` for the duration of an in-progress draw, so the cursor passes through them and only the new-zone preview responds ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+
+### Changed
+- **Minimum zone size lowered from 4% to 3%** of the floor plan's width/height, so smaller tables can be drawn without hitting the "too small" cutoff as easily ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **The floor plan header now pluralizes "Zone(s)" correctly based on count** — it shows "1 Zone" instead of "1 Zones" ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)). The "Delete All Zones" confirmation dialog intentionally keeps the plural regardless of count ([App.tsx](restoDashboard/src/App.tsx)).
+- **Zone status is now shown purely through a translucent fill color instead of an icon + text badge**, so the floor plan artwork underneath stays visible through the zone. The zone's name renders as a fixed light-colored label on a dark background chip (inset from the zone's edges so neither the text nor its backdrop ever touches the border) so it stays readable against any status color or the art beneath it ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **Centralized status-to-color mapping** in a new [statusColors.ts](restoDashboard/src/utils/statusColors.ts) helper, replacing three separate copies of the same emerald/amber color logic that had drifted across the zone rendering, the floor plan legend, and the status picker in the edit modal ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [EditTableModal.tsx](restoDashboard/src/components/EditTableModal.tsx)).
+- **`TableRoom.width`/`height` are now required fields** representing the zone's size as a percentage of the floor plan, and `x`/`y` now represent the zone's top-left corner instead of a pin's center point ([types.ts](restoDashboard/src/types.ts)). The hover preview popup's edge-flip logic (which side it opens on to avoid clipping at the floor plan's boundary) was reworked to check the zone's actual edges (`x`, `y`, `width`, `height`) against the container bounds, rather than the old single center-point heuristic built for a point-pin ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **Hovering a zone outside of Edit Mode no longer grows/scales it** — only the info popup appears, so the floor plan layout stays visually stable while browsing.
+- **"Pin" language throughout the UI replaced with "Zone"** to match the new interaction model (e.g. "Edit Pins" → "Edit Zones", "Delete All Pins" → "Delete All Zones", "Place Pin" → "Create Zone") across [FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [Sidebar.tsx](restoDashboard/src/components/Sidebar.tsx), [EditTableModal.tsx](restoDashboard/src/components/EditTableModal.tsx), and [App.tsx](restoDashboard/src/App.tsx).
+- **`INITIAL_TABLES` replaced with a real hand-built zone layout**, captured from the user's own edited floor plan (23 zones on Floor 1's Main Dining Area, 13 on Floor 2's KTV Rooms Area) built on the new draw/resize canvas above, replacing the temporary empty array a fresh browser load previously got ([mockRestaurantData.ts](restoDashboard/src/data/mockRestaurantData.ts)).
+
+### Removed
+- **Round pin rendering and its single-point drag/click-to-place interaction** — replaced entirely by the rectangular zone draw/move/resize interactions above ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **The unused `shape` field on `TableRoom`** ([types.ts](restoDashboard/src/types.ts)) — it was written by every mock/created entry but never read by any rendering logic, and rectangles are now the only zone shape.
+
+## [1.3.7]
+
+### Changed
+- **Repositioned the "no tables" empty-state notice on the floor plan.** It previously sat dead-center over the map (`inset-0`/`items-center justify-center`), overlapping room graphics and pin labels (e.g. the Dining Hall area on Floor 1), which made it hard to read. It's now anchored near the bottom edge of the floor plan canvas as a condensed single-line pill styled to match the existing "Edit Mode" banner (indigo-950/90 background, backdrop blur, border), instead of the larger icon+heading+paragraph card, so it stays legible over any part of the floor plan and reads as part of the same banner language for both floors ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **Floor plan copy updated ahead of the upcoming pin-to-zone rework.** Since pins are being replaced with drag-drawn zones/subareas, the empty-state banner now reads "No zones on Floor {floor}: Click and hold, then drag to draw your first zone" instead of the old table/pin wording, and the Edit Mode banner's instructions were reworded to "Drag a zone to move it • Click a zone to edit/rename • Click and hold, then drag to draw a new zone." The gesture is described generically (no "marquee" terminology) so it reads sensibly on both mouse and touch/tablet input ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+
+## [1.3.6]
+
+### Changed
+- **Removed the border around the floor plan card.** The map canvas wrapper had a `border border-white/15` outlining the whole card, which now sits noticeably against the new transparent-background floor plan images (see below); dropped it so the floor plan image's own edges read as the card boundary ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **Floor plan default zoom bumped one step in, from 1.15x to 1.3x.** The "Reset Zoom" button now returns to 1.3x instead of 1.15x. The min/max limits (0.70x–1.60x) are unchanged ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **Floor 1 and Floor 2 floor plan images updated to versions with transparent backgrounds** ([floor1.png](restoDashboard/public/floorplans/floor1.png), [floor2.png](restoDashboard/public/floorplans/floor2.png)), replacing the previous opaque renders.
+
+## [1.3.5]
+
+### Changed
+- **Fixed mismatched heights between the sidebar's "Connected" status pill and the refresh button.** The status pill relied on vertical padding (`py-2`) to size itself, which made it shorter than the fixed `h-10` refresh button next to it; it now sets `h-10` directly so both controls line up ([Sidebar.tsx](restoDashboard/src/components/Sidebar.tsx)).
+- **Fixed the sync/refresh icon cutting off its spin mid-rotation.** The icon's `animate-spin` class was removed on a fixed 600ms timer regardless of where in its 1s rotation cycle it was, so it visibly snapped back to its resting angle instead of finishing the turn. It now tracks refresh completion in a ref and only clears the spin (and its indigo highlight) on the next `animationiteration` event, so the icon always completes its current full rotation before returning to its normal, uncolored state ([Sidebar.tsx](restoDashboard/src/components/Sidebar.tsx)).
+
+## [1.3.4]
+
+### Changed
+- **Default table/pin layout replaced with the user's own saved floor plan.** [mockRestaurantData.ts](restoDashboard/src/data/mockRestaurantData.ts)'s `INITIAL_TABLES` (the seed data a fresh browser loads when no `localStorage` save exists) now reflects the actual pins, positions, names, codes, capacities, and statuses captured from a live-edited `restaurant_dashboard_tables_v1` save, replacing the old placeholder "Table 01" / "Booth 01" / "KTV Room: Royal Oak" style dataset entirely. All seed tables start with an empty `orders` list (including the one pin that had a captured in-progress order) so the default layout doesn't ship with stale in-progress orders.
+
+## [1.3.3]
+
+### Changed
+- **Fixed pin hover preview cards getting hidden behind neighboring pins.** The card was a child of the hovered pin's own wrapper `div`, which only had a low `z-index` (`z-10`, or `z-30` when selected) — since that wrapper creates its own CSS stacking context, the card's higher `z-index` was capped inside it and could still be painted over by a sibling pin later in the DOM. The hovered pin's wrapper now gets `z-50` for as long as it's hovered, lifting the whole pin (and its card) above every other pin ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **Fixed pin hover preview cards getting clipped at the floor plan's edges.** The card was always centered directly above the pin at a fixed width, so pins near the top, left, or right edge pushed it past the map boundary. It now flips below the pin (using the pin's name tag/badge as visual separation) when the pin sits in the top ~30% of the map, and anchors to the pin's left or right edge instead of centering when the pin sits in the outer ~15% on either side ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+
+## [1.3.2]
+
+### Changed
+- **Floor plan default zoom bumped one step in, from 1.0x to 1.15x.** The "Reset Zoom" button now returns to 1.15x instead of 1.0x. The min/max limits (0.70x–1.60x) are unchanged, so the default now sits exactly 3 zoom-out steps from the floor and 3 zoom-in steps from the ceiling (previously 2 out / 4 in from the old 1.0x default) ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+
+## [1.3.1]
+
+### Changed
+- **App renamed from "Restaurant Floor & Order Dashboard" to "Restaurant Dashboard".** Updated the page `<title>` and Open Graph title in [index.html](restoDashboard/index.html), the `name` field in [metadata.json](restoDashboard/metadata.json), and the top-level heading in [README.md](restoDashboard/README.md).
+
+## [1.3.0]
+
+### Removed
+- **Table/room pin statuses reduced to just Available and Occupied.** Dropped the `reserved` ("Booked") and `cleaning` ("Bus / Reset") statuses from [types.ts](restoDashboard/src/types.ts), along with the now-unused `reservedTime` field on `TableRoom`.
+  - Reservation tracking was dropped entirely rather than hidden — pins no longer show a "Booked" state or reservation time.
+  - "Clear Table" (formerly "Clear / Bus Table") in [TableDetailModal.tsx](restoDashboard/src/components/TableDetailModal.tsx) now sets a table straight back to Available instead of an intermediate "cleaning" state.
+  - The derived "Served" / "{n} Pending" pin badge and color-coding in [FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx) (based on per-dish order status) was removed in favor of a single plain "Occupied" badge; occupied pins no longer change color or icon based on order progress. Per-dish pending/served tracking inside the table detail modal and order queue is unaffected.
+  - Status filters/badges updated to match in [TableDirectoryView.tsx](restoDashboard/src/components/TableDirectoryView.tsx) (removed the "Reserved" filter and reservation card) and seed data in [mockRestaurantData.ts](restoDashboard/src/data/mockRestaurantData.ts) (previously-reserved/cleaning tables now start as Available).
+  - [App.tsx](restoDashboard/src/App.tsx) auto-migrates any table saved in `localStorage` with a legacy `reserved`/`cleaning` status to `available` on load.
+
+## [1.2.0]
+
+### Added
+- Fixed Floor 1 and Floor 2 architectural floor plan images, stored in [public/floorplans/](restoDashboard/public/floorplans/) (`floor1.png`, `floor2.png`) and served as static assets.
+
+### Removed
+- The floor plan upload/change feature. Floor plans are now permanently fixed and no longer user-editable: deleted [CustomFloorPlanUploader.tsx](restoDashboard/src/components/CustomFloorPlanUploader.tsx), the "Upload/Change Floor Plan" buttons in [Sidebar.tsx](restoDashboard/src/components/Sidebar.tsx) and [FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), and the related image state and `localStorage` persistence (`restaurant_floor1_custom_img`, `restaurant_floor2_custom_img`) in [App.tsx](restoDashboard/src/App.tsx).
+- The decorative built-in blueprint placeholder that used to render on [FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx) when no custom image was uploaded, now unnecessary since a floor plan image is always present.
+
+## [1.1.0]
+
+### Added
+- This `CHANGELOG.md` file to track notable changes going forward.
+- `host: true` in [vite.config.ts](restoDashboard/vite.config.ts) so the dev server binds to all network interfaces, letting other devices on the same network (e.g. a phone or tablet for testing) reach the dashboard, not just `localhost`.
+
+### Changed
+- **Floor 2 rebranded from "VIP Suites & Lounge" to "KTV Rooms Area"** across the app: sidebar floor selector, floor-plan header/tabs, custom floor plan uploader tabs, and table directory tabs ([Sidebar.tsx](restoDashboard/src/components/Sidebar.tsx), [FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [CustomFloorPlanUploader.tsx](restoDashboard/src/components/CustomFloorPlanUploader.tsx), [TableDirectoryView.tsx](restoDashboard/src/components/TableDirectoryView.tsx)).
+  - To keep this consistent, the underlying mock data and detail views were updated to match: room names ("VIP Suite: Royal Oak/Glass Terrace" → "KTV Room: Royal Oak/Glass Terrace"), room codes (`VIP-A`/`VIP-B` → `KTV-A`/`KTV-B`), server label ("Claire (VIP Host)" → "Claire (KTV Host)"), guest notes, and the table detail modal's room-type label ("Private VIP Room" → "Private KTV Room") ([mockRestaurantData.ts](restoDashboard/src/data/mockRestaurantData.ts), [TableDetailModal.tsx](restoDashboard/src/components/TableDetailModal.tsx), [types.ts](restoDashboard/src/types.ts)).
+- **Floor 1 label shortened from "Main Dining & Bar" to "Main Dining Area"** in the same set of navigation/header locations.
+- **"Tables" terminology in filter toggles replaced with "Pins"** ("Available Tables" → "Available Pins", "Occupied Tables" → "Occupied Pins") in the sidebar and README.
+- **"Delete All Spots" unified to "Delete All Pins"** everywhere the action appears (floor plan toolbar, delete-all confirmation dialog, and README), so the confirmation modal's title and button text no longer disagree with each other.
+- Edit-mode button copy clarified: "Done Positioning" / "Move Pins & Edit Layout" → "Done Editing" / "Edit or Reposition Pins" (and the sidebar equivalents), and the edit-mode hint now says "place a new pin" instead of "place a new table".
+- Upload button copy simplified: "Change/Upload 1774×887 Plan" → "Change/Upload Floor Plan" (the dimensions are still shown elsewhere in the UI).
+- Removed the trailing "✓" checkmark glyph from all "Served" status labels and badges for a plainer, more consistent status style (floor plan pins, order queue, table detail modal, README).
+- Order queue's "2nd Floor (VIP)" filter tab simplified to "2nd Floor".
+- README updated to match all of the above (floor names, Pins terminology, Delete All Pins), and stale code comments referencing the old floor names updated in [App.tsx](restoDashboard/src/App.tsx) and [mockRestaurantData.ts](restoDashboard/src/data/mockRestaurantData.ts).
+
+## [1.0.0]
+
+### Added
+- Initial release of the Restaurant Floor & Live Order Dashboard.
+- Interactive multi-floor map with drag-and-drop table/room pin placement over custom PNG architectural floor plans.
+- Table detail view for inspecting individual orders and guest info.
+- Live order queue with per-dish pending/served status tracking.
+- Table directory list view as an alternative to the floor map.
+- Custom floor plan uploader for Floor 1 and Floor 2, with images persisted in browser storage.
+- Sidebar navigation with floor selection and table availability filters.

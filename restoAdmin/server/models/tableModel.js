@@ -23,6 +23,8 @@ class TableModel {
 				rt.CAPACITY,
 				rt.ROOM_CHARGE,
 				rt.STATUS,
+				rt.DASHBOARD_ZONE_ID,
+				rt.DASHBOARD_LINKED_AT,
 				rt.ENCODED_BY,
 				rt.ENCODED_DT
 			FROM restaurant_tables rt
@@ -52,7 +54,9 @@ class TableModel {
 				FLOOR,
 				CAPACITY,
 				ROOM_CHARGE,
-				STATUS
+				STATUS,
+				DASHBOARD_ZONE_ID,
+				DASHBOARD_LINKED_AT
 			FROM restaurant_tables
 			WHERE IDNo = ?
 			LIMIT 1
@@ -211,6 +215,38 @@ class TableModel {
 					room_charge: table.ROOM_CHARGE,
 					status: table.STATUS,
 					branch_id: table.BRANCH_ID ?? null
+				}, 'updated');
+			}
+		}
+		return updated;
+	}
+
+	// Link (or unlink, when zoneId is null) this table to a restoDashboard zone.
+	static async updateDashboardLink(id, zoneId) {
+		const query = `
+			UPDATE restaurant_tables
+			SET DASHBOARD_ZONE_ID = ?,
+				DASHBOARD_LINKED_AT = ?
+			WHERE IDNo = ?
+		`;
+		const [result] = await pool.execute(query, [
+			zoneId || null,
+			zoneId ? new Date() : null,
+			id
+		]);
+		const updated = result.affectedRows > 0;
+		if (updated) {
+			const table = await TableModel.getById(id);
+			if (table) {
+				socketService.emitTableUpdated({
+					id: table.IDNo,
+					table_number: table.TABLE_NUMBER,
+					floor: table.FLOOR ?? null,
+					capacity: table.CAPACITY,
+					room_charge: table.ROOM_CHARGE,
+					status: table.STATUS,
+					branch_id: table.BRANCH_ID ?? null,
+					dashboard_zone_id: table.DASHBOARD_ZONE_ID ?? null
 				}, 'updated');
 			}
 		}

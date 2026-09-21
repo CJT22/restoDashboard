@@ -1688,7 +1688,10 @@
 			"search_placeholder": "Search..."
 		},
 		"branch": "Branch",
-		"actions": "Actions"
+		"actions": "Actions",
+		"dashboard_link": "Dashboard",
+		"linked": "Linked",
+		"dashboard_link_tooltip": "Linked to restoDashboard zone {{zoneId}}"
 	},
 	"employee": {
 		"manage_employee": "Manage Employee",

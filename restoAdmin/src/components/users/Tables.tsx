@@ -1,7 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
-import { Search, Loader2, Plus, Edit2, Trash2, Hash, Tablet } from 'lucide-react';
+import { Search, Loader2, Plus, Edit2, Trash2, Hash, Tablet, Link2 } from 'lucide-react';
+import { io, type Socket } from 'socket.io-client';
 import { DataTable, type ColumnDef } from '../ui/DataTable';
 import { Modal } from '../ui/Modal';
 import { Select2 } from '../ui/Select2';
@@ -22,6 +23,7 @@ interface TableRow {
   capacity: number;
   roomCharge: number | null;
   status: number;
+  dashboardZoneId: string | null;
   encodedAt: string | null;
 }
 
@@ -122,6 +124,18 @@ export const Tables: React.FC = () => {
     );
   };
 
+  // Live table_updated socket (see the mount-once effect further below).
+  const socketRef = useRef<Socket | null>(null);
+  const knownBranchIdsRef = useRef<Set<string>>(new Set());
+  const joinBranchRooms = useCallback((branchIds: (string | number | null)[]) => {
+    branchIds.forEach((id) => {
+      if (id == null) return;
+      const key = String(id);
+      knownBranchIdsRef.current.add(key);
+      socketRef.current?.emit('join_kitchen', key);
+    });
+  }, []);
+
   const fetchBranches = useCallback(async () => {
     try {
       const res = await fetch('/branch', { headers: authHeaders() });
@@ -167,9 +181,11 @@ export const Tables: React.FC = () => {
             ? Number(rt.ROOM_CHARGE)
             : null,
         status: Number(rt.STATUS ?? 0),
+        dashboardZoneId: rt.DASHBOARD_ZONE_ID || null,
         encodedAt: rt.ENCODED_DT || null,
       }));
       setTables(mappedData);
+      joinBranchRooms(mappedData.map((row) => row.branchId));
     } catch (e: any) {
       console.error('Failed to fetch restaurant tables', e);
       setError(e.message || t('table.failed_to_load_tables'));
@@ -177,7 +193,68 @@ export const Tables: React.FC = () => {
     } finally {
       setLoading(false);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [t, effectiveBranchIdForAdmin]);
+
+  // Keep a ref to the latest fetchTables so the mount-once socket effect
+  // below can always call the current version instead of a stale closure.
+  const fetchTablesRef = useRef(fetchTables);
+  useEffect(() => {
+    fetchTablesRef.current = fetchTables;
+  }, [fetchTables]);
+
+  // Live updates: restoAdmin already emits `table_updated` on every table
+  // mutation (Table Settings edits, order-driven status auto-flips, and
+  // restoDashboard's linked-zone status pushes) — this just listens for it
+  // so Table Settings no longer needs a manual refresh to see them.
+  useEffect(() => {
+    const socket = io({ transports: ['websocket', 'polling'] });
+    socketRef.current = socket;
+
+    socket.on('connect', () => {
+      // Room membership doesn't survive a reconnect, so rejoin every branch
+      // room we know about whenever the socket (re)connects, not just once.
+      knownBranchIdsRef.current.forEach((id) => socket.emit('join_kitchen', id));
+    });
+
+    socket.on('table_updated', (payload: any) => {
+      const row = payload?.table;
+      const id = row?.id ?? row?.IDNo ?? payload?.table_id;
+      if (id == null) return;
+
+      if (payload?.action === 'deleted') {
+        setTables((prev) => prev.filter((t) => Number(t.id) !== Number(id)));
+        return;
+      }
+      if (payload?.action === 'created') {
+        // Rare enough to just resync rather than reimplement sort/paging locally.
+        fetchTablesRef.current?.();
+        return;
+      }
+
+      setTables((prev) =>
+        prev.map((t) =>
+          Number(t.id) === Number(id)
+            ? {
+                ...t,
+                tableNumber: row.table_number != null ? String(row.table_number) : t.tableNumber,
+                floor: row.floor === 'gf' || row.floor === '2f' ? row.floor : t.floor,
+                capacity: row.capacity != null ? Number(row.capacity) : t.capacity,
+                roomCharge: row.room_charge != null ? Number(row.room_charge) : t.roomCharge,
+                status: row.status != null ? Number(row.status) : t.status,
+                dashboardZoneId:
+                  row.dashboard_zone_id !== undefined ? row.dashboard_zone_id || null : t.dashboardZoneId,
+              }
+            : t
+        )
+      );
+    });
+
+    return () => {
+      socket.disconnect();
+      socketRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     fetchTables();
@@ -377,6 +454,21 @@ export const Tables: React.FC = () => {
     {
       header: t('table.status'),
       render: (tbl) => statusBadge(tbl.status),
+    },
+    {
+      header: t('table.dashboard_link'),
+      render: (tbl) =>
+        tbl.dashboardZoneId ? (
+          <span
+            className="inline-flex items-center gap-1 text-xs font-bold px-2 py-1 rounded-lg bg-indigo-100 text-indigo-600"
+            title={t('table.dashboard_link_tooltip', { zoneId: tbl.dashboardZoneId })}
+          >
+            <Link2 size={12} />
+            {t('table.linked')}
+          </span>
+        ) : (
+          <span className="text-xs text-brand-muted">—</span>
+        ),
     },
     {
       header: t('table.actions'),

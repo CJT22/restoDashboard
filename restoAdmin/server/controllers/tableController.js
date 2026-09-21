@@ -197,6 +197,33 @@ class TableController {
 			return ApiResponse.error(res, 'Failed to update table status', 500, error.message);
 		}
 	}
+
+	// Link (or unlink) this table to a restoDashboard zone id
+	static async linkDashboard(req, res) {
+		try {
+			const { id } = req.params;
+			const { dashboard_zone_id } = req.body;
+
+			const table = await TableModel.getById(id);
+			if (!table) {
+				return ApiResponse.notFound(res, 'Restaurant table');
+			}
+
+			const zoneId = dashboard_zone_id ? String(dashboard_zone_id).trim() : null;
+			const updated = await TableModel.updateDashboardLink(id, zoneId || null);
+			if (!updated) {
+				return ApiResponse.error(res, 'Failed to update dashboard link', 500);
+			}
+
+			return ApiResponse.success(res, {
+				id: parseInt(id),
+				dashboard_zone_id: zoneId || null
+			}, zoneId ? 'Table linked to dashboard zone' : 'Table unlinked from dashboard zone');
+		} catch (error) {
+			console.error('Error updating dashboard link:', error);
+			return ApiResponse.error(res, 'Failed to update dashboard link', 500, error.message);
+		}
+	}
 }
 
 module.exports = TableController;

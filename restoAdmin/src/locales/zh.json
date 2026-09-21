@@ -1575,7 +1575,10 @@
 			"search_placeholder": "搜索..."
 		},
 		"branch": "分店",
-		"actions": "操作"
+		"actions": "操作",
+		"dashboard_link": "看板",
+		"linked": "已关联",
+		"dashboard_link_tooltip": "已关联到 restoDashboard 区域 {{zoneId}}"
 	},
 	"employee": {
 		"manage_employee": "员工管理",

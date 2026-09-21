@@ -1574,7 +1574,10 @@
 			"search_placeholder": "検索..."
 		},
 		"branch": "支店",
-		"actions": "アクション"
+		"actions": "アクション",
+		"dashboard_link": "ダッシュボード",
+		"linked": "連携済み",
+		"dashboard_link_tooltip": "restoDashboardゾーン {{zoneId}} に連携済み"
 	},
 	"employee": {
 		"manage_employee": "従業員管理",

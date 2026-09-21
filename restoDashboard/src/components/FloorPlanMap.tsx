@@ -615,6 +615,16 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
             <span className={`w-2.5 h-2.5 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)] ${getStatusColors('occupied').legendDotClass}`} />
             <span className="text-amber-300 font-medium">{getStatusColors('occupied').label}</span>
           </div>
+
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${getStatusColors('reserved').legendDotClass}`} />
+            <span className="text-blue-300 font-medium">{getStatusColors('reserved').label}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className={`w-2.5 h-2.5 rounded-full ${getStatusColors('not_available').legendDotClass}`} />
+            <span className="text-rose-300 font-medium">{getStatusColors('not_available').label}</span>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">

@@ -49,6 +49,9 @@ router.delete("/restaurant_table/:id", authenticate, TableController.delete);
 // PATCH - Update table status directly
 router.patch("/restaurant_table/:id/status", authenticate, TableController.updateStatus);
 
+// PATCH - Link/unlink this table to a restoDashboard zone id
+router.patch("/restaurant_table/:id/dashboard-link", authenticate, TableController.linkDashboard);
+
 // ============================================
 // EXPORT
 // ============================================

@@ -18,6 +18,15 @@ export default defineConfig(() => {
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
       watch: process.env.DISABLE_HMR === 'true' ? null : {},
       host: true,
+      // Proxy to this project's own backend (server/index.ts), which holds
+      // the restoAdmin credentials and proxies/bridges everything the
+      // browser needs -- the browser never talks to restoAdmin directly.
+      proxy: {
+        '/api': {
+          target: 'http://localhost:3510',
+          changeOrigin: true,
+        },
+      },
     },
   };
 });

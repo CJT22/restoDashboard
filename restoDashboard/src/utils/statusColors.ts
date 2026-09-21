@@ -28,6 +28,22 @@ const STATUS_COLORS: Record<TableStatus, StatusColorScheme> = {
     legendDotClass: 'bg-amber-400',
     activeButtonClass: 'bg-amber-500/20 border-amber-500 text-amber-300',
   },
+  reserved: {
+    label: 'Reserved',
+    fillRgba: 'rgba(59, 130, 246, 0.24)',
+    glowRgba: 'rgba(59, 130, 246, 0.4)',
+    borderClass: 'border-blue-400/70',
+    legendDotClass: 'bg-blue-400',
+    activeButtonClass: 'bg-blue-500/20 border-blue-500 text-blue-300',
+  },
+  not_available: {
+    label: 'Not Available',
+    fillRgba: 'rgba(244, 63, 94, 0.24)',
+    glowRgba: 'rgba(244, 63, 94, 0.4)',
+    borderClass: 'border-rose-400/70',
+    legendDotClass: 'bg-rose-400',
+    activeButtonClass: 'bg-rose-500/20 border-rose-500 text-rose-300',
+  },
 };
 
 export function getStatusColors(status: TableStatus): StatusColorScheme {

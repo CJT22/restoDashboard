@@ -258,10 +258,54 @@ async function ensureAnalyticsPerformanceIndexes() {
 	}
 }
 
+/**
+ * Idempotent DDL: add restaurant_tables.DASHBOARD_ZONE_ID/DASHBOARD_LINKED_AT if missing.
+ * Lets a restoDashboard floor-plan zone be optionally linked to a specific admin table
+ * (see server/models/tableModel.js's updateDashboardLink).
+ */
+async function ensureDashboardLinkColumns() {
+	const connection = await pool.getConnection();
+	try {
+		const [zoneIdRows] = await connection.execute(
+			`SELECT 1 FROM information_schema.COLUMNS
+			 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'restaurant_tables' AND COLUMN_NAME = 'DASHBOARD_ZONE_ID'
+			 LIMIT 1`
+		);
+		if (zoneIdRows.length === 0) {
+			await connection.execute(
+				`ALTER TABLE restaurant_tables
+				 ADD COLUMN DASHBOARD_ZONE_ID VARCHAR(64) NULL DEFAULT NULL
+				 COMMENT 'restoDashboard TableRoom.id this table is linked to, if any'
+				 AFTER STATUS`
+			);
+			console.log('[Schema] restaurant_tables.DASHBOARD_ZONE_ID created');
+		}
+
+		const [linkedAtRows] = await connection.execute(
+			`SELECT 1 FROM information_schema.COLUMNS
+			 WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'restaurant_tables' AND COLUMN_NAME = 'DASHBOARD_LINKED_AT'
+			 LIMIT 1`
+		);
+		if (linkedAtRows.length === 0) {
+			await connection.execute(
+				`ALTER TABLE restaurant_tables
+				 ADD COLUMN DASHBOARD_LINKED_AT DATETIME NULL DEFAULT NULL
+				 AFTER DASHBOARD_ZONE_ID`
+			);
+			console.log('[Schema] restaurant_tables.DASHBOARD_LINKED_AT created');
+		}
+	} catch (err) {
+		console.error('[Schema] ensureDashboardLinkColumns failed:', err.message || err);
+	} finally {
+		connection.release();
+	}
+}
+
 module.exports = {
 	ensureOrderItemsLineCostColumn,
 	ensureReceiptScanHistoryTable,
 	ensureTelegramSettingsTable,
 	ensureBankPaymentMethodEnum,
 	ensureAnalyticsPerformanceIndexes,
+	ensureDashboardLinkColumns,
 };

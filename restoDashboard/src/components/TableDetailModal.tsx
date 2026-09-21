@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { 
-  TableRoom, 
-  TableStatus, 
-  OrderItem 
+import {
+  TableRoom,
+  TableStatus,
+  OrderItem
 } from '../types';
 import { MENU_ITEMS_PRESET } from '../data/mockRestaurantData';
+import { getStatusColors } from '../utils/statusColors';
 import {
   X,
   Check,
@@ -14,7 +15,9 @@ import {
   Plus,
   Trash2,
   CheckCircle2,
-  UserCheck
+  UserCheck,
+  Link2,
+  Ban
 } from 'lucide-react';
 
 interface TableDetailModalProps {
@@ -185,6 +188,15 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                 <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/10 text-slate-300 font-mono">
                   Floor {table.floor} • Cap: {table.capacity}
                 </span>
+                {table.adminTableId != null && (
+                  <span
+                    className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono flex items-center gap-1"
+                    title={`Synced with restoAdmin table #${table.adminTableId} (Blue Moon)`}
+                  >
+                    <Link2 className="w-3 h-3" />
+                    Synced to: {table.adminTableName || `#${table.adminTableId}`}
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
                 {table.type === 'room' ? 'Private KTV Room' : table.type === 'booth' ? 'Dining Booth' : 'Dining Table'}
@@ -211,31 +223,26 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
               Current Table Status
             </label>
             <div className="grid grid-cols-2 gap-2">
-              <button
-                id="status-btn-available"
-                onClick={() => handleStatusChange('available')}
-                className={`py-2.5 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-                  selectedStatus === 'available'
-                    ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-lg shadow-emerald-500/10'
-                    : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <Check className="w-3.5 h-3.5" />
-                Available
-              </button>
-
-              <button
-                id="status-btn-occupied"
-                onClick={() => handleStatusChange('occupied')}
-                className={`py-2.5 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
-                  selectedStatus === 'occupied'
-                    ? 'bg-amber-500/20 border-amber-500 text-amber-300 shadow-lg shadow-amber-500/10'
-                    : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                Occupied
-              </button>
+              {([
+                { status: 'available' as TableStatus, icon: Check, id: 'status-btn-available' },
+                { status: 'occupied' as TableStatus, icon: Users, id: 'status-btn-occupied' },
+                { status: 'reserved' as TableStatus, icon: Clock, id: 'status-btn-reserved' },
+                { status: 'not_available' as TableStatus, icon: Ban, id: 'status-btn-not-available' },
+              ]).map(({ status: s, icon: Icon, id }) => (
+                <button
+                  key={s}
+                  id={id}
+                  onClick={() => handleStatusChange(s)}
+                  className={`py-2.5 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-2 transition-all ${
+                    selectedStatus === s
+                      ? getStatusColors(s).activeButtonClass
+                      : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10 hover:text-white'
+                  }`}
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  {getStatusColors(s).label}
+                </button>
+              ))}
             </div>
           </div>
 

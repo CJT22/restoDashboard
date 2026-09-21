@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TableRoom } from './types';
+import { TableRoom, TableStatus } from './types';
 import { INITIAL_TABLES } from './data/mockRestaurantData';
 import { Sidebar } from './components/Sidebar';
 import { FloorPlanMap } from './components/FloorPlanMap';
@@ -8,21 +8,21 @@ import { TableDirectoryView } from './components/TableDirectoryView';
 import { OrderQueueView } from './components/OrderQueueView';
 import { EditTableModal } from './components/EditTableModal';
 import { ConfirmModal } from './components/ConfirmModal';
+import { getAdminTables, pushStatus, setLink, statusFromAdmin, subscribeToAdminUpdates } from './services/adminSync';
 
 const STORAGE_KEY_TABLES = 'restaurant_dashboard_tables_v1';
+const VALID_STATUSES: TableStatus[] = ['available', 'occupied', 'reserved', 'not_available'];
 
 export default function App() {
   // Load persisted tables or fall back to default mock dataset.
-  // Older saves may still carry the retired 'reserved'/'cleaning' statuses; map them to 'available'.
+  // Older saves may carry a status from a retired scheme (e.g. legacy 'cleaning'); map those to 'available'.
   const [tables, setTables] = useState<TableRoom[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_TABLES);
       if (saved) {
         const parsed: TableRoom[] = JSON.parse(saved);
         return parsed.map((t) =>
-          t.status !== 'available' && t.status !== 'occupied'
-            ? { ...t, status: 'available' as const }
-            : t
+          !VALID_STATUSES.includes(t.status) ? { ...t, status: 'available' as const } : t
         );
       }
     } catch (e) {
@@ -74,8 +74,22 @@ export default function App() {
     }
   }, [tables]);
 
-  // Handle table updates from detail modal or kitchen queue
+  // Handle table updates from detail modal or kitchen queue.
+  // When the table is linked to a restoAdmin table and its status actually
+  // changed, push that status to restoAdmin too (fire-and-forget: local
+  // state already reflects the change either way).
   const handleUpdateTable = (updatedTable: TableRoom) => {
+    const previous = tables.find((t) => t.id === updatedTable.id);
+    if (
+      updatedTable.adminTableId != null &&
+      previous &&
+      previous.status !== updatedTable.status
+    ) {
+      pushStatus(updatedTable.adminTableId, updatedTable.status).catch((err) => {
+        console.error('Failed to push status to restoAdmin:', err);
+      });
+    }
+
     setTables((prev) =>
       prev.map((t) => (t.id === updatedTable.id ? updatedTable : t))
     );
@@ -83,6 +97,48 @@ export default function App() {
       setSelectedTable(updatedTable);
     }
   };
+
+  // Apply a status change that originated in restoAdmin (Table Settings edit,
+  // or its order pipeline's auto status flips). Deliberately does NOT call
+  // pushStatus — re-pushing what admin just told us would ping-pong the same
+  // change back and forth between the two apps.
+  const applyRemoteStatus = (adminTableId: number, status: TableRoom['status']) => {
+    setTables((prev) =>
+      prev.map((t) => (t.adminTableId === adminTableId && t.status !== status ? { ...t, status } : t))
+    );
+    setSelectedTable((prev) =>
+      prev && prev.adminTableId === adminTableId && prev.status !== status ? { ...prev, status } : prev
+    );
+  };
+
+  // Reconcile linked tables with restoAdmin once on load (covers drift while
+  // the dashboard was closed), then keep listening for live changes. Both
+  // steps fail silently if the sync backend/restoAdmin aren't reachable —
+  // the dashboard stays fully usable locally either way.
+  useEffect(() => {
+    getAdminTables()
+      .then((adminTables) => {
+        const byId = new Map(adminTables.map((t) => [t.id, t]));
+        setTables((prev) =>
+          prev.map((t) => {
+            if (t.adminTableId == null) return t;
+            const remote = byId.get(t.adminTableId);
+            if (!remote) return t;
+            const remoteStatus = statusFromAdmin(remote.status);
+            if (remoteStatus === t.status && remote.tableNumber === t.adminTableName) return t;
+            return { ...t, status: remoteStatus, adminTableName: remote.tableNumber };
+          })
+        );
+      })
+      .catch((err) => console.warn('Initial restoAdmin reconciliation failed:', err));
+
+    const unsubscribe = subscribeToAdminUpdates(({ adminTableId, status }) => {
+      applyRemoteStatus(adminTableId, status);
+    });
+    return unsubscribe;
+    // Runs once on mount only — resubscribing per-render would open a new SSE connection every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Update a zone's position when dragged
   const handleUpdateTablePosition = (tableId: string, x: number, y: number) => {
@@ -112,8 +168,15 @@ export default function App() {
     });
   };
 
-  // Delete single table
+  // Delete single table. Best-effort: also clears the restoAdmin link (if
+  // any) so restoAdmin doesn't keep pointing at a zone that no longer exists.
   const handleDeleteTable = (tableId: string) => {
+    const table = tables.find((t) => t.id === tableId);
+    if (table?.adminTableId != null) {
+      setLink(tableId, null).catch((err) =>
+        console.error('Failed to clear restoAdmin link on delete:', err)
+      );
+    }
     setTables((prev) => prev.filter((t) => t.id !== tableId));
     if (selectedTable?.id === tableId) setSelectedTable(null);
   };
@@ -142,6 +205,13 @@ export default function App() {
       confirmText: `Delete All ${floorCount} Zones`,
       confirmVariant: 'danger',
       onConfirm: () => {
+        tables
+          .filter((t) => t.floor === currentFloor && t.adminTableId != null)
+          .forEach((t) => {
+            setLink(t.id, null).catch((err) =>
+              console.error('Failed to clear restoAdmin link on delete:', err)
+            );
+          });
         setTables((prev) => prev.filter((t) => t.floor !== currentFloor));
         setSelectedTable(null);
       },
@@ -160,6 +230,39 @@ export default function App() {
     setEditingTable(table);
     setNewTableRect({ x: table.x, y: table.y, width: table.width, height: table.height });
     setIsEditTableModalOpen(true);
+  };
+
+  // Push every linked zone's current status to restoAdmin in one go. Mainly
+  // a manual "fix drift" tool — e.g. for zones linked before a status push
+  // was wired into the linking flow itself (linking alone only points
+  // restoAdmin at a zone, it doesn't set its status), or if a push ever
+  // silently failed. Safe to run any time: idempotent, re-asserts the
+  // dashboard's current state rather than destroying anything.
+  const [isResyncingAdmin, setIsResyncingAdmin] = useState(false);
+  const [resyncResult, setResyncResult] = useState<string | null>(null);
+  const handleResyncLinkedTables = async () => {
+    const linked = tables.filter((t) => t.adminTableId != null);
+    if (linked.length === 0 || isResyncingAdmin) return;
+
+    setIsResyncingAdmin(true);
+    setResyncResult(null);
+    const results = await Promise.allSettled(
+      linked.map((t) => pushStatus(t.adminTableId as number, t.status))
+    );
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    results.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        console.error(`Failed to sync "${linked[i].name}" to restoAdmin:`, r.reason);
+      }
+    });
+
+    setIsResyncingAdmin(false);
+    setResyncResult(
+      failed === 0
+        ? `Synced ${linked.length}/${linked.length} linked tables.`
+        : `Synced ${linked.length - failed}/${linked.length} — ${failed} failed (see console).`
+    );
+    setTimeout(() => setResyncResult(null), 6000);
   };
 
   // Reset to initial sample state with confirmation modal
@@ -194,6 +297,9 @@ export default function App() {
         onToggleEditLayoutMode={() => setIsEditLayoutMode(!isEditLayoutMode)}
         tables={tables}
         onResetData={handleResetData}
+        onResyncAdmin={handleResyncLinkedTables}
+        isResyncingAdmin={isResyncingAdmin}
+        resyncResult={resyncResult}
       />
 
       {/* Main View Area */}
