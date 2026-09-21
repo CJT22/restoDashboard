@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TableRoom } from '../types';
 import { getStatusColors } from '../utils/statusColors';
+import { getOrderStatusLabel, getOrderStatusColorClass } from '../services/orderSync';
 import {
   ZoomIn,
   ZoomOut,
@@ -427,7 +428,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
           {/* Interactive Table / Room Zones */}
           {floorTables.map((table) => {
             const isSelected = selectedTableId === table.id;
-            const hasPendingOrders = table.orders.some((o) => o.status === 'pending');
+            const activeOrder = table.activeOrder;
             const isHovered = !isEditMode && hoveredTableId === table.id;
             const isHighlighted = isTableHighlighted(table);
             const isDraggingThis = draggingTableId === table.id;
@@ -549,22 +550,16 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                       </span>
                     </div>
 
-                    {table.guestName ? (
-                      <div className="text-xs text-indigo-300 font-medium truncate">
-                        Guest: {table.guestName}
-                      </div>
-                    ) : (
-                      <div className="text-xs text-slate-400 capitalize">
-                        Status: {table.status}
-                      </div>
-                    )}
+                    <div className="text-xs text-slate-400 capitalize">
+                      Status: {table.status}
+                    </div>
 
-                    {table.orders.length > 0 && (
+                    {activeOrder && (
                       <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px]">
                         <div className="flex justify-between text-slate-400 mb-0.5">
-                          <span>Orders ({table.orders.length})</span>
-                          <span className={hasPendingOrders ? 'text-amber-400 font-bold' : 'text-emerald-400'}>
-                            {hasPendingOrders ? `${table.orders.filter(o => o.status === 'pending').length} pending` : 'All served'}
+                          <span>Order #{activeOrder.orderNo}</span>
+                          <span className={`px-1.5 py-0.5 rounded-full border ${getOrderStatusColorClass(activeOrder.status)}`}>
+                            {getOrderStatusLabel(activeOrder.status)}
                           </span>
                         </div>
                       </div>
@@ -614,16 +609,6 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
           <div className="flex items-center gap-2">
             <span className={`w-2.5 h-2.5 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)] ${getStatusColors('occupied').legendDotClass}`} />
             <span className="text-amber-300 font-medium">{getStatusColors('occupied').label}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${getStatusColors('reserved').legendDotClass}`} />
-            <span className="text-blue-300 font-medium">{getStatusColors('reserved').label}</span>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className={`w-2.5 h-2.5 rounded-full ${getStatusColors('not_available').legendDotClass}`} />
-            <span className="text-rose-300 font-medium">{getStatusColors('not_available').label}</span>
           </div>
         </div>
 

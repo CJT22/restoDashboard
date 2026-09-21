@@ -301,6 +301,32 @@ async function ensureDashboardLinkColumns() {
 	}
 }
 
+/**
+ * Idempotent data fix: collapse restaurant_tables.STATUS down to just
+ * Available(1)/Occupied(2). Reserved(3) and Not Available(0) are retired —
+ * they were only ever read/written by Table Settings itself (no reservations
+ * feature exists, and the order-creation table picker already only shows
+ * Available tables), and table status is now meant to be a pure reflection
+ * of order lifecycle (Pending/Confirmed -> Occupied, Settled/Cancelled ->
+ * Available), which restoAdmin already manages automatically. Any table
+ * still at 0/3 from before this change is migrated to Available.
+ */
+async function ensureTwoStateTableStatus() {
+	const connection = await pool.getConnection();
+	try {
+		const [result] = await connection.execute(
+			`UPDATE restaurant_tables SET STATUS = 1 WHERE STATUS IN (0, 3)`
+		);
+		if (result.affectedRows > 0) {
+			console.log(`[Schema] Migrated ${result.affectedRows} restaurant_tables row(s) from Reserved/Not Available to Available`);
+		}
+	} catch (err) {
+		console.error('[Schema] ensureTwoStateTableStatus failed:', err.message || err);
+	} finally {
+		connection.release();
+	}
+}
+
 module.exports = {
 	ensureOrderItemsLineCostColumn,
 	ensureReceiptScanHistoryTable,
@@ -308,4 +334,5 @@ module.exports = {
 	ensureBankPaymentMethodEnum,
 	ensureAnalyticsPerformanceIndexes,
 	ensureDashboardLinkColumns,
+	ensureTwoStateTableStatus,
 };

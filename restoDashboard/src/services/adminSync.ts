@@ -3,10 +3,12 @@
 // The browser never talks to restoAdmin directly and never sees its
 // credentials — every call here hits our own same-origin /api/admin/* routes.
 //
-// restoAdmin's STATUS is a 0-3 int enum (0=Not Available, 1=Available,
-// 2=Occupied, 3=Reserved — restoAdmin/src/components/users/Tables.tsx); the
-// dashboard's TableStatus is the string equivalent. This module is the one
-// place that maps between them.
+// restoAdmin's STATUS is now a 1-2 int enum (1=Available, 2=Occupied —
+// restoAdmin/src/components/users/Tables.tsx); the dashboard's TableStatus is
+// the string equivalent. This module is the one place that maps between
+// them. Table status is pull-only: it's a pure reflection of restoAdmin's
+// order-driven state (already flipped automatically on order lifecycle
+// changes), so there's no admin-direction status mapping here anymore.
 
 import { TableStatus } from '../types';
 
@@ -21,23 +23,10 @@ export interface AdminTable {
   dashboardZoneId: string | null;
 }
 
-const STATUS_TO_ADMIN: Record<TableStatus, 0 | 1 | 2 | 3> = {
-  not_available: 0,
-  available: 1,
-  occupied: 2,
-  reserved: 3,
-};
-
 const STATUS_FROM_ADMIN: Record<number, TableStatus> = {
-  0: 'not_available',
   1: 'available',
   2: 'occupied',
-  3: 'reserved',
 };
-
-export function statusToAdmin(status: TableStatus): 0 | 1 | 2 | 3 {
-  return STATUS_TO_ADMIN[status] ?? 1;
-}
 
 export function statusFromAdmin(status: number): TableStatus {
   return STATUS_FROM_ADMIN[status] ?? 'available';
@@ -66,50 +55,70 @@ export async function setLink(zoneId: string, adminTableId: number | null): Prom
   await parseJsonOrThrow(res, 'Failed to update the restoAdmin link');
 }
 
-export async function pushStatus(adminTableId: number, status: TableStatus): Promise<void> {
-  const res = await fetch(`/api/admin/tables/${adminTableId}/status`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ status: statusToAdmin(status) }),
-  });
-  await parseJsonOrThrow(res, 'Failed to push status to restoAdmin');
-}
-
 export interface RemoteTableUpdate {
   adminTableId: number;
   status: TableStatus;
   dashboardZoneId: string | null;
 }
 
-// Opens the SSE stream and calls onUpdate for every restoAdmin table_updated
-// event that carries a usable status. Returns an unsubscribe function.
-// Failures (backend not running, network hiccup) are swallowed — the
-// dashboard should keep working locally even if live sync is unavailable;
-// EventSource retries the connection on its own.
-export function subscribeToAdminUpdates(onUpdate: (event: RemoteTableUpdate) => void): () => void {
-  let source: EventSource | null = null;
-  try {
-    source = new EventSource('/api/admin/stream');
-    source.addEventListener('table_updated', (e: MessageEvent) => {
-      try {
-        const payload = JSON.parse(e.data);
-        if (payload.status == null) return;
-        onUpdate({
-          adminTableId: Number(payload.adminTableId),
-          status: statusFromAdmin(Number(payload.status)),
-          dashboardZoneId: payload.dashboardZoneId ?? null,
-        });
-      } catch (err) {
-        console.warn('[adminSync] bad table_updated payload', err);
-      }
-    });
-    source.onerror = () => {
-      // EventSource auto-reconnects; just log so silent backend outages are visible in devtools.
-      console.warn('[adminSync] SSE stream error (will retry)');
-    };
-  } catch (err) {
-    console.warn('[adminSync] could not open SSE stream', err);
-  }
+// Single shared EventSource for /api/admin/stream — table sync (this module)
+// and order sync (services/orderSync.ts) both attach listeners to the same
+// connection rather than each opening their own. Reference-counted so it
+// closes once nothing is subscribed, and reopens if resubscribed later.
+let sharedSource: EventSource | null = null;
+let sharedSourceRefCount = 0;
 
-  return () => source?.close();
+export function acquireAdminEventSource(): EventSource | null {
+  if (!sharedSource) {
+    try {
+      sharedSource = new EventSource('/api/admin/stream');
+      sharedSource.onerror = () => {
+        // EventSource auto-reconnects; just log so silent backend outages are visible in devtools.
+        console.warn('[adminSync] SSE stream error (will retry)');
+      };
+    } catch (err) {
+      console.warn('[adminSync] could not open SSE stream', err);
+      return null;
+    }
+  }
+  sharedSourceRefCount++;
+  return sharedSource;
+}
+
+export function releaseAdminEventSource(): void {
+  sharedSourceRefCount = Math.max(0, sharedSourceRefCount - 1);
+  if (sharedSourceRefCount === 0 && sharedSource) {
+    sharedSource.close();
+    sharedSource = null;
+  }
+}
+
+// Subscribes to restoAdmin table_updated events on the shared stream and
+// calls onUpdate for every one that carries a usable status. Returns an
+// unsubscribe function. Failures (backend not running, network hiccup) are
+// swallowed — the dashboard should keep working locally even if live sync
+// is unavailable.
+export function subscribeToAdminUpdates(onUpdate: (event: RemoteTableUpdate) => void): () => void {
+  const source = acquireAdminEventSource();
+  if (!source) return () => {};
+
+  const handler = (e: MessageEvent) => {
+    try {
+      const payload = JSON.parse(e.data);
+      if (payload.status == null) return;
+      onUpdate({
+        adminTableId: Number(payload.adminTableId),
+        status: statusFromAdmin(Number(payload.status)),
+        dashboardZoneId: payload.dashboardZoneId ?? null,
+      });
+    } catch (err) {
+      console.warn('[adminSync] bad table_updated payload', err);
+    }
+  };
+  source.addEventListener('table_updated', handler);
+
+  return () => {
+    source.removeEventListener('table_updated', handler);
+    releaseAdminEventSource();
+  };
 }

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TableRoom, TableStatus } from './types';
+import { TableRoom, TableStatus, AdminOrderSummary } from './types';
 import { INITIAL_TABLES } from './data/mockRestaurantData';
 import { Sidebar } from './components/Sidebar';
 import { FloorPlanMap } from './components/FloorPlanMap';
@@ -8,10 +8,15 @@ import { TableDirectoryView } from './components/TableDirectoryView';
 import { OrderQueueView } from './components/OrderQueueView';
 import { EditTableModal } from './components/EditTableModal';
 import { ConfirmModal } from './components/ConfirmModal';
-import { getAdminTables, pushStatus, setLink, statusFromAdmin, subscribeToAdminUpdates } from './services/adminSync';
+import { getAdminTables, setLink, statusFromAdmin, subscribeToAdminUpdates } from './services/adminSync';
+import { subscribeToOrderUpdates } from './services/orderSync';
 
-const STORAGE_KEY_TABLES = 'restaurant_dashboard_tables_v1';
-const VALID_STATUSES: TableStatus[] = ['available', 'occupied', 'reserved', 'not_available'];
+// Bumped again from _v2: TableStatus narrowed from 4 states to 2
+// (available/occupied only — see types.ts), and AdminOrderLineItem dropped
+// its pending/served field. Old saves are simply ignored rather than
+// migrated, same precedent as the _v1 -> _v2 bump.
+const STORAGE_KEY_TABLES = 'restaurant_dashboard_tables_v3';
+const VALID_STATUSES: TableStatus[] = ['available', 'occupied'];
 
 export default function App() {
   // Load persisted tables or fall back to default mock dataset.
@@ -74,34 +79,9 @@ export default function App() {
     }
   }, [tables]);
 
-  // Handle table updates from detail modal or kitchen queue.
-  // When the table is linked to a restoAdmin table and its status actually
-  // changed, push that status to restoAdmin too (fire-and-forget: local
-  // state already reflects the change either way).
-  const handleUpdateTable = (updatedTable: TableRoom) => {
-    const previous = tables.find((t) => t.id === updatedTable.id);
-    if (
-      updatedTable.adminTableId != null &&
-      previous &&
-      previous.status !== updatedTable.status
-    ) {
-      pushStatus(updatedTable.adminTableId, updatedTable.status).catch((err) => {
-        console.error('Failed to push status to restoAdmin:', err);
-      });
-    }
-
-    setTables((prev) =>
-      prev.map((t) => (t.id === updatedTable.id ? updatedTable : t))
-    );
-    if (selectedTable?.id === updatedTable.id) {
-      setSelectedTable(updatedTable);
-    }
-  };
-
-  // Apply a status change that originated in restoAdmin (Table Settings edit,
-  // or its order pipeline's auto status flips). Deliberately does NOT call
-  // pushStatus — re-pushing what admin just told us would ping-pong the same
-  // change back and forth between the two apps.
+  // Apply a status change that originated in restoAdmin (order create/confirm
+  // /settle/cancel, or a direct Table Settings edit) — the only way a linked
+  // zone's status ever changes now.
   const applyRemoteStatus = (adminTableId: number, status: TableRoom['status']) => {
     setTables((prev) =>
       prev.map((t) => (t.adminTableId === adminTableId && t.status !== status ? { ...t, status } : t))
@@ -109,6 +89,32 @@ export default function App() {
     setSelectedTable((prev) =>
       prev && prev.adminTableId === adminTableId && prev.status !== status ? { ...prev, status } : prev
     );
+  };
+
+  // Apply an order_created/order_updated event that originated in restoAdmin
+  // (any of its New Order, Manual Order, or receipt-scan creation paths, or
+  // an item-status change). Purely inbound, like applyRemoteStatus — never
+  // re-emitted. Deliberately does NOT touch table.status: restoAdmin's own
+  // table_updated event (already synced) is the single source of truth for
+  // that, avoiding a race between the two channels.
+  const applyRemoteOrder = (adminTableId: number, order: AdminOrderSummary | undefined) => {
+    setTables((prev) => prev.map((t) => (t.adminTableId === adminTableId ? { ...t, activeOrder: order } : t)));
+    setSelectedTable((prev) => (prev && prev.adminTableId === adminTableId ? { ...prev, activeOrder: order } : prev));
+  };
+
+  // Applies the result of a dashboard-initiated order action (create, add
+  // items, item-status toggle) by table id. Deliberately merges into the
+  // CURRENT state via setTables' updater rather than accepting a full
+  // TableRoom snapshot from the caller: order actions await a network round
+  // trip, and restoAdmin's table_updated flip (order created -> Occupied)
+  // often lands over SSE *during* that wait. A snapshot captured before the
+  // await would still say "available" and, passed through onUpdateTable,
+  // would clobber the just-applied "occupied" status — and even push that
+  // wrong reversion back to restoAdmin. Keying by id and only touching
+  // activeOrder avoids that regardless of how the two race.
+  const handleOrderChanged = (tableId: string, order: AdminOrderSummary | undefined) => {
+    setTables((prev) => prev.map((t) => (t.id === tableId ? { ...t, activeOrder: order } : t)));
+    setSelectedTable((prev) => (prev && prev.id === tableId ? { ...prev, activeOrder: order } : prev));
   };
 
   // Reconcile linked tables with restoAdmin once on load (covers drift while
@@ -132,10 +138,38 @@ export default function App() {
       })
       .catch((err) => console.warn('Initial restoAdmin reconciliation failed:', err));
 
-    const unsubscribe = subscribeToAdminUpdates(({ adminTableId, status }) => {
+    const unsubscribeTables = subscribeToAdminUpdates(({ adminTableId, status }) => {
       applyRemoteStatus(adminTableId, status);
     });
-    return unsubscribe;
+
+    // order_created/order_updated already carry the full item list, so this
+    // builds the zone's activeOrder straight from the event — no extra
+    // round-trip. Only Pending (3) / Confirmed (2) count as "active"; a
+    // settled or cancelled order (e.g. from Manual Order, or restoAdmin's
+    // own settle flow) clears the zone's active order instead.
+    const unsubscribeOrders = subscribeToOrderUpdates((event) => {
+      if (event.tableId == null) return;
+      const isActive = event.status === 2 || event.status === 3;
+      applyRemoteOrder(
+        event.tableId,
+        isActive
+          ? {
+              id: event.orderId,
+              orderNo: event.orderNo ?? '',
+              orderType: null,
+              status: event.status ?? 0,
+              subtotal: event.items.reduce((sum, i) => sum + i.lineTotal, 0),
+              grandTotal: event.grandTotal ?? 0,
+              items: event.items,
+            }
+          : undefined
+      );
+    });
+
+    return () => {
+      unsubscribeTables();
+      unsubscribeOrders();
+    };
     // Runs once on mount only — resubscribing per-render would open a new SSE connection every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -232,39 +266,6 @@ export default function App() {
     setIsEditTableModalOpen(true);
   };
 
-  // Push every linked zone's current status to restoAdmin in one go. Mainly
-  // a manual "fix drift" tool — e.g. for zones linked before a status push
-  // was wired into the linking flow itself (linking alone only points
-  // restoAdmin at a zone, it doesn't set its status), or if a push ever
-  // silently failed. Safe to run any time: idempotent, re-asserts the
-  // dashboard's current state rather than destroying anything.
-  const [isResyncingAdmin, setIsResyncingAdmin] = useState(false);
-  const [resyncResult, setResyncResult] = useState<string | null>(null);
-  const handleResyncLinkedTables = async () => {
-    const linked = tables.filter((t) => t.adminTableId != null);
-    if (linked.length === 0 || isResyncingAdmin) return;
-
-    setIsResyncingAdmin(true);
-    setResyncResult(null);
-    const results = await Promise.allSettled(
-      linked.map((t) => pushStatus(t.adminTableId as number, t.status))
-    );
-    const failed = results.filter((r) => r.status === 'rejected').length;
-    results.forEach((r, i) => {
-      if (r.status === 'rejected') {
-        console.error(`Failed to sync "${linked[i].name}" to restoAdmin:`, r.reason);
-      }
-    });
-
-    setIsResyncingAdmin(false);
-    setResyncResult(
-      failed === 0
-        ? `Synced ${linked.length}/${linked.length} linked tables.`
-        : `Synced ${linked.length - failed}/${linked.length} — ${failed} failed (see console).`
-    );
-    setTimeout(() => setResyncResult(null), 6000);
-  };
-
   // Reset to initial sample state with confirmation modal
   const handleResetData = () => {
     setConfirmState({
@@ -297,9 +298,6 @@ export default function App() {
         onToggleEditLayoutMode={() => setIsEditLayoutMode(!isEditLayoutMode)}
         tables={tables}
         onResetData={handleResetData}
-        onResyncAdmin={handleResyncLinkedTables}
-        isResyncingAdmin={isResyncingAdmin}
-        resyncResult={resyncResult}
       />
 
       {/* Main View Area */}
@@ -335,7 +333,7 @@ export default function App() {
         {activeNav === 'orders' && (
           <OrderQueueView
             tables={tables}
-            onUpdateTable={handleUpdateTable}
+            onOrderChanged={handleOrderChanged}
             onSelectTable={(table) => setSelectedTable(table)}
             currentFloor={currentFloor}
             onSelectFloor={(floor) => setCurrentFloor(floor)}
@@ -347,7 +345,8 @@ export default function App() {
       <TableDetailModal
         table={selectedTable}
         onClose={() => setSelectedTable(null)}
-        onUpdateTable={handleUpdateTable}
+        onOrderChanged={handleOrderChanged}
+        onOpenLinkModal={handleOpenEditTableModal}
       />
 
       {/* Edit Table / Draw New Zone Modal */}

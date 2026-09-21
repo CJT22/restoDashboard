@@ -28,6 +28,7 @@ const {
 	ensureBankPaymentMethodEnum,
 	ensureAnalyticsPerformanceIndexes,
 	ensureDashboardLinkColumns,
+	ensureTwoStateTableStatus,
 } = require('./utils/ensureSchema');
 const app = express();
 app.use(compression());
@@ -247,6 +248,7 @@ app.use((err, req, res, next) => {
 		await ensureBankPaymentMethodEnum();
 		await ensureAnalyticsPerformanceIndexes();
 		await ensureDashboardLinkColumns();
+		await ensureTwoStateTableStatus();
 		const BillingModel = require('./models/billingModel');
 		await BillingModel.ensureLoyverseRefundsTable();
 		console.log('[BillingModel] Refund tracker ready on boot');

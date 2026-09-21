@@ -1,19 +1,31 @@
-// 'reserved'/'not_available' mirror restoAdmin's own STATUS enum (see
-// restoAdmin/src/components/users/Tables.tsx) so a zone linked to an admin
-// table can represent any state admin can put it in without losing information.
-export type TableStatus = 'available' | 'occupied' | 'reserved' | 'not_available';
+// Mirrors restoAdmin's own restaurant_tables.STATUS (see
+// restoAdmin/src/components/users/Tables.tsx) — just Available/Occupied.
+// Table status is a pure reflection of order lifecycle (restoAdmin already
+// flips it automatically on order create/confirm/settle/cancel) for any
+// linked zone; the dashboard never sets it directly. See App.tsx's
+// applyRemoteStatus and src/services/adminSync.ts.
+export type TableStatus = 'available' | 'occupied';
 
-export type OrderItemCategory = 'starter' | 'main' | 'drink' | 'dessert';
-
-export interface OrderItem {
-  id: string;
-  name: string;
-  category: OrderItemCategory;
+// Real order data sourced from restoAdmin (orders/order_items), not
+// dashboard-local — see src/services/orderSync.ts. A zone has at most one
+// active order at a time, matching restoAdmin's own one-order-per-table rule.
+export interface AdminOrderLineItem {
+  id: number; // order_items.IDNo
+  menuId: number;
+  name: string; // MENU_NAME
   quantity: number;
-  status: 'pending' | 'served';
-  orderedAt: string; // e.g. "12m ago"
-  price: number;
-  notes?: string;
+  unitPrice: number;
+  lineTotal: number;
+}
+
+export interface AdminOrderSummary {
+  id: number; // orders.IDNo
+  orderNo: string;
+  orderType: string | null;
+  status: number; // restoAdmin's STATUS enum (3=Pending, 2=Confirmed, 1=Settled, -1=Cancelled)
+  subtotal: number;
+  grandTotal: number;
+  items: AdminOrderLineItem[];
 }
 
 export type TableType = 'table' | 'booth' | 'room' | 'bar';
@@ -26,13 +38,10 @@ export interface TableRoom {
   floor: 1 | 2;
   capacity: number;
   status: TableStatus;
-  guestName?: string;
-  guestPhone?: string;
-  partySize?: number;
-  seatedTime?: string;
   serverName?: string;
-  notes?: string;
-  orders: OrderItem[];
+  // This zone's real, admin-sourced active order (undefined = no open order).
+  // Only meaningful when adminTableId is set — see src/services/orderSync.ts.
+  activeOrder?: AdminOrderSummary;
   // When set, this zone is linked to that restoAdmin restaurant_tables.IDNo
   // (Blue Moon branch only) — its status stays in sync with restoAdmin's
   // Table Settings in both directions. See src/services/adminSync.ts.

@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
 import { TableRoom, TableStatus } from '../types';
 import { getStatusColors } from '../utils/statusColors';
+import { getOrderStatusLabel, getOrderStatusColorClass } from '../services/orderSync';
 import {
   Search,
-  Flame,
-  Check
+  Flame
 } from 'lucide-react';
 
 interface TableDirectoryViewProps {
@@ -21,7 +21,7 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
   onSelectFloor,
 }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | TableStatus | 'pending_only'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | TableStatus | 'needs_action'>('all');
 
   const filteredTables = tables.filter((table) => {
     // Floor filter
@@ -32,13 +32,12 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
       const q = searchQuery.toLowerCase();
       const matchName = table.name.toLowerCase().includes(q);
       const matchCode = table.code.toLowerCase().includes(q);
-      const matchGuest = table.guestName?.toLowerCase().includes(q);
-      if (!matchName && !matchCode && !matchGuest) return false;
+      if (!matchName && !matchCode) return false;
     }
 
-    // Status filter
-    if (statusFilter === 'pending_only') {
-      return table.status === 'occupied' && table.orders.some((o) => o.status === 'pending');
+    // Status filter — 'needs_action' means a Pending/Confirmed order (Confirm/Cancel/Settle available)
+    if (statusFilter === 'needs_action') {
+      return !!table.activeOrder && (table.activeOrder.status === 2 || table.activeOrder.status === 3);
     }
     if (statusFilter !== 'all' && table.status !== statusFilter) {
       return false;
@@ -94,7 +93,7 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search table code, name, or guest..."
+            placeholder="Search table code or name..."
             className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500"
           />
         </div>
@@ -110,13 +109,13 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
           </button>
 
           <button
-            onClick={() => setStatusFilter('pending_only')}
+            onClick={() => setStatusFilter('needs_action')}
             className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-              statusFilter === 'pending_only' ? 'bg-amber-500/30 text-amber-300 border border-amber-500/40' : 'text-amber-400/70 hover:text-amber-300 bg-white/5'
+              statusFilter === 'needs_action' ? 'bg-amber-500/30 text-amber-300 border border-amber-500/40' : 'text-amber-400/70 hover:text-amber-300 bg-white/5'
             }`}
           >
             <Flame className="w-3.5 h-3.5" />
-            Pending Orders
+            Needs Action
           </button>
 
           <button
@@ -136,32 +135,13 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
           >
             Available
           </button>
-
-          <button
-            onClick={() => setStatusFilter('reserved')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-              statusFilter === 'reserved' ? 'bg-blue-500/20 text-blue-300' : 'text-slate-400 hover:text-white bg-white/5'
-            }`}
-          >
-            Reserved
-          </button>
-
-          <button
-            onClick={() => setStatusFilter('not_available')}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors ${
-              statusFilter === 'not_available' ? 'bg-rose-500/20 text-rose-300' : 'text-slate-400 hover:text-white bg-white/5'
-            }`}
-          >
-            Not Available
-          </button>
         </div>
       </div>
 
       {/* Grid of Tables */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
         {filteredTables.map((table) => {
-          const pendingCount = table.orders.filter((o) => o.status === 'pending').length;
-          const servedCount = table.orders.filter((o) => o.status === 'served').length;
+          const activeOrder = table.activeOrder;
 
           return (
             <div
@@ -193,35 +173,14 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
                     {getStatusColors(table.status).label}
                   </span>
                 </div>
-
-                {/* Guest info */}
-                {table.guestName && (
-                  <div className="mt-3 p-2.5 rounded-xl bg-white/[0.03] border border-white/5 text-xs">
-                    <div className="text-slate-200 font-semibold truncate">
-                      Guest: {table.guestName}
-                    </div>
-                    <div className="text-[11px] text-slate-400 mt-0.5 flex items-center justify-between">
-                      <span>Party: {table.partySize || table.capacity} guests</span>
-                      {table.seatedTime && <span className="font-mono text-amber-300">{table.seatedTime}</span>}
-                    </div>
-                  </div>
-                )}
               </div>
 
               {/* Order summary */}
               <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
-                {table.orders.length > 0 ? (
-                  <div className="flex items-center gap-2">
-                    {pendingCount > 0 ? (
-                      <span className="flex items-center gap-1 text-amber-400 font-bold font-mono">
-                        <Flame className="w-3.5 h-3.5" /> {pendingCount} Pending
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-emerald-400 font-medium">
-                        <Check className="w-3.5 h-3.5" /> All Served ({servedCount})
-                      </span>
-                    )}
-                  </div>
+                {activeOrder ? (
+                  <span className={`px-2 py-0.5 rounded-full font-bold border ${getOrderStatusColorClass(activeOrder.status)}`}>
+                    #{activeOrder.orderNo} • {getOrderStatusLabel(activeOrder.status)}
+                  </span>
                 ) : (
                   <span className="text-slate-500 text-[11px]">No active order</span>
                 )}

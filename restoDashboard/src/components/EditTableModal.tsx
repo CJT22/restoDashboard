@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TableRoom, TableStatus } from '../types';
 import { getStatusColors } from '../utils/statusColors';
 import { X, Trash2, Check, Square, Link2, AlertCircle, ChevronDown } from 'lucide-react';
-import { AdminTable, getAdminTables, pushStatus, setLink as setAdminLink } from '../services/adminSync';
+import { AdminTable, getAdminTables, setLink as setAdminLink, statusFromAdmin } from '../services/adminSync';
 
 interface EditTableModalProps {
   isOpen: boolean;
@@ -90,22 +90,11 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
 
     if (isEditing && table) {
       const linkChanged = selectedAdminTableId !== (table.adminTableId ?? null);
-      if (linkChanged || selectedAdminTableId != null) {
+      if (linkChanged) {
         setIsSavingLink(true);
         setLinkError(null);
         try {
-          if (linkChanged) {
-            await setAdminLink(table.id, selectedAdminTableId);
-          }
-          if (selectedAdminTableId != null) {
-            // Establishing (or re-confirming) a link should make restoAdmin
-            // match this zone's actual current status right away — setting
-            // the link alone only points restoAdmin at this zone, it doesn't
-            // tell it what status to show. This also doubles as a manual
-            // "fix drift" action: saving an already-linked zone unchanged
-            // re-pushes its status.
-            await pushStatus(selectedAdminTableId, status);
-          }
+          await setAdminLink(table.id, selectedAdminTableId);
         } catch (err: any) {
           setLinkError(
             err.message || 'Failed to update the restoAdmin link. Other changes were not saved — try again.'
@@ -121,12 +110,18 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
           ? adminTables.find((t) => t.id === selectedAdminTableId)
           : undefined;
 
+      // Once linked, status is no longer settable from the dashboard — it's
+      // adopted from whatever restoAdmin currently shows for that table,
+      // rather than pushed from the (now hidden, for linked zones) local
+      // status picker. See docs/order-sync-integration.md.
+      const finalStatus = linkedAdminTable ? statusFromAdmin(linkedAdminTable.status) : status;
+
       onSave({
         ...table,
         name: name.trim(),
         code: code.trim() || name.slice(0, 5).toUpperCase(),
         capacity: Number(capacity) || 4,
-        status,
+        status: finalStatus,
         adminTableId: selectedAdminTableId ?? undefined,
         adminTableName: linkedAdminTable?.tableNumber ?? undefined,
       });
@@ -143,7 +138,6 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
         y: newRect.y,
         width: newRect.width,
         height: newRect.height,
-        orders: [],
       };
       onSave(newTable);
     }
@@ -232,27 +226,36 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
             </div>
           </div>
 
-          <div>
-            <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-              Initial Status
-            </label>
-            <div className="grid grid-cols-2 gap-2">
-              {(['available', 'occupied', 'reserved', 'not_available'] as TableStatus[]).map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => setStatus(s)}
-                  className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
-                    status === s
-                      ? getStatusColors(s).activeButtonClass
-                      : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
-                  }`}
-                >
-                  {getStatusColors(s).label}
-                </button>
-              ))}
+          {selectedAdminTableId == null ? (
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1.5">
+                {isEditing ? 'Status' : 'Initial Status'}
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {(['available', 'occupied'] as TableStatus[]).map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setStatus(s)}
+                    className={`py-2 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 transition-all ${
+                      status === s
+                        ? getStatusColors(s).activeButtonClass
+                        : 'bg-white/5 border-white/10 text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    {getStatusColors(s).label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ) : (
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1.5">Status</label>
+              <p className="text-xs text-slate-500">
+                Linked zones follow restoAdmin's status automatically — it can't be set manually here.
+              </p>
+            </div>
+          )}
 
           {isEditing && (
             <div>

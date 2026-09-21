@@ -12,8 +12,7 @@ import {
   Check,
   Users,
   Move,
-  PlusCircle,
-  Link2
+  PlusCircle
 } from 'lucide-react';
 import { TableRoom } from '../types';
 
@@ -30,9 +29,6 @@ interface SidebarProps {
   onToggleEditLayoutMode: () => void;
   tables: TableRoom[];
   onResetData: () => void;
-  onResyncAdmin: () => void;
-  isResyncingAdmin: boolean;
-  resyncResult: string | null;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -48,9 +44,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleEditLayoutMode,
   tables,
   onResetData,
-  onResyncAdmin,
-  isResyncingAdmin,
-  resyncResult,
 }) => {
   // Live clock matching the screenshot "1:44:22 PM", "TUESDAY, SEPTEMBER 15"
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -86,10 +79,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const occupiedOnFloor = floorTables.filter((t) => t.status === 'occupied').length;
   const availableOnFloor = floorTables.filter((t) => t.status === 'available').length;
   
-  // Total pending orders in the entire restaurant
-  const totalPendingOrders = tables.reduce((acc, t) => {
-    return acc + t.orders.filter((o) => o.status === 'pending').length;
-  }, 0);
+  // Tables with a Pending/Confirmed order needing action (Confirm/Cancel/Settle)
+  const activeOrdersCount = tables.filter(
+    (t) => t.activeOrder && (t.activeOrder.status === 2 || t.activeOrder.status === 3)
+  ).length;
 
   const handleManualRefresh = () => {
     if (isRefreshing) return;
@@ -198,15 +191,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <div className="flex items-center gap-3">
             <UtensilsCrossed className={`w-5 h-5 ${activeNav === 'orders' ? 'text-amber-400' : 'text-slate-400'}`} />
-            <span className="font-semibold">Live Order Queue</span>
+            <span className="font-semibold">Active Orders</span>
           </div>
-          {totalPendingOrders > 0 ? (
+          {activeOrdersCount > 0 ? (
             <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 font-mono font-bold animate-pulse">
-              {totalPendingOrders} pend.
+              {activeOrdersCount}
             </span>
           ) : (
             <span className="text-xs px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono">
-              All served
+              None
             </span>
           )}
         </button>
@@ -391,23 +384,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         </div>
-
-        {tables.some((t) => t.adminTableId != null) && (
-          <div className="pb-1">
-            <button
-              id="btn-resync-admin"
-              onClick={onResyncAdmin}
-              disabled={isResyncingAdmin}
-              className="w-full flex items-center justify-center gap-2 py-2 text-xs text-slate-500 hover:text-slate-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <Link2 className={`w-3 h-3 ${isResyncingAdmin ? 'animate-pulse' : ''}`} />
-              <span>{isResyncingAdmin ? 'Syncing to restoAdmin…' : 'Resync Linked Tables to Admin'}</span>
-            </button>
-            {resyncResult && (
-              <p className="text-[10px] text-center text-slate-400 -mt-1 mb-1">{resyncResult}</p>
-            )}
-          </div>
-        )}
 
         <button
           id="btn-reset-demo-data"

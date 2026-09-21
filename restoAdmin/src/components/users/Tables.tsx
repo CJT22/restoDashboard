@@ -98,10 +98,6 @@ export const Tables: React.FC = () => {
           return t('table.available');
         case 2:
           return t('table.occupied');
-        case 3:
-          return t('table.reserved');
-        case 0:
-          return t('table.not_available');
         default:
           return t('table.unknown');
       }
@@ -114,8 +110,6 @@ export const Tables: React.FC = () => {
     let style = 'bg-gray-100 text-gray-600';
     if (status === 1) style = 'bg-green-100 text-green-600';
     else if (status === 2) style = 'bg-orange-100 text-orange-600';
-    else if (status === 3) style = 'bg-blue-100 text-blue-600';
-    else if (status === 0) style = 'bg-red-100 text-red-600';
 
     return (
       <span className={cn('text-xs font-bold px-2 py-1 rounded-lg', style)}>
@@ -556,8 +550,6 @@ export const Tables: React.FC = () => {
                     { value: 'all', label: t('table.all') },
                     { value: '1', label: t('table.available') },
                     { value: '2', label: t('table.occupied') },
-                    { value: '3', label: t('table.reserved') },
-                    { value: '0', label: t('table.not_available') },
                   ]}
                   value={statusFilter}
                   onChange={(v) => setStatusFilter((v as string) || 'all')}
@@ -687,8 +679,6 @@ export const Tables: React.FC = () => {
                 options={[
                   { value: 1, label: t('table.available') },
                   { value: 2, label: t('table.occupied') },
-                  { value: 3, label: t('table.reserved') },
-                  { value: 0, label: t('table.not_available') },
                 ]}
                 value={formData.status}
                 onChange={(val) =>
