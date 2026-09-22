@@ -8,6 +8,15 @@ entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links t
 to be relative to this new root location. Going forward, each bullet is tagged with which app it
 touches (see [CLAUDE.md](CLAUDE.md) for the convention).
 
+## [1.6.2]
+
+### Added
+- **[restoAdmin]** "Create New Order" now lets staff adjust the room charge in 0.5-hour increments (1 qty = 1 hour), matching "Create Manual Order" — previously New Order only ever billed a fixed 1-hour room charge with no way to set how long a guest is actually staying. The room charge appears as its own row in the item table with −/+ controls, feeding into `SERVICE_CHARGE` the same way Manual Order already does (extra hours beyond the first are sent as additional service charge on top of the backend's auto-added base hour) ([Orders.tsx](restoAdmin/src/components/orders/Orders.tsx)).
+- **[restoAdmin]** The order detail/view modal (used to inspect a still-open Pending/Confirmed order and add items to it before settling) now shows the same adjustable room-charge row for orders assigned to a room table, so staff can extend or shorten a guest's booked hours mid-stay without needing to cancel and recreate the order. Each +/- click saves immediately via the existing order-update endpoint ([Orders.tsx](restoAdmin/src/components/orders/Orders.tsx), [orderService.ts](restoAdmin/src/services/orderService.ts)).
+
+### Changed
+- **[restoAdmin]** Room charge now has a hard 1-hour minimum in both "Create Manual Order" and "Create New Order" — per house policy, every room booking bills at least one hour, so the qty stepper can no longer be decremented to 0 (previously Manual Order allowed waiving the room charge entirely) ([Orders.tsx](restoAdmin/src/components/orders/Orders.tsx)).
+
 ## [1.6.1]
 
 ### Fixed

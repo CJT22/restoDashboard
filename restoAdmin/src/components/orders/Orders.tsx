@@ -45,6 +45,7 @@ import {
     getOrderById,
     createOrder,
     createManualSettledOrder,
+    updateOrder,
     updateOrderStatus,
     updateOrderEncodedDt,
     softDeleteOrder,
@@ -259,6 +260,7 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
     const [newOrderItems, setNewOrderItems] = useState<NewOrderItem[]>([]);
     const [newOrderSelectedMenuId, setNewOrderSelectedMenuId] = useState<string>('');
     const [newOrderQty, setNewOrderQty] = useState<number>(1);
+    const [newOrderRoomChargeQty, setNewOrderRoomChargeQty] = useState<number>(1);
 
     // ----- Manual order modal (settled immediately) -----
     const [manualOrderOpen, setManualOrderOpen] = useState(false);
@@ -332,6 +334,8 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
     const [detailSelectedMenuId, setDetailSelectedMenuId] = useState<string>('');
     const [detailAddQty, setDetailAddQty] = useState<number>(1);
     const [detailAdding, setDetailAdding] = useState(false);
+    const [detailRoomChargeQty, setDetailRoomChargeQty] = useState<number>(1);
+    const [detailRoomChargeSaving, setDetailRoomChargeSaving] = useState(false);
 
   const { canCreate, canUpdate, canDelete } = useCrudPermissions();
 
@@ -619,16 +623,10 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
     const closeDetail = () => { setDetailOrder(null); setDetailItems([]); };
 
     // Load ROOM_CHARGE for the selected table so we can render "Room charge"
-    // row (derived from SERVICE_CHARGE) with correct qty/unit/line_total.
+    // row (derived from SERVICE_CHARGE for settled/cancelled orders, and
+    // directly editable for pending/confirmed orders) with correct qty/unit/line_total.
     useEffect(() => {
         if (!detailOrder) {
-            setDetailRoomChargeUnit(0);
-            return;
-        }
-
-        const status = Number(detailOrder.STATUS);
-        const isSettledLike = status === ORDER_STATUS.SETTLED || status === ORDER_STATUS.CANCELLED;
-        if (!isSettledLike) {
             setDetailRoomChargeUnit(0);
             return;
         }
@@ -673,6 +671,50 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
     const detailRoomChargeUnitForRow = detailRoomChargeUnit > 0 ? detailRoomChargeUnit : detailServiceCharge;
     const detailRoomChargeQtyForRow =
         detailRoomChargeUnitForRow > 0 ? Math.max(0.5, Math.round((detailServiceCharge / detailRoomChargeUnitForRow) * 2) / 2) : 0.5;
+    const detailIsSettledLike = detailOrder
+        ? Number(detailOrder.STATUS) === ORDER_STATUS.SETTLED || Number(detailOrder.STATUS) === ORDER_STATUS.CANCELLED
+        : false;
+    const detailNonRoomServiceCharge = detailOrder && isEesomeBranchId(detailOrder.BRANCH_ID) && isDineInOrderType(detailOrder.ORDER_TYPE)
+        ? eesomeTenPercentServiceCharge(Number(detailOrder.SUBTOTAL || 0))
+        : 0;
+
+    // Editable room-charge qty (hours) for a PENDING/CONFIRMED order with a room table —
+    // re-derived from the order's current SERVICE_CHARGE whenever it changes (e.g. after items are added).
+    useEffect(() => {
+        if (!detailOrder || detailIsSettledLike || detailRoomChargeUnit <= 0) return;
+        const roomPortion = Math.max(0, detailServiceCharge - detailNonRoomServiceCharge);
+        const qty = Math.max(1, Math.round((roomPortion / detailRoomChargeUnit) * 2) / 2);
+        setDetailRoomChargeQty(Number.isFinite(qty) ? qty : 1);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [detailOrder?.IDNo, detailRoomChargeUnit, detailServiceCharge, detailIsSettledLike]);
+
+    const saveDetailRoomChargeQty = async (nextQty: number) => {
+        if (!detailOrder || detailRoomChargeUnit <= 0 || detailRoomChargeSaving) return;
+        const clamped = roundToHalf(Math.max(1, nextQty));
+        const previousQty = detailRoomChargeQty;
+        setDetailRoomChargeQty(clamped);
+        setDetailRoomChargeSaving(true);
+        try {
+            const explicitServiceCharge = (clamped - 1) * detailRoomChargeUnit + detailNonRoomServiceCharge;
+            await updateOrder(String(detailOrder.IDNo), {
+                TABLE_ID: detailOrder.TABLE_ID,
+                ORDER_TYPE: detailOrder.ORDER_TYPE,
+                STATUS: detailOrder.STATUS,
+                SUBTOTAL: Number(detailOrder.SUBTOTAL || 0),
+                TAX_AMOUNT: Number(detailOrder.TAX_AMOUNT || 0),
+                SERVICE_CHARGE: explicitServiceCharge,
+                DISCOUNT_AMOUNT: Number(detailOrder.DISCOUNT_AMOUNT || 0),
+            });
+            const updatedOrder = await getOrderById(String(detailOrder.IDNo));
+            if (updatedOrder) setDetailOrder(updatedOrder);
+            await loadOrders();
+        } catch (e) {
+            setDetailRoomChargeQty(previousQty);
+            toast.error(e instanceof Error ? e.message : t('orders.swal.create_failed'));
+        } finally {
+            setDetailRoomChargeSaving(false);
+        }
+    };
 
     // ==================== Remove order item ====================
     const confirmRemoveItem = (item: OrderItemRecord) => {
@@ -864,6 +906,7 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
         setNewOrderItems([]);
         setNewOrderSelectedMenuId('');
         setNewOrderQty(1);
+        setNewOrderRoomChargeQty(1);
         setNewOrderFloor('');
         setNewOrderOpen(true);
     };
@@ -1088,6 +1131,11 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
 
     useEffect(() => {
         if (!newOrderOpen) return;
+        setNewOrderRoomChargeQty(1);
+    }, [newOrderTableId, newOrderOpen]);
+
+    useEffect(() => {
+        if (!newOrderOpen) return;
         let cancelled = false;
         setNewOrderLoadingRefs(true);
         getMenus(branchId)
@@ -1107,16 +1155,33 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
         return branchTables.filter((t) => t.floor === newOrderFloor);
     }, [branchTables, branchId, newOrderFloor]);
 
+    const NEW_ORDER_ROOM_CHARGE_ITEM_ID = '__ROOM_CHARGE__';
     const newOrderSubtotal = newOrderItems.reduce((sum, it) => sum + it.qty * it.unitPrice, 0);
     const newOrderTableRoomCharge =
         !!newOrderTableId && Object.prototype.hasOwnProperty.call(branchTablesRoomChargeById, newOrderTableId)
             ? Number(branchTablesRoomChargeById[newOrderTableId])
             : 0;
+    const hasNewOrderRoomChargeRow = !!newOrderTableId && Number.isFinite(newOrderTableRoomCharge) && newOrderTableRoomCharge > 0;
+    const newOrderDisplayItems: NewOrderItem[] = hasNewOrderRoomChargeRow
+        ? [
+            {
+                menuId: NEW_ORDER_ROOM_CHARGE_ITEM_ID,
+                name: t('table.room_charge'),
+                unitPrice: newOrderTableRoomCharge,
+                qty: newOrderRoomChargeQty,
+            },
+            ...newOrderItems,
+        ]
+        : newOrderItems;
     const newOrderEesomeServiceCharge = isEesomeBranchId(branchId) && isDineInOrderType(newOrderType)
         ? eesomeTenPercentServiceCharge(newOrderSubtotal)
         : 0;
     const newOrderEstimatedGrandTotal = Number(
-        (newOrderSubtotal + newOrderEesomeServiceCharge + (Number.isFinite(newOrderTableRoomCharge) ? newOrderTableRoomCharge : 0)).toFixed(2)
+        (
+            newOrderSubtotal +
+            newOrderEesomeServiceCharge +
+            (hasNewOrderRoomChargeRow ? newOrderRoomChargeQty * newOrderTableRoomCharge : 0)
+        ).toFixed(2)
     );
 
     const addNewOrderItem = () => {
@@ -1161,7 +1226,9 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
             });
             return;
         }
-        if (newOrderItems.length === 0) {
+        // Allow creating the order when room charge exists (room charge is injected separately)
+        // so the user can proceed even if the item list is empty.
+        if (newOrderItems.length === 0 && !hasNewOrderRoomChargeRow) {
             setSwal({
                 type: 'warning',
                 title: t('orders.swal.add_items_title'),
@@ -1173,6 +1240,11 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
         setNewOrderSubmitting(true);
         try {
             const items = newOrderItems.map((it) => ({ menu_id: Number(it.menuId), qty: Number(it.qty), unit_price: Number(it.unitPrice), line_total: Number(it.qty) * Number(it.unitPrice), status: ORDER_STATUS.PENDING }));
+            // Backend always adds the table's ROOM_CHARGE once (1 hour). To make qty > 1 work,
+            // we add extra service charge: (qty - 1) * roomCharge, so the final total becomes
+            // roomCharge + extra = qty * roomCharge. Same mechanism as the manual order modal.
+            const roomChargeAdditionalService =
+                hasNewOrderRoomChargeRow ? (newOrderRoomChargeQty - 1) * newOrderTableRoomCharge : 0;
             await createOrder({
                 ORDER_NO: newOrderNo.trim(), order_no: newOrderNo.trim(),
                 BRANCH_ID: branchId, branch_id: branchId,
@@ -1180,9 +1252,9 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
                 ORDER_TYPE: newOrderType, order_type: newOrderType,
                 STATUS: ORDER_STATUS.PENDING, SUBTOTAL: newOrderSubtotal,
                 TAX_AMOUNT: 0,
-                SERVICE_CHARGE: newOrderEesomeServiceCharge,
+                SERVICE_CHARGE: newOrderEesomeServiceCharge + roomChargeAdditionalService,
                 DISCOUNT_AMOUNT: 0,
-                GRAND_TOTAL: Number((newOrderSubtotal + newOrderEesomeServiceCharge).toFixed(2)),
+                GRAND_TOTAL: newOrderEstimatedGrandTotal,
                 ORDER_ITEMS: items, items,
             });
             setNewOrderOpen(false);
@@ -2072,8 +2144,8 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
             return;
         }
         // Allow creating the order when room charge exists (room charge is injected separately)
-        // so the user can proceed even if the manual items list is empty — unless qty is 0 (waived).
-        if (manualOrderItems.length === 0 && (!hasManualRoomChargeRow || manualRoomChargeQty <= 0)) {
+        // so the user can proceed even if the manual items list is empty.
+        if (manualOrderItems.length === 0 && !hasManualRoomChargeRow) {
             setSwal({
                 type: 'warning',
                 title: t('orders.swal.add_items_title'),
@@ -2911,7 +2983,7 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
                         </div>
 
                         <div className="mt-4 border border-gray-100 rounded-xl overflow-hidden bg-white">
-                            {newOrderItems.length === 0 ? (
+                            {newOrderDisplayItems.length === 0 ? (
                                 <div className="p-4 text-sm text-brand-muted text-center">
                                     {t('orders.no_items_added')}
                                 </div>
@@ -2922,7 +2994,7 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
                                             <th className="px-4 py-2 text-left font-bold text-brand-muted text-xs">
                                                 {t('orders.item')}
                                             </th>
-                                            <th className="px-4 py-2 text-right font-bold text-brand-muted text-xs">
+                                            <th className="px-3 py-2 text-center font-bold text-brand-muted text-xs w-[120px]">
                                                 {t('orders.qty')}
                                             </th>
                                             <th className="px-4 py-2 text-right font-bold text-brand-muted text-xs">
@@ -2935,28 +3007,64 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
                                         </tr>
                                     </thead>
                                     <tbody className="divide-y divide-gray-50">
-                                        {newOrderItems.map((it) => (
-                                            <tr key={it.menuId}>
-                                                <td className="px-4 py-2 font-medium">{it.name}</td>
-                                                <td className="px-4 py-2 text-right">{it.qty}</td>
-                                                <td className="px-4 py-2 text-right">
-                                                    ₱{Number(it.unitPrice).toLocaleString()}
-                                                </td>
-                                                <td className="px-4 py-2 text-right font-bold">
-                                                    ₱{Number(it.qty * it.unitPrice).toLocaleString()}
-                                                </td>
-                                                <td className="px-4 py-2 text-right">
-                                                    <button
-                                                        onClick={() => removeNewOrderItem(it.menuId)}
-                                                        className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
-                                                    >
-                                                        <Trash2 size={16} />
-                                                    </button>
-                                                </td>
-                                            </tr>
-                                        ))}
+                                        {newOrderDisplayItems.map((it) => {
+                                            const isRoomChargeRow = it.menuId === NEW_ORDER_ROOM_CHARGE_ITEM_ID;
+                                            return (
+                                                <tr key={it.menuId}>
+                                                    <td className="px-4 py-2 font-medium">{it.name}</td>
+                                                    <td className="px-3 py-2 text-center">
+                                                        {isRoomChargeRow ? (
+                                                            <div className="flex items-center justify-center gap-3">
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        setNewOrderRoomChargeQty((prev) => roundToHalf(Math.max(1, prev - 0.5)))
+                                                                    }
+                                                                    disabled={it.qty <= 1}
+                                                                    className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-brand-muted font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                                                    title="Decrease"
+                                                                >
+                                                                    −
+                                                                </button>
+                                                                <span className="inline-block w-8 text-center font-bold">
+                                                                    {it.qty}
+                                                                </span>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() =>
+                                                                        setNewOrderRoomChargeQty((prev) => roundToHalf(prev + 0.5))
+                                                                    }
+                                                                    className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-brand-muted font-bold cursor-pointer"
+                                                                    title="Increase"
+                                                                >
+                                                                    +
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <span className="inline-block w-full text-center font-bold">{it.qty}</span>
+                                                        )}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-right">
+                                                        ₱{Number(it.unitPrice).toLocaleString()}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-right font-bold">
+                                                        ₱{Number(it.qty * it.unitPrice).toLocaleString()}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-right">
+                                                        {isRoomChargeRow ? null : (
+                                                            <button
+                                                                onClick={() => removeNewOrderItem(it.menuId)}
+                                                                className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                                                            >
+                                                                <Trash2 size={16} />
+                                                            </button>
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            );
+                                        })}
                                     </tbody>
-                                    {newOrderItems.length > 0 && (
+                                    {newOrderDisplayItems.length > 0 && (
                                         <tfoot className="bg-gray-50">
                                             <tr>
                                                 <td
@@ -2980,20 +3088,6 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
                                                     </td>
                                                     <td className="px-4 py-2 text-right font-bold tabular-nums">
                                                         ₱{formatPesoUpToTwoDecimals(newOrderEesomeServiceCharge)}
-                                                    </td>
-                                                    <td></td>
-                                                </tr>
-                                            ) : null}
-                                            {Number.isFinite(newOrderTableRoomCharge) && newOrderTableRoomCharge > 0 ? (
-                                                <tr>
-                                                    <td
-                                                        className="px-4 py-2 text-right text-xs font-semibold uppercase tracking-wide text-brand-muted"
-                                                        colSpan={3}
-                                                    >
-                                                        {t('table.room_charge')}
-                                                    </td>
-                                                    <td className="px-4 py-2 text-right font-bold tabular-nums">
-                                                        ₱{formatPesoUpToTwoDecimals(newOrderTableRoomCharge)}
                                                     </td>
                                                     <td></td>
                                                 </tr>
@@ -3866,10 +3960,10 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
                                                                     <button
                                                                         type="button"
                                                                             onClick={() => {
-                                                                                setManualRoomChargeQty((prev) => roundToHalf(Math.max(0, prev - 0.5)));
+                                                                                setManualRoomChargeQty((prev) => roundToHalf(Math.max(1, prev - 0.5)));
                                                                                 setManualRowFlash({ menuId: MANUAL_ROOM_CHARGE_ITEM_ID, nonce: Date.now() });
                                                                             }}
-                                                                            disabled={it.qty <= 0}
+                                                                            disabled={it.qty <= 1}
                                                                         className="w-8 h-8 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-brand-muted font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                                                                         title="Decrease"
                                                                     >
@@ -4021,7 +4115,8 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
                             {detailLoading ? (
                                 <div className="flex items-center justify-center py-8"><Loader2 size={24} className="animate-spin text-brand-primary" /></div>
                             ) : detailItems.length === 0 &&
-                                !((detailOrder?.STATUS === ORDER_STATUS.SETTLED || detailOrder?.STATUS === ORDER_STATUS.CANCELLED) && Number(detailOrder?.SERVICE_CHARGE) > 0) ? (
+                                !((detailOrder?.STATUS === ORDER_STATUS.SETTLED || detailOrder?.STATUS === ORDER_STATUS.CANCELLED) && Number(detailOrder?.SERVICE_CHARGE) > 0) &&
+                                !(detailOrder && !detailIsSettledLike && detailRoomChargeUnit > 0) ? (
                                 <p className="text-sm text-brand-muted py-4">{t('orders.no_items_added')}</p>
                             ) : (
                                 <div className="border border-gray-100 rounded-2xl overflow-hidden bg-white">
@@ -4058,6 +4153,49 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
                                                         )}
                                                     </tr>
                                                 )}
+                                            {!detailIsSettledLike && detailRoomChargeUnit > 0 && (
+                                                <tr key="__ROOM_CHARGE_EDIT__">
+                                                    <td className="px-4 py-2 font-medium">
+                                                        {t('table.room_charge') ?? 'Room charge'}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-right">
+                                                        <div className="flex items-center justify-end gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => saveDetailRoomChargeQty(detailRoomChargeQty - 0.5)}
+                                                                disabled={detailRoomChargeSaving || detailRoomChargeQty <= 1}
+                                                                className="w-7 h-7 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-brand-muted font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                                                title="Decrease"
+                                                            >
+                                                                −
+                                                            </button>
+                                                            <span className="inline-block w-8 text-center font-bold">
+                                                                {detailRoomChargeQty}
+                                                            </span>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => saveDetailRoomChargeQty(detailRoomChargeQty + 0.5)}
+                                                                disabled={detailRoomChargeSaving}
+                                                                className="w-7 h-7 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 text-brand-muted font-bold cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                                                                title="Increase"
+                                                            >
+                                                                +
+                                                            </button>
+                                                        </div>
+                                                    </td>
+                                                    <td className="px-4 py-2 text-right tabular-nums">
+                                                        ₱{formatPesoUpToTwoDecimals(detailRoomChargeUnit)}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-right font-bold tabular-nums">
+                                                        ₱{formatPesoUpToTwoDecimals(detailRoomChargeQty * detailRoomChargeUnit)}
+                                                    </td>
+                                                    <td className="px-4 py-2 text-right">
+                                                        {detailRoomChargeSaving && (
+                                                            <Loader2 size={14} className="animate-spin text-brand-muted inline-block" />
+                                                        )}
+                                                    </td>
+                                                </tr>
+                                            )}
                                             {detailItems.map((item) => {
                                                 const isEditing = editingItemId === item.IDNo;
                                                 return (
@@ -4147,7 +4285,7 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
                                             ₱{formatPesoUpToTwoDecimals(Number(detailOrder.SUBTOTAL || 0))}
                                         </span>
                                     </div>
-                                    {detailServiceCharge > 0 && (
+                                    {detailServiceCharge > 0 && detailRoomChargeUnit <= 0 && (
                                         <div className="flex items-center justify-between text-sm">
                                             <span className="text-brand-muted">
                                                 {detailIsRoomCharge ? (t('table.room_charge') ?? 'Room charge') : t('orders.service_charge')}

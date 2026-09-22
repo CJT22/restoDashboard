@@ -299,6 +299,29 @@ export async function createManualSettledOrder(payload: CreateManualSettledOrder
     return json.data!;
 }
 
+export type UpdateOrderPayload = {
+    TABLE_ID?: number | null;
+    ORDER_TYPE?: string | null;
+    STATUS?: number;
+    SUBTOTAL?: number;
+    TAX_AMOUNT?: number;
+    SERVICE_CHARGE?: number;
+    DISCOUNT_AMOUNT?: number;
+};
+
+export async function updateOrder(orderId: string, payload: UpdateOrderPayload): Promise<void> {
+    const response = await fetch(buildUrl(`/orders/${orderId}`), {
+        method: 'PUT',
+        credentials: 'include',
+        headers: {
+            'Content-Type': 'application/json',
+            ...authHeaders(),
+        },
+        body: JSON.stringify(payload),
+    });
+    await handleResponse<null>(response);
+}
+
 export async function deleteOrderItem(orderItemId: string): Promise<void> {
     const response = await fetch(buildUrl(`/order_items/${orderItemId}`), {
         method: 'DELETE',
