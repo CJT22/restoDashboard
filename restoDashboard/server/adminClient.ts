@@ -272,6 +272,32 @@ export async function getActiveOrderForTable(tableId: number): Promise<AdminOrde
   return getOrderById(Number(match.IDNo));
 }
 
+// Batched equivalent of calling getActiveOrderForTable once per table: fetches
+// the branch's order list ONCE, filters to Pending/Confirmed rows, then fetches
+// items only for those (in parallel) — used for the once-on-load reconciliation
+// in restoDashboard's App.tsx so "Active Orders" and each table's order detail
+// are already populated on a fresh load, not just their Available/Occupied
+// status. Each row from /orders/data already has everything mapAdminOrder
+// needs except items, so this skips the redundant GET /orders/:id per order.
+export async function getActiveOrdersForBranch(): Promise<AdminOrder[]> {
+  const res = await authedFetch(`/orders/data?branch_id=${ADMIN_BRANCH_ID}`);
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok || json?.success === false) {
+    throw new Error(json?.error || json?.message || `Failed to fetch restoAdmin orders (${res.status})`);
+  }
+  const rows = Array.isArray(json.data) ? json.data : [];
+  const activeRows = rows.filter((row: any) => ACTIVE_ORDER_STATUSES.includes(Number(row.STATUS)));
+
+  return Promise.all(
+    activeRows.map(async (row: any) => {
+      const itemsRes = await authedFetch(`/orders/${row.IDNo}/items`);
+      const itemsJson: any = await itemsRes.json().catch(() => ({}));
+      const itemRows = Array.isArray(itemsJson.data) ? itemsJson.data : [];
+      return mapAdminOrder(row, itemRows.map(mapAdminOrderItem));
+    })
+  );
+}
+
 export async function getOrderById(orderId: number): Promise<AdminOrder | null> {
   const [orderRes, itemsRes] = await Promise.all([
     authedFetch(`/orders/${orderId}`),

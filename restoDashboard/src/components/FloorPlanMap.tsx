@@ -556,7 +556,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
                     {activeOrder && (
                       <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px]">
-                        <div className="flex justify-between text-slate-400 mb-0.5">
+                        <div className="flex items-center justify-between text-slate-400 mb-0.5">
                           <span>Order #{activeOrder.orderNo}</span>
                           <span className={`px-1.5 py-0.5 rounded-full border ${getOrderStatusColorClass(activeOrder.status)}`}>
                             {getOrderStatusLabel(activeOrder.status)}

@@ -46,6 +46,21 @@ export async function getAdminTables(): Promise<AdminTable[]> {
   return Array.isArray(json.data) ? json.data : [];
 }
 
+// Pull-based fallback for a single table's CURRENT status, for callers that
+// just triggered an order mutation (create/confirm/cancel/settle) and want
+// to be SURE the resulting status lands locally. restoAdmin flips the table's
+// status inside that same mutation and emits table_updated at essentially the
+// same moment, and App.tsx's live subscription normally applies that already
+// — but it depends on this tab's EventSource already being connected at that
+// exact instant, which isn't guaranteed right after a fresh page load (or
+// during a brief reconnect window). Reuses the existing bulk fetch rather
+// than adding a new backend endpoint just for one row.
+export async function getAdminTableStatus(adminTableId: number): Promise<TableStatus | null> {
+  const tables = await getAdminTables();
+  const match = tables.find((t) => t.id === adminTableId);
+  return match ? statusFromAdmin(match.status) : null;
+}
+
 export async function setLink(zoneId: string, adminTableId: number | null): Promise<void> {
   const res = await fetch('/api/admin/link', {
     method: 'POST',

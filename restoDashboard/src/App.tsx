@@ -8,8 +8,8 @@ import { TableDirectoryView } from './components/TableDirectoryView';
 import { OrderQueueView } from './components/OrderQueueView';
 import { EditTableModal } from './components/EditTableModal';
 import { ConfirmModal } from './components/ConfirmModal';
-import { getAdminTables, setLink, statusFromAdmin, subscribeToAdminUpdates } from './services/adminSync';
-import { subscribeToOrderUpdates } from './services/orderSync';
+import { getAdminTables, getAdminTableStatus, setLink, statusFromAdmin, subscribeToAdminUpdates } from './services/adminSync';
+import { subscribeToOrderUpdates, getActiveOrders } from './services/orderSync';
 
 // Bumped again from _v2: TableStatus narrowed from 4 states to 2
 // (available/occupied only — see types.ts), and AdminOrderLineItem dropped
@@ -115,6 +115,22 @@ export default function App() {
   const handleOrderChanged = (tableId: string, order: AdminOrderSummary | undefined) => {
     setTables((prev) => prev.map((t) => (t.id === tableId ? { ...t, activeOrder: order } : t)));
     setSelectedTable((prev) => (prev && prev.id === tableId ? { ...prev, activeOrder: order } : prev));
+
+    // Belt-and-suspenders alongside the SSE table_updated channel below: the
+    // action that produced this order change (create/confirm/cancel/settle)
+    // also just flipped this table's status in restoAdmin, but that push may
+    // have been missed by this tab (see getAdminTableStatus). Pull the
+    // authoritative status directly so THIS browser's own actions never
+    // depend on that race — applyRemoteStatus already no-ops if the SSE
+    // event got there first.
+    const adminTableId = tables.find((t) => t.id === tableId)?.adminTableId;
+    if (adminTableId != null) {
+      getAdminTableStatus(adminTableId)
+        .then((status) => {
+          if (status) applyRemoteStatus(adminTableId, status);
+        })
+        .catch((err) => console.warn('Post-action status refresh failed:', err));
+    }
   };
 
   // Reconcile linked tables with restoAdmin once on load (covers drift while
@@ -137,6 +153,21 @@ export default function App() {
         );
       })
       .catch((err) => console.warn('Initial restoAdmin reconciliation failed:', err));
+
+    // Same reconciliation, but for order data: without this, a table with a
+    // pre-existing Pending/Confirmed order would correctly show Occupied
+    // (from the status reconciliation above) but have no activeOrder — so
+    // it wouldn't appear on "Active Orders" or show its Confirm/Cancel/Settle
+    // actions until someone happened to open its detail modal. Batched into
+    // one call (getActiveOrders) rather than one per linked table.
+    getActiveOrders()
+      .then((entries) => {
+        const orderByAdminTableId = new Map(entries.map((e) => [e.adminTableId, e.order]));
+        setTables((prev) =>
+          prev.map((t) => (t.adminTableId != null ? { ...t, activeOrder: orderByAdminTableId.get(t.adminTableId) } : t))
+        );
+      })
+      .catch((err) => console.warn('Initial active-orders reconciliation failed:', err));
 
     const unsubscribeTables = subscribeToAdminUpdates(({ adminTableId, status }) => {
       applyRemoteStatus(adminTableId, status);

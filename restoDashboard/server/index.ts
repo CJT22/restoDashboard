@@ -14,6 +14,7 @@ import {
   setDashboardLink,
   getMenuForBranch,
   getActiveOrderForTable,
+  getActiveOrdersForBranch,
   createOrder,
   addItemsToOrder,
   updateOrderStatus,
@@ -90,6 +91,20 @@ app.get('/api/admin/orders/by-table/:adminTableId', async (req, res) => {
     res.json({ success: true, data: order });
   } catch (err: any) {
     console.error('[GET /api/admin/orders/by-table/:adminTableId]', err.message || err);
+    res.status(502).json({ success: false, error: err.message || 'Failed to reach restoAdmin' });
+  }
+});
+
+// GET every Pending/Confirmed order for the branch in one batch, keyed by
+// table — used for the once-on-load reconciliation so a fresh load/reset
+// already has full order details (not just table status) for every table
+// that has one, without a per-table round trip.
+app.get('/api/admin/orders/active', async (_req, res) => {
+  try {
+    const orders = await getActiveOrdersForBranch();
+    res.json({ success: true, data: orders });
+  } catch (err: any) {
+    console.error('[GET /api/admin/orders/active]', err.message || err);
     res.status(502).json({ success: false, error: err.message || 'Failed to reach restoAdmin' });
   }
 });

@@ -26,7 +26,8 @@ import {
   Link2,
   AlertTriangle,
   Wallet,
-  Ban
+  Ban,
+  ChevronDown
 } from 'lucide-react';
 
 interface TableDetailModalProps {
@@ -415,7 +416,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                     <select
                       value={selectedMenuId}
                       onChange={(e) => setSelectedMenuId(e.target.value)}
-                      className="w-full appearance-none h-10 px-3 rounded-xl bg-white/5 border border-white/10 text-sm text-white focus:outline-none focus:border-indigo-500"
+                      className="w-full appearance-none h-10 px-3 pr-9 rounded-xl bg-white/5 border border-white/10 text-sm text-white focus:outline-none focus:border-indigo-500"
                     >
                       <option value="" className="bg-[#1a1c30]">
                         Select an item to add…
@@ -426,6 +427,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                         </option>
                       ))}
                     </select>
+                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                   </div>
                   <input
                     type="number"

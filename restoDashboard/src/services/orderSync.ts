@@ -128,6 +128,25 @@ export async function getActiveOrderForTable(adminTableId: number): Promise<Admi
   return json.data ? mapAdminOrder(json.data) : null;
 }
 
+export interface ActiveOrderEntry {
+  adminTableId: number;
+  order: AdminOrderSummary;
+}
+
+// Batched equivalent of calling getActiveOrderForTable once per linked
+// table — used for the once-on-load reconciliation in App.tsx so every
+// table's order details (not just its Available/Occupied status) are
+// already populated on a fresh load or after "Reset Sample Orders & Tables",
+// without a round trip per table.
+export async function getActiveOrders(): Promise<ActiveOrderEntry[]> {
+  const res = await fetch('/api/admin/orders/active');
+  const json = await parseJsonOrThrow(res, 'Failed to load active orders from restoAdmin');
+  const rows = Array.isArray(json.data) ? json.data : [];
+  return rows
+    .filter((row: any) => row.tableId != null)
+    .map((row: any) => ({ adminTableId: Number(row.tableId), order: mapAdminOrder(row) }));
+}
+
 export async function createOrder(
   adminTableId: number,
   orderType: string,
