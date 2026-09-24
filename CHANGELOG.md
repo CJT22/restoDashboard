@@ -8,6 +8,17 @@ entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links t
 to be relative to this new root location. Going forward, each bullet is tagged with which app it
 touches (see [CLAUDE.md](CLAUDE.md) for the convention).
 
+## [1.7.1]
+
+### Added
+- **[restoDashboard]** **Fullscreen toggle** in the floor plan's top-right controls, so a tablet (or any screen) can dedicate its whole display to the dashboard, sidebar included. The icon shows outward arrows to enter and inward arrows to exit, and stays in sync when fullscreen is left via Esc or a system gesture. It uses the standard Fullscreen API with the webkit-prefixed fallback for older iPadOS Safari. iPhone Safari has no element fullscreen, so the button is hidden there instead of showing a control that does nothing ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+
+### Changed
+- **[restoDashboard]** **Reset-zoom button now uses a counter-clockwise "reset" arrow** instead of the diagonal-arrows icon, which people read as "fullscreen" (that icon now belongs to the real fullscreen toggle). It's also disabled while the map is already at 100%. To make that work, each zoom step is now rounded to 2 decimals: repeated ±0.15 steps used to leave small floating-point errors (zooming in then back out gave `0.9999999999999999`), so the map could look like 100% while the button stayed enabled ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **[restoDashboard]** **Zoom in / Zoom out now grey out at the 160% maximum and 70% minimum**, matching how the reset button greys out at 100%, so it's clear when another click won't do anything ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **[restoDashboard]** **Zooming now changes the floor plan's real size instead of applying a CSS `scale()` transform, so the scrollbars update immediately.** Before, the browser only recalculated the scroll area after the 300 ms zoom animation had finished, and sometimes later. Scrollbars showed up late when zooming in and stayed after zooming back to 100%. The old setup also centred the canvas with flexbox, which sent half of the zoomed overflow past the left/top edges where it can't be scrolled to, so the left side of the plan (OUTSIDE, ON AIR 1/2) couldn't be reached while zoomed in. The canvas is now centred with `margin: auto`, so every edge can be scrolled to, and each zoom step keeps the view centred on the same spot. Trade-offs: zoom is instant instead of animated, and zone name labels stay the same size on screen instead of growing with the plan ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **[restoDashboard]** **The floor name header is plain text now, not a pill badge.** The bordered, shadowed container with a pulsing dot looked like a button, so it was replaced with a heading (floor name plus a muted "N zones" count) sitting directly on the map background ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+
 ## [1.7.0]
 
 ### Changed

@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { TableRoom } from '../types';
 import { getStatusColors } from '../utils/statusColors';
 import { getOrderStatusLabel, getOrderStatusColorClass } from '../services/orderSync';
@@ -6,6 +6,8 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Minimize2,
+  RotateCcw,
   Move,
   Plus,
   Edit2,
@@ -26,6 +28,14 @@ const FLOOR_PLAN_ASPECT_W = 16;
 const FLOOR_PLAN_ASPECT_H = 9;
 
 const MIN_ZONE_SIZE_PCT = 3;
+
+const MIN_ZOOM = 0.7;
+const MAX_ZOOM = 1.6;
+const ZOOM_STEP = 0.15;
+
+// Shared by zoom in / out / reset; greys out when the action can't go further.
+const ZOOM_BUTTON_CLASSES =
+  'w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all disabled:opacity-40 disabled:hover:bg-white/5 disabled:hover:text-slate-300 disabled:cursor-default';
 
 type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
 
@@ -59,6 +69,37 @@ interface ZoneRect {
   width: number;
   height: number;
 }
+
+// Fullscreen API with the webkit-prefixed fallback older iPadOS Safari needs.
+// iPhone Safari doesn't support element fullscreen at all, so there the
+// toggle button is hidden rather than shown as a dead control.
+type WebkitDocument = Document & {
+  webkitFullscreenEnabled?: boolean;
+  webkitFullscreenElement?: Element | null;
+  webkitExitFullscreen?: () => Promise<void> | void;
+};
+type WebkitElement = HTMLElement & {
+  webkitRequestFullscreen?: () => Promise<void> | void;
+};
+
+const isFullscreenSupported = () => {
+  const doc = document as WebkitDocument;
+  return Boolean(doc.fullscreenEnabled || doc.webkitFullscreenEnabled);
+};
+const getFullscreenElement = () => {
+  const doc = document as WebkitDocument;
+  return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
+};
+const enterFullscreen = () => {
+  const el = document.documentElement as WebkitElement;
+  if (el.requestFullscreen) return el.requestFullscreen();
+  return el.webkitRequestFullscreen?.();
+};
+const exitFullscreen = () => {
+  const doc = document as WebkitDocument;
+  if (doc.exitFullscreen) return doc.exitFullscreen();
+  return doc.webkitExitFullscreen?.();
+};
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
@@ -160,10 +201,58 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   const floorTables = tables.filter((t) => t.floor === floor);
 
   // Zoom helpers
-  const handleZoom = (delta: number) => {
-    setZoomLevel((prev) => Math.min(Math.max(0.7, prev + delta), 1.6));
+  // Zoom resizes the canvas in layout (not a CSS transform) so the workspace's
+  // scrollbars track it immediately. Before each change we remember which point
+  // of the scroll area sits at the viewport center, and restore it after the
+  // resize so zooming stays anchored on what the user was looking at.
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const zoomAnchorRef = useRef<{ x: number; y: number } | null>(null);
+  const setZoomKeepingCenter = (next: (prev: number) => number) => {
+    const el = workspaceRef.current;
+    if (el) {
+      zoomAnchorRef.current = {
+        x: (el.scrollLeft + el.clientWidth / 2) / el.scrollWidth,
+        y: (el.scrollTop + el.clientHeight / 2) / el.scrollHeight,
+      };
+    }
+    setZoomLevel(next);
   };
-  const resetZoom = () => setZoomLevel(DEFAULT_ZOOM);
+  useLayoutEffect(() => {
+    const el = workspaceRef.current;
+    const anchor = zoomAnchorRef.current;
+    if (!el || !anchor) return;
+    el.scrollLeft = anchor.x * el.scrollWidth - el.clientWidth / 2;
+    el.scrollTop = anchor.y * el.scrollHeight - el.clientHeight / 2;
+    zoomAnchorRef.current = null;
+  }, [zoomLevel]);
+
+  // Rounded to 2 decimals so repeated ±ZOOM_STEP steps don't drift (e.g. to
+  // 0.9999999999999999) and miss the exact values the button states check.
+  const handleZoom = (delta: number) => {
+    setZoomKeepingCenter((prev) => Math.round(clamp(prev + delta, MIN_ZOOM, MAX_ZOOM) * 100) / 100);
+  };
+  const resetZoom = () => setZoomKeepingCenter(() => DEFAULT_ZOOM);
+
+  // Fullscreen covers the whole dashboard (sidebar included). State is synced
+  // from the browser's change event so exiting via Esc/back gesture updates the icon.
+  const [canFullscreen] = useState<boolean>(isFullscreenSupported);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(() => getFullscreenElement() !== null);
+  useEffect(() => {
+    if (!canFullscreen) return;
+    const onChange = () => setIsFullscreen(getFullscreenElement() !== null);
+    document.addEventListener('fullscreenchange', onChange);
+    document.addEventListener('webkitfullscreenchange', onChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onChange);
+      document.removeEventListener('webkitfullscreenchange', onChange);
+    };
+  }, [canFullscreen]);
+  const toggleFullscreen = () => {
+    const result = isFullscreen ? exitFullscreen() : enterFullscreen();
+    Promise.resolve(result).catch(() => {
+      // Browser refused (e.g. permissions policy) - leave the state as-is.
+    });
+  };
 
   // Check visibility/highlight filter according to the 2 requested buttons:
   // If neither or both are on, show all.
@@ -307,15 +396,15 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
       <div className="absolute top-6 left-6 right-6 z-20 flex items-center justify-between pointer-events-none">
         {/* Floor & Status Information */}
         <div className="pointer-events-auto flex items-center gap-3">
-          <div className="px-4 py-2 rounded-2xl bg-[#141628]/90 backdrop-blur-md border border-white/10 shadow-xl flex items-center gap-3">
-            <div className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse" />
-            <span className="text-sm font-bold text-white tracking-wide">
+          {/* Plain heading, not a pill - the old bordered badge read as a button. */}
+          <h2 className="flex items-baseline gap-2.5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
+            <span className="text-base font-bold text-white tracking-wide">
               {floor === 1 ? '1st Floor • Main Dining Area' : '2nd Floor • KTV Rooms Area'}
             </span>
-            <span className="text-xs text-slate-400 font-mono bg-white/5 px-2 py-0.5 rounded-lg">
-              {floorTables.length} {floorTables.length === 1 ? 'Zone' : 'Zones'}
+            <span className="text-xs font-medium text-slate-400">
+              {floorTables.length} {floorTables.length === 1 ? 'zone' : 'zones'}
             </span>
-          </div>
+          </h2>
 
           {isFilterActive && (
             <div className="px-3 py-1.5 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-200 text-xs font-semibold flex items-center gap-2">
@@ -357,28 +446,45 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
           <button
             id="btn-zoom-in"
-            onClick={() => handleZoom(0.15)}
-            className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all"
+            onClick={() => handleZoom(ZOOM_STEP)}
+            disabled={zoomLevel >= MAX_ZOOM}
+            className={ZOOM_BUTTON_CLASSES}
             title="Zoom In"
+            aria-label="Zoom in"
           >
             <ZoomIn className="w-4 h-4" />
           </button>
           <button
             id="btn-zoom-out"
-            onClick={() => handleZoom(-0.15)}
-            className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all"
+            onClick={() => handleZoom(-ZOOM_STEP)}
+            disabled={zoomLevel <= MIN_ZOOM}
+            className={ZOOM_BUTTON_CLASSES}
             title="Zoom Out"
+            aria-label="Zoom out"
           >
             <ZoomOut className="w-4 h-4" />
           </button>
           <button
             id="btn-zoom-reset"
             onClick={resetZoom}
-            className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all text-xs font-mono"
+            disabled={zoomLevel === DEFAULT_ZOOM}
+            className={ZOOM_BUTTON_CLASSES}
             title="Reset Zoom"
+            aria-label="Reset zoom"
           >
-            <Maximize2 className="w-3.5 h-3.5" />
+            <RotateCcw className="w-3.5 h-3.5" />
           </button>
+          {canFullscreen && (
+            <button
+              id="btn-fullscreen"
+              onClick={toggleFullscreen}
+              className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all"
+              title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
+              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+            >
+              {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
         </div>
       </div>
 
@@ -398,21 +504,25 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
       {/* Full-bleed workspace (everything above the bottom bar, sitting under the
           floating control bar). It's a size container so the canvas can be the
           largest 16:9 box that fits it: full width on wide viewports, full
-          height on taller ones, centered with the leftover as thin bands. */}
+          height on taller ones, centered with the leftover as thin bands.
+          Zoom multiplies that width in layout, and the canvas is centered with
+          m-auto rather than justify-center so overflow on every side stays
+          scrollable (flex centering pushes half of it off the unscrollable
+          left/top edges). */}
       <div
-        className="flex-1 min-h-0 flex items-center justify-center overflow-auto"
+        ref={workspaceRef}
+        className="flex-1 min-h-0 flex overflow-auto"
         style={{ containerType: 'size' }}
       >
         <div
           ref={mapCanvasRef}
           onMouseDown={isEditMode ? handleCanvasMouseDown : undefined}
-          className={`relative shrink-0 overflow-hidden transition-transform duration-300 ease-out select-none ${
+          className={`relative shrink-0 m-auto overflow-hidden select-none ${
             isEditMode ? 'cursor-crosshair ring-2 ring-indigo-500/30' : ''
           }`}
           style={{
-            transform: `scale(${zoomLevel})`,
             aspectRatio: `${FLOOR_PLAN_ASPECT_W} / ${FLOOR_PLAN_ASPECT_H}`,
-            width: `min(100cqw, 100cqh * ${FLOOR_PLAN_ASPECT_W} / ${FLOOR_PLAN_ASPECT_H})`,
+            width: `calc(min(100cqw, 100cqh * ${FLOOR_PLAN_ASPECT_W} / ${FLOOR_PLAN_ASPECT_H}) * ${zoomLevel})`,
           }}
         >
           {/* Floor plan image - no backdrop, so transparent-background exports
