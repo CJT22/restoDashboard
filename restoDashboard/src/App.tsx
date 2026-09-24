@@ -266,7 +266,7 @@ export default function App() {
     setConfirmState({
       isOpen: true,
       title: `Delete all zones on Floor ${currentFloor}?`,
-      description: `This will permanently delete all ${floorCount} table and room zones on Floor ${currentFloor}. You can immediately start drawing new zones on your 1774×887 floor plan from scratch.`,
+      description: `This will permanently delete all ${floorCount} table and room zones on Floor ${currentFloor}. You can immediately start drawing new zones on the floor plan from scratch.`,
       confirmText: `Delete All ${floorCount} Zones`,
       confirmVariant: 'danger',
       onConfirm: () => {

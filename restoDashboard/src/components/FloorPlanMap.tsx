@@ -14,10 +14,16 @@ import {
   ChevronRight
 } from 'lucide-react';
 
+// Every floor plan image must share this exact 16:9 frame - zone geometry is
+// stored as percentages of it, so the canvas below is locked to this ratio.
+// Pixel size doesn't matter (currently 2560x1440, transparent WebP); only
+// the ratio and the building's placement within the frame do.
 const FLOOR_PLAN_IMAGES: Record<1 | 2, string> = {
-  1: '/floorplans/floor1.png',
-  2: '/floorplans/floor2.png',
+  1: '/floorplans/first_floor.webp',
+  2: '/floorplans/second_floor.webp',
 };
+const FLOOR_PLAN_ASPECT_W = 16;
+const FLOOR_PLAN_ASPECT_H = 9;
 
 const MIN_ZONE_SIZE_PCT = 3;
 
@@ -115,7 +121,8 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   onPromptDeleteSingleTable,
   onPromptDeleteAll,
 }) => {
-  const DEFAULT_ZOOM = 1.3;
+  // The canvas already fills the whole workspace at 1x, so no default zoom-in.
+  const DEFAULT_ZOOM = 1;
   const [zoomLevel, setZoomLevel] = useState<number>(DEFAULT_ZOOM);
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null);
 
@@ -306,7 +313,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
               {floor === 1 ? '1st Floor • Main Dining Area' : '2nd Floor • KTV Rooms Area'}
             </span>
             <span className="text-xs text-slate-400 font-mono bg-white/5 px-2 py-0.5 rounded-lg">
-              {floorTables.length} {floorTables.length === 1 ? 'Zone' : 'Zones'} • 1774×887 Ratio (2:1)
+              {floorTables.length} {floorTables.length === 1 ? 'Zone' : 'Zones'}
             </span>
           </div>
 
@@ -388,30 +395,33 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
       )}
 
       {/* Main Floor Plan Workspace Canvas */}
-      <div className="flex-1 flex items-center justify-center p-6 overflow-auto">
+      {/* Full-bleed workspace (everything above the bottom bar, sitting under the
+          floating control bar). It's a size container so the canvas can be the
+          largest 16:9 box that fits it: full width on wide viewports, full
+          height on taller ones, centered with the leftover as thin bands. */}
+      <div
+        className="flex-1 min-h-0 flex items-center justify-center overflow-auto"
+        style={{ containerType: 'size' }}
+      >
         <div
           ref={mapCanvasRef}
           onMouseDown={isEditMode ? handleCanvasMouseDown : undefined}
-          className={`relative rounded-3xl overflow-hidden shadow-2xl transition-transform duration-300 ease-out select-none ${
+          className={`relative shrink-0 overflow-hidden transition-transform duration-300 ease-out select-none ${
             isEditMode ? 'cursor-crosshair ring-2 ring-indigo-500/30' : ''
           }`}
           style={{
             transform: `scale(${zoomLevel})`,
-            // 1774 x 887 aspect ratio = exact 2:1 ratio container
-            aspectRatio: '1774 / 887',
-            width: '100%',
-            maxWidth: '1200px',
-            maxHeight: 'calc(100vh - 180px)',
+            aspectRatio: `${FLOOR_PLAN_ASPECT_W} / ${FLOOR_PLAN_ASPECT_H}`,
+            width: `min(100cqw, 100cqh * ${FLOOR_PLAN_ASPECT_W} / ${FLOOR_PLAN_ASPECT_H})`,
           }}
         >
-          {/* Fixed Floor Plan Image (1774x887 PNG fits with 100% precision) */}
-          <div className="absolute inset-0 bg-[#121424] w-full h-full">
-            <img
-              src={FLOOR_PLAN_IMAGES[floor]}
-              alt={`Floor ${floor} plan (1774x887)`}
-              className="w-full h-full object-fill pointer-events-none"
-            />
-          </div>
+          {/* Floor plan image - no backdrop, so transparent-background exports
+              sit directly on the workspace gradient */}
+          <img
+            src={FLOOR_PLAN_IMAGES[floor]}
+            alt={`Floor ${floor} plan`}
+            className="absolute inset-0 w-full h-full object-fill pointer-events-none"
+          />
 
           {/* Empty state notice if no zones, anchored near the bottom edge so it doesn't cover the room layout */}
           {floorTables.length === 0 && (

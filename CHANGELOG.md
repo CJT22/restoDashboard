@@ -8,6 +8,14 @@ entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links t
 to be relative to this new root location. Going forward, each bullet is tagged with which app it
 touches (see [CLAUDE.md](CLAUDE.md) for the convention).
 
+## [1.7.0]
+
+### Changed
+- **[restoDashboard]** Floor plans switched to the new Blue Moon drawings (`first_floor.webp` / `second_floor.webp`, 2560×1440 16:9 with a transparent background), replacing the old 1774×887 (2:1) `floor1.png`/`floor2.png`. The higher resolution keeps the plan sharp on laptops running 125–150% display scaling (and on phones, once mobile support lands), and WebP keeps each file around 1.3–1.5 MB. The map now fills the entire workspace — everything right of the sidebar and above the bottom status bar, with the floating control bar overlaid on top — instead of sitting in a rounded card capped at 1200px wide and zoomed in to 130%. The canvas is the largest 16:9 box that fits the workspace (via a CSS size container), so on non-16:9 viewports the leftover shows as thin bands; the image has no backdrop behind it, so the building sits directly on the workspace gradient and those bands blend in. Default zoom is now 100%; the zoom buttons still work as before ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+  - **[restoDashboard]** The rooms moved in the new drawings, so all 36 zones were repositioned onto them in Edit Mode and that layout is now the default seed — a fresh browser or "Reset Sample Orders & Tables" lands on zones that match the new plans. Only each zone's position/size changed; ids, names, capacities and restoAdmin links are untouched. They were deliberately kept rather than redrawn from scratch: emptying them would orphan restoAdmin's `dashboardZoneId` links, which hides those tables from the link picker and blocks relinking. The local-storage key is *not* bumped, so browsers with their own saved layout keep it ([mockRestaurantData.ts](restoDashboard/src/data/mockRestaurantData.ts)).
+  - **[restoDashboard]** Removed the now-unused floor plan images (`floor1.png`, `floor2.png`, and the interim `BM_1F_NL.png`/`BM_2F_NL.png`) from `public/floorplans/`.
+  - **[restoDashboard]** Dropped the hard-coded "1774×887 Ratio (2:1)" from the floor header badge, the image alt text, and the "Delete all zones" confirmation ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [App.tsx](restoDashboard/src/App.tsx)).
+
 ## [1.6.2]
 
 ### Added
