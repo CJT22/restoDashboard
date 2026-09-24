@@ -111,6 +111,7 @@ export function mapAdminOrder(row: any): AdminOrderSummary {
     orderType: row.orderType ?? null,
     status: Number(row.status ?? 0),
     subtotal: Number(row.subtotal ?? 0),
+    serviceCharge: row.serviceCharge != null ? Number(row.serviceCharge) : undefined,
     grandTotal: Number(row.grandTotal ?? 0),
     items: Array.isArray(row.items) ? row.items.map(mapAdminOrderItem) : [],
   };
@@ -151,12 +152,28 @@ export async function createOrder(
   adminTableId: number,
   orderType: string,
   orderNo: string,
-  items: NewOrderItemInput[]
+  items: NewOrderItemInput[],
+  roomChargeQty?: number
 ): Promise<CreateOrderResult> {
   const res = await fetch('/api/admin/orders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tableId: adminTableId, orderType, orderNo, items }),
+    body: JSON.stringify({ tableId: adminTableId, orderType, orderNo, items, roomChargeQty }),
+  });
+  return res.json();
+}
+
+// Adjusts the room-charge hours (1 = the base hour restoAdmin always bills
+// automatically) on an already-open Pending/Confirmed order — the dashboard
+// equivalent of restoAdmin's own order-detail room-charge stepper.
+export async function updateOrderRoomCharge(
+  orderId: number,
+  roomChargeQty: number
+): Promise<{ ok: boolean; message?: string }> {
+  const res = await fetch(`/api/admin/orders/${orderId}/room-charge`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ roomChargeQty }),
   });
   return res.json();
 }

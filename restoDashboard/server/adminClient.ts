@@ -47,6 +47,11 @@ export interface AdminOrder {
   orderType: string | null;
   status: number;
   subtotal: number;
+  taxAmount: number;
+  // Includes the linked table's room charge — see resolveServiceChargeWithRoomCharge
+  // in restoAdmin's OrderModel. Never a line item in `items`.
+  serviceCharge: number;
+  discountAmount: number;
   grandTotal: number;
   items: AdminOrderItem[];
 }
@@ -224,6 +229,9 @@ function mapAdminOrder(row: any, items: AdminOrderItem[]): AdminOrder {
     orderType: row.ORDER_TYPE ?? null,
     status: Number(row.STATUS ?? 0),
     subtotal: Number(row.SUBTOTAL ?? 0),
+    taxAmount: Number(row.TAX_AMOUNT ?? 0),
+    serviceCharge: Number(row.SERVICE_CHARGE ?? 0),
+    discountAmount: Number(row.DISCOUNT_AMOUNT ?? 0),
     grandTotal: Number(row.GRAND_TOTAL ?? 0),
     items,
   };
@@ -318,6 +326,11 @@ export async function createOrder(params: {
   orderType: string;
   orderNo: string;
   items: CreateOrderItemInput[];
+  // Hours the room is booked for (1 = the base hour restoAdmin always adds
+  // automatically for a table with a ROOM_CHARGE — see resolveServiceChargeWithRoomCharge).
+  // Anything beyond 1 is billed as additional SERVICE_CHARGE here. Omit/1 for
+  // a table with no room charge, or when the caller doesn't need to adjust it.
+  roomChargeQty?: number;
 }): Promise<CreateOrderResult> {
   const subtotal = params.items.reduce((sum, it) => sum + it.qty * it.unitPrice, 0);
   const orderItems = params.items.map((it) => ({
@@ -327,6 +340,14 @@ export async function createOrder(params: {
     line_total: it.qty * it.unitPrice,
     status: 3,
   }));
+
+  let serviceCharge = 0;
+  const roomChargeQty = Math.max(1, Number(params.roomChargeQty) || 1);
+  if (roomChargeQty > 1) {
+    const tables = await getBlueMoonTables();
+    const rate = tables.find((t) => t.id === params.tableId)?.roomCharge || 0;
+    serviceCharge = (roomChargeQty - 1) * rate;
+  }
 
   // OrderController.create ignores BRANCH_ID in the body for a non-admin
   // caller (our service account) and instead resolves the branch from
@@ -343,9 +364,9 @@ export async function createOrder(params: {
       STATUS: 3,
       SUBTOTAL: subtotal,
       TAX_AMOUNT: 0,
-      SERVICE_CHARGE: 0,
+      SERVICE_CHARGE: serviceCharge,
       DISCOUNT_AMOUNT: 0,
-      GRAND_TOTAL: subtotal,
+      GRAND_TOTAL: subtotal + serviceCharge,
       ORDER_ITEMS: orderItems,
     }),
   });
@@ -415,6 +436,50 @@ export async function updateOrderStatus(orderId: number, status: 2 | -1): Promis
     return { ok: true };
   }
   return { ok: false, message: json?.error || json?.message || `Failed to update order status (${res.status})` };
+}
+
+// Adjusts how many hours a room's booking is billed for, on an already-open
+// (Pending/Confirmed) order — the dashboard equivalent of restoAdmin's own
+// order-detail room-charge stepper (Orders.tsx's saveDetailRoomChargeQty).
+// Re-fetches the order for its current TABLE_ID/ORDER_TYPE/STATUS/SUBTOTAL/
+// TAX_AMOUNT/DISCOUNT_AMOUNT since restoAdmin's PUT /orders/:id replaces the
+// whole payload rather than patching just SERVICE_CHARGE.
+export async function updateOrderRoomCharge(orderId: number, roomChargeQty: number): Promise<{ ok: boolean; message?: string }> {
+  const order = await getOrderById(orderId);
+  if (!order) {
+    return { ok: false, message: 'Order not found' };
+  }
+  if (order.tableId == null) {
+    return { ok: false, message: 'This order has no table assigned' };
+  }
+  const tables = await getBlueMoonTables();
+  const rate = tables.find((t) => t.id === order.tableId)?.roomCharge || 0;
+  if (rate <= 0) {
+    return { ok: false, message: 'This table has no room charge' };
+  }
+
+  const clampedQty = Math.max(1, roomChargeQty);
+  const explicitServiceCharge = (clampedQty - 1) * rate;
+  const grandTotal = order.subtotal + order.taxAmount + explicitServiceCharge - order.discountAmount;
+
+  const res = await authedFetch(`/orders/${orderId}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      TABLE_ID: order.tableId,
+      ORDER_TYPE: order.orderType,
+      STATUS: order.status,
+      SUBTOTAL: order.subtotal,
+      TAX_AMOUNT: order.taxAmount,
+      SERVICE_CHARGE: explicitServiceCharge,
+      DISCOUNT_AMOUNT: order.discountAmount,
+      GRAND_TOTAL: grandTotal,
+    }),
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (res.ok && json?.success !== false) {
+    return { ok: true };
+  }
+  return { ok: false, message: json?.error || json?.message || `Failed to update room charge (${res.status})` };
 }
 
 export async function updateOrderItemQty(itemId: number, qty: number): Promise<UpdateItemResult> {

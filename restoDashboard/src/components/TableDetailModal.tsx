@@ -9,9 +9,11 @@ import {
   deleteItem,
   confirmOrder,
   cancelOrder,
+  updateOrderRoomCharge,
   getOrderStatusLabel,
   getOrderStatusColorClass,
 } from '../services/orderSync';
+import { getAdminTables } from '../services/adminSync';
 import { getStatusColors } from '../utils/statusColors';
 import { NewOrderModal } from './NewOrderModal';
 import { SettlePaymentModal } from './SettlePaymentModal';
@@ -21,6 +23,7 @@ import {
   Users,
   UtensilsCrossed,
   Plus,
+  Minus,
   Pencil,
   Trash2,
   Link2,
@@ -29,6 +32,8 @@ import {
   Ban,
   ChevronDown
 } from 'lucide-react';
+
+const roundToHalf = (v: number) => Math.round(v * 2) / 2;
 
 interface TableDetailModalProps {
   table: TableRoom | null;
@@ -61,6 +66,12 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   const [addQty, setAddQty] = useState(1);
   const [editingItemId, setEditingItemId] = useState<number | null>(null);
   const [editQty, setEditQty] = useState(1);
+
+  // This table's hourly room-charge rate (0 = no room charge), fetched on
+  // demand — the dashboard equivalent of restoAdmin's own order-detail
+  // room-charge stepper (Orders.tsx's saveDetailRoomChargeQty).
+  const [roomChargeRate, setRoomChargeRate] = useState(0);
+  const [roomChargeSaving, setRoomChargeSaving] = useState(false);
 
   // Real, admin-sourced order for this zone's linked table. Fetched here on
   // open and stored on the shared table via onOrderChanged, so OrderQueueView
@@ -98,14 +109,55 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
       .catch(() => setMenu([]));
   }, [table.adminTableId]);
 
+  useEffect(() => {
+    if (table.adminTableId == null) return;
+    let cancelled = false;
+    getAdminTables()
+      .then((tables) => {
+        if (cancelled) return;
+        const match = tables.find((t) => t.id === table.adminTableId);
+        setRoomChargeRate(match?.roomCharge || 0);
+      })
+      .catch(() => {
+        if (!cancelled) setRoomChargeRate(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [table.adminTableId]);
+
   const activeOrder = table.activeOrder;
   const orderItems = activeOrder?.items ?? [];
   const tableId = table.id;
+
+  // Derived from the order's current SERVICE_CHARGE (which already includes
+  // the room charge — see AdminOrderSummary.serviceCharge) and this table's
+  // rate; re-derives automatically whenever the order refreshes.
+  const roomChargeQty =
+    roomChargeRate > 0 ? Math.max(1, Math.round(((activeOrder?.serviceCharge ?? 0) / roomChargeRate) * 2) / 2) : 0;
 
   const refreshOrder = async () => {
     if (table.adminTableId == null) return;
     const order = await getActiveOrderForTable(table.adminTableId);
     onOrderChanged(tableId, order ?? undefined);
+  };
+
+  const handleRoomChargeChange = async (nextQty: number) => {
+    if (!activeOrder || roomChargeRate <= 0 || roomChargeSaving) return;
+    setRoomChargeSaving(true);
+    setOrderError(null);
+    try {
+      const result = await updateOrderRoomCharge(activeOrder.id, roundToHalf(Math.max(1, nextQty)));
+      if (result.ok) {
+        await refreshOrder();
+      } else {
+        setOrderError(result.message || 'Failed to update room charge');
+      }
+    } catch (err: any) {
+      setOrderError(err.message || 'Failed to update room charge');
+    } finally {
+      setRoomChargeSaving(false);
+    }
   };
 
   const handleAddItem = async () => {
@@ -344,6 +396,34 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
 
             {activeOrder && (
               <>
+                {roomChargeRate > 0 && (
+                  <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between">
+                    <div className="text-sm text-white">
+                      Room Charge — {roomChargeQty}h × ₱{roomChargeRate.toLocaleString()}
+                      <span className="text-slate-500 text-xs ml-1.5">(1 hour minimum)</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <button
+                        onClick={() => handleRoomChargeChange(roomChargeQty - 0.5)}
+                        disabled={roomChargeSaving || roomChargeQty <= 1}
+                        className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-slate-300"
+                      >
+                        <Minus className="w-3.5 h-3.5" />
+                      </button>
+                      <span className="font-mono text-xs text-slate-300 w-16 text-right">
+                        ₱{(roomChargeQty * roomChargeRate).toFixed(2)}
+                      </span>
+                      <button
+                        onClick={() => handleRoomChargeChange(roomChargeQty + 0.5)}
+                        disabled={roomChargeSaving}
+                        className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-slate-300"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Items table */}
                 {orderItems.length === 0 ? (
                   <div className="p-6 rounded-2xl bg-white/[0.02] border border-dashed border-white/10 text-center text-slate-500 text-xs">

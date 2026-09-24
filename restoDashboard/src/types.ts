@@ -24,6 +24,11 @@ export interface AdminOrderSummary {
   orderType: string | null;
   status: number; // restoAdmin's STATUS enum (3=Pending, 2=Confirmed, 1=Settled, -1=Cancelled)
   subtotal: number;
+  // orders.SERVICE_CHARGE — includes the linked table's room charge (see
+  // restoAdmin's OrderModel.resolveServiceChargeWithRoomCharge), which is
+  // never a line item in `items`. Optional because the order_created/
+  // order_updated SSE event doesn't carry it yet; a full refetch does.
+  serviceCharge?: number;
   grandTotal: number;
   items: AdminOrderLineItem[];
 }

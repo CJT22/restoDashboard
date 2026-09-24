@@ -18,6 +18,7 @@ import {
   createOrder,
   addItemsToOrder,
   updateOrderStatus,
+  updateOrderRoomCharge,
   updateOrderItemQty,
   deleteOrderItem,
   getBilling,
@@ -114,11 +115,19 @@ app.get('/api/admin/orders/active', async (_req, res) => {
 // the frontend can render each case distinctly.
 app.post('/api/admin/orders', async (req, res) => {
   try {
-    const { tableId, orderType, orderNo, items } = req.body || {};
-    if (!Number.isFinite(Number(tableId)) || !orderNo || !Array.isArray(items) || items.length === 0) {
-      return res.status(400).json({ success: false, error: 'tableId, orderNo, and at least one item are required' });
+    const { tableId, orderType, orderNo, items, roomChargeQty } = req.body || {};
+    const hasItems = Array.isArray(items) && items.length > 0;
+    const hasRoomCharge = Number.isFinite(Number(roomChargeQty)) && Number(roomChargeQty) > 0;
+    if (!Number.isFinite(Number(tableId)) || !orderNo || (!hasItems && !hasRoomCharge)) {
+      return res.status(400).json({ success: false, error: 'tableId, orderNo, and at least one item or a room charge are required' });
     }
-    const result = await createOrder({ tableId: Number(tableId), orderType, orderNo, items });
+    const result = await createOrder({
+      tableId: Number(tableId),
+      orderType,
+      orderNo,
+      items: hasItems ? items : [],
+      roomChargeQty: hasRoomCharge ? Number(roomChargeQty) : undefined,
+    });
     res.json(result);
   } catch (err: any) {
     console.error('[POST /api/admin/orders]', err.message || err);
@@ -154,6 +163,22 @@ app.patch('/api/admin/orders/:id/status', async (req, res) => {
     res.json(result);
   } catch (err: any) {
     console.error('[PATCH /api/admin/orders/:id/status]', err.message || err);
+    res.status(502).json({ ok: false, message: err.message || 'Failed to reach restoAdmin' });
+  }
+});
+
+// Adjust the room-charge hours on an already-open order (Pending/Confirmed).
+app.patch('/api/admin/orders/:id/room-charge', async (req, res) => {
+  try {
+    const orderId = Number(req.params.id);
+    const roomChargeQty = Number(req.body?.roomChargeQty);
+    if (!Number.isFinite(orderId) || !Number.isFinite(roomChargeQty) || roomChargeQty <= 0) {
+      return res.status(400).json({ ok: false, message: 'Invalid order id or room charge qty' });
+    }
+    const result = await updateOrderRoomCharge(orderId, roomChargeQty);
+    res.json(result);
+  } catch (err: any) {
+    console.error('[PATCH /api/admin/orders/:id/room-charge]', err.message || err);
     res.status(502).json({ ok: false, message: err.message || 'Failed to reach restoAdmin' });
   }
 });

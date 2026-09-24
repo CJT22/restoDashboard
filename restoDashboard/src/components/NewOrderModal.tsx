@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { TableRoom, AdminOrderSummary } from '../types';
 import { getMenu, createOrder, addItemsToOrder, getActiveOrderForTable, AdminMenuItem } from '../services/orderSync';
-import { X, Plus, Trash2, AlertTriangle, ClipboardList, ChevronDown } from 'lucide-react';
+import { getAdminTables } from '../services/adminSync';
+import { X, Plus, Minus, Trash2, AlertTriangle, ClipboardList, ChevronDown } from 'lucide-react';
+
+const roundToHalf = (v: number) => Math.round(v * 2) / 2;
 
 interface NewOrderModalProps {
   table: TableRoom; // must have adminTableId set — caller gates on this
@@ -36,6 +39,13 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
   const [qty, setQty] = useState(1);
   const [items, setItems] = useState<LineItem[]>([]);
 
+  // This table's hourly room-charge rate (0 = no room charge on this table),
+  // fetched on demand from the same tables endpoint EditTableModal's linking
+  // picker already uses — see restoAdmin's "Create New Order" room charge
+  // stepper (Orders.tsx) for the equivalent admin-side feature.
+  const [roomChargeRate, setRoomChargeRate] = useState(0);
+  const [roomChargeQty, setRoomChargeQty] = useState(1);
+
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [insufficient, setInsufficient] = useState<any[] | null>(null);
@@ -58,7 +68,27 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
     };
   }, []);
 
-  const subtotal = useMemo(() => items.reduce((sum, it) => sum + it.unitPrice * it.qty, 0), [items]);
+  useEffect(() => {
+    if (table.adminTableId == null) return;
+    let cancelled = false;
+    getAdminTables()
+      .then((tables) => {
+        if (cancelled) return;
+        const match = tables.find((t) => t.id === table.adminTableId);
+        setRoomChargeRate(match?.roomCharge || 0);
+      })
+      .catch(() => {
+        if (!cancelled) setRoomChargeRate(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [table.adminTableId]);
+
+  const hasRoomCharge = roomChargeRate > 0;
+  const itemsSubtotal = useMemo(() => items.reduce((sum, it) => sum + it.unitPrice * it.qty, 0), [items]);
+  const roomChargeTotal = hasRoomCharge ? roomChargeQty * roomChargeRate : 0;
+  const subtotal = itemsSubtotal + roomChargeTotal;
 
   const handleAddItem = () => {
     if (!selectedMenuId) return;
@@ -87,12 +117,18 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
   };
 
   const handleSubmit = async () => {
-    if (!orderNo.trim() || items.length === 0) return;
+    if (!orderNo.trim() || (items.length === 0 && !hasRoomCharge)) return;
     resetAlerts();
     setSubmitting(true);
     try {
       const payloadItems = items.map((it) => ({ menuId: it.menuId, qty: it.qty, unitPrice: it.unitPrice }));
-      const result = await createOrder(table.adminTableId as number, orderType, orderNo.trim(), payloadItems);
+      const result = await createOrder(
+        table.adminTableId as number,
+        orderType,
+        orderNo.trim(),
+        payloadItems,
+        hasRoomCharge ? roomChargeQty : undefined
+      );
       if (result.ok) {
         const fresh = await getActiveOrderForTable(table.adminTableId as number);
         if (fresh) onOrderChanged(fresh);
@@ -199,6 +235,36 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
               </div>
             </div>
           </div>
+
+          {hasRoomCharge && (
+            <div>
+              <label className="text-xs font-semibold text-slate-300 block mb-1.5">Room Charge</label>
+              <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between">
+                <div className="text-sm text-white">
+                  {roomChargeQty}h × ₱{roomChargeRate.toLocaleString()}
+                  <span className="text-slate-500 text-xs ml-1.5">(1 hour minimum)</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setRoomChargeQty((prev) => roundToHalf(Math.max(1, prev - 0.5)))}
+                    disabled={roomChargeQty <= 1}
+                    className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-slate-300"
+                  >
+                    <Minus className="w-3.5 h-3.5" />
+                  </button>
+                  <span className="font-mono text-xs text-slate-300 w-14 text-right">₱{roomChargeTotal.toFixed(2)}</span>
+                  <button
+                    type="button"
+                    onClick={() => setRoomChargeQty((prev) => roundToHalf(prev + 0.5))}
+                    className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="text-xs font-semibold text-slate-300 block mb-1.5">Order Items</label>
@@ -310,12 +376,12 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
 
         <div className="p-5 border-t border-white/10 bg-[#0f1120] flex items-center justify-between">
           <div className="text-xs text-slate-400 font-mono">
-            Subtotal: <span className="text-white font-bold text-sm">₱{subtotal.toFixed(2)}</span>
+            Total: <span className="text-white font-bold text-sm">₱{subtotal.toFixed(2)}</span>
           </div>
           {!conflict && (
             <button
               onClick={handleSubmit}
-              disabled={submitting || !orderNo.trim() || items.length === 0}
+              disabled={submitting || !orderNo.trim() || (items.length === 0 && !hasRoomCharge)}
               className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold shadow-lg shadow-indigo-600/20"
             >
               {submitting ? 'Creating…' : 'Create Order'}
