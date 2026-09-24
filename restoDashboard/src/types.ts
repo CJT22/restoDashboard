@@ -69,6 +69,31 @@ export interface TableRoom {
   height: number;
 }
 
+// Info panels: read-only widgets drawn into a floor plan's free space (Edit
+// Zones → Draw: Info panel). Deliberately NOT a TableRoom — they aren't
+// seats, so they never count toward zone totals, filters, the directory or
+// restoAdmin linking. Each panel only reports on its own floor. See
+// src/components/InfoPanelView.tsx.
+export type InfoWidgetType = 'roomTimers' | 'pendingOrders' | 'availableNow' | 'occupancy';
+
+// auto = as many columns as fit; stack = one column; row = one column per
+// widget, falling back to stack when the panel is too narrow on screen.
+export type InfoPanelLayout = 'auto' | 'stack' | 'row';
+
+export interface InfoPanel {
+  id: string;
+  floor: 1 | 2;
+  // Shown in this order.
+  widgets: InfoWidgetType[];
+  // Optional so panels saved before layouts existed read as 'auto'.
+  layout?: InfoPanelLayout;
+  // Same percentage geometry as TableRoom zones.
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface FloorStats {
   totalTables: number;
   occupiedCount: number;

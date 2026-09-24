@@ -42,6 +42,14 @@ export function formatDuration(ms: number): string {
   return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
+// Coarse "how long ago" for waiting times: "just now", "12m", "1h 05m".
+export function formatWait(ms: number): string {
+  const totalMin = Math.floor(Math.max(0, ms) / 60000);
+  if (totalMin < 1) return 'just now';
+  if (totalMin < 60) return `${totalMin}m`;
+  return `${Math.floor(totalMin / 60)}h ${String(totalMin % 60).padStart(2, '0')}m`;
+}
+
 // 2 -> "2h", 1.5 -> "1.5h".
 export function formatHours(hours: number): string {
   return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;

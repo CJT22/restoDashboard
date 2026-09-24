@@ -75,6 +75,14 @@ export function getOrderStatusLabel(status: number): string {
   }
 }
 
+// Compact order number for tight spots on the map: restoAdmin's generated
+// numbers look like "ORD-20260924-144956", whose last segment is enough to
+// tell today's orders apart. Anything without dashes is kept as-is.
+export function shortOrderNo(orderNo: string): string {
+  const parts = orderNo.split('-').filter(Boolean);
+  return parts.length > 1 ? parts[parts.length - 1] : orderNo;
+}
+
 export function getOrderStatusColorClass(status: number): string {
   switch (status) {
     case 3: return 'bg-amber-500/20 text-amber-300 border-amber-500/30';

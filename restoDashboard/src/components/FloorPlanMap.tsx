@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
-import { TableRoom } from '../types';
+import { TableRoom, InfoPanel } from '../types';
 import { getStatusColors } from '../utils/statusColors';
-import { getOrderStatusLabel, getOrderStatusColorClass } from '../services/orderSync';
+import { getOrderStatusLabel, getOrderStatusColorClass, shortOrderNo } from '../services/orderSync';
 import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, RoomTiming } from '../utils/roomTimer';
 import {
   ZoomIn,
@@ -14,8 +14,10 @@ import {
   Edit2,
   Trash2,
   Info,
-  ChevronRight
+  ChevronRight,
+  LayoutDashboard
 } from 'lucide-react';
+import { InfoPanelView } from './InfoPanelView';
 
 // Every floor plan image must share this exact 16:9 frame - zone geometry is
 // stored as percentages of it, so the canvas below is locked to this ratio.
@@ -103,7 +105,9 @@ function getZoneLabelLayout(
   widthPx: number,
   heightPx: number,
   timing: RoomTiming | null,
-  hasOrder: boolean
+  hasOrder: boolean,
+  // A room-charge-only order has no items; "0 items" would just be noise.
+  hasItems: boolean
 ): ZoneLabelLayout {
   const minSide = Math.min(widthPx, heightPx);
   // Includes the zone's 2px border.
@@ -136,7 +140,7 @@ function getZoneLabelLayout(
   };
   const showStatusLine = take(hasOrder);
   const showOrderNo = take(hasOrder);
-  const showItemCount = take(hasOrder);
+  const showItemCount = take(hasOrder && hasItems);
 
   return {
     insetPx,
@@ -229,7 +233,18 @@ interface FloorPlanMapProps {
   onOpenEditTableModal: (table: TableRoom) => void;
   onPromptDeleteSingleTable: (table: TableRoom) => void;
   onPromptDeleteAll: () => void;
+  infoPanels: InfoPanel[];
+  showInfoPanels: boolean;
+  onToggleInfoPanels: () => void;
+  onUpdateInfoPanelGeometry: (panelId: string, geometry: ZoneRect) => void;
+  onCreateInfoPanel: (floor: 1 | 2, rect: ZoneRect, size: { widthPx: number; heightPx: number }) => void;
+  onOpenInfoPanel: (panel: InfoPanel, size: { widthPx: number; heightPx: number }) => void;
 }
+
+// What a drag on the canvas draws in Edit Zones.
+type DrawKind = 'zone' | 'panel';
+// What a move/resize drag is acting on.
+type EditTarget = { kind: DrawKind; id: string };
 
 export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   floor,
@@ -246,23 +261,34 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   onOpenEditTableModal,
   onPromptDeleteSingleTable,
   onPromptDeleteAll,
+  infoPanels,
+  showInfoPanels,
+  onToggleInfoPanels,
+  onUpdateInfoPanelGeometry,
+  onCreateInfoPanel,
+  onOpenInfoPanel,
 }) => {
   // The canvas already fills the whole workspace at 1x, so no default zoom-in.
   const DEFAULT_ZOOM = 1;
   const [zoomLevel, setZoomLevel] = useState<number>(DEFAULT_ZOOM);
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null);
 
-  // Move (drag zone body) state
-  const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
+  // Move (drag zone/panel body) state
+  const [dragging, setDragging] = useState<EditTarget | null>(null);
+  const draggingTableId = dragging?.kind === 'zone' ? dragging.id : null;
   const dragStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const dragOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
 
   // Resize (drag a border handle) state
-  const [resizingState, setResizingState] = useState<{ tableId: string; handle: ResizeHandle } | null>(null);
+  const [resizingState, setResizingState] = useState<(EditTarget & { handle: ResizeHandle }) | null>(null);
   const resizeStartRef = useRef<{ mouseX: number; mouseY: number; orig: ZoneRect } | null>(null);
 
   // Draw-a-new-zone state (click and hold on blank canvas, then drag)
   const [drawingRect, setDrawingRect] = useState<{ startX: number; startY: number; curX: number; curY: number } | null>(null);
+  const [drawKind, setDrawKind] = useState<DrawKind>('zone');
+  useEffect(() => {
+    if (!isEditMode) setDrawKind('zone');
+  }, [isEditMode]);
 
   // Let Escape back out of an in-progress zone draw
   const isDrawingNewZone = drawingRect !== null;
@@ -300,10 +326,15 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   // Filter tables by floor
   const floorTables = tables.filter((t) => t.floor === floor);
 
-  // One shared 1s tick drives every hourly room's countdown; only runs while
-  // this floor has one to show.
+  // Info panels are always shown while editing so they can be arranged.
+  const floorPanels = infoPanels.filter((p) => p.floor === floor);
+  const panelsVisible = showInfoPanels || isEditMode;
+
+  // One shared 1s tick drives every hourly room's countdown and the info
+  // panels' timers/waiting times; only runs while there's one to show.
   const hasRoomTimer = floorTables.some((t) => getRoomTiming(t.activeOrder, 0) != null);
-  const nowMs = useNow(hasRoomTimer);
+  const panelsNeedTick = panelsVisible && floorPanels.length > 0 && floorTables.some((t) => t.activeOrder);
+  const nowMs = useNow(hasRoomTimer || panelsNeedTick);
 
   // Zoom helpers
   // Zoom resizes the canvas in layout (not a CSS transform) so the workspace's
@@ -385,27 +416,37 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
     }
   };
 
-  // Start moving an existing zone (mousedown on its body, not a handle)
-  const handleZoneMouseDown = (e: React.MouseEvent, table: TableRoom) => {
+  // Start moving an existing zone or info panel (mousedown on its body, not a handle)
+  const handleBodyMouseDown = (e: React.MouseEvent, kind: DrawKind, item: ZoneRect & { id: string }) => {
     if (!isEditMode) return;
     e.stopPropagation();
     dragStartPos.current = { x: e.clientX, y: e.clientY };
-    dragOriginRef.current = { x: table.x, y: table.y };
+    dragOriginRef.current = { x: item.x, y: item.y };
     hasDraggedRef.current = false;
-    setDraggingTableId(table.id);
+    setDragging({ kind, id: item.id });
   };
 
-  // Start resizing an existing zone (mousedown on one of its border handles)
-  const handleResizeMouseDown = (e: React.MouseEvent, table: TableRoom, handle: ResizeHandle) => {
+  // Start resizing an existing zone or info panel (mousedown on one of its border handles)
+  const handleResizeMouseDown = (
+    e: React.MouseEvent,
+    kind: DrawKind,
+    item: ZoneRect & { id: string },
+    handle: ResizeHandle
+  ) => {
     if (!isEditMode) return;
     e.stopPropagation();
     resizeStartRef.current = {
       mouseX: e.clientX,
       mouseY: e.clientY,
-      orig: { x: table.x, y: table.y, width: table.width, height: table.height },
+      orig: { x: item.x, y: item.y, width: item.width, height: item.height },
     };
     hasDraggedRef.current = false;
-    setResizingState({ tableId: table.id, handle });
+    setResizingState({ kind, id: item.id, handle });
+  };
+
+  const applyGeometry = (target: EditTarget, geometry: ZoneRect) => {
+    if (target.kind === 'panel') onUpdateInfoPanelGeometry(target.id, geometry);
+    else onUpdateTableGeometry(target.id, geometry);
   };
 
   // Start drawing a brand-new zone (mousedown on blank canvas)
@@ -427,20 +468,27 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
       const dxPct = ((e.clientX - resizeStartRef.current.mouseX) / rect.width) * 100;
       const dyPct = ((e.clientY - resizeStartRef.current.mouseY) / rect.height) * 100;
       const next = applyResize(resizeStartRef.current.orig, resizingState.handle, dxPct, dyPct);
-      onUpdateTableGeometry(resizingState.tableId, next);
+      applyGeometry(resizingState, next);
       return;
     }
 
-    if (draggingTableId) {
-      const table = floorTables.find((t) => t.id === draggingTableId);
-      if (!table) return;
+    if (dragging) {
+      const item =
+        dragging.kind === 'panel'
+          ? floorPanels.find((p) => p.id === dragging.id)
+          : floorTables.find((t) => t.id === dragging.id);
+      if (!item) return;
       const dist = Math.hypot(e.clientX - dragStartPos.current.x, e.clientY - dragStartPos.current.y);
       if (dist > 5) hasDraggedRef.current = true;
       const dxPct = ((e.clientX - dragStartPos.current.x) / rect.width) * 100;
       const dyPct = ((e.clientY - dragStartPos.current.y) / rect.height) * 100;
-      const newX = clamp(dragOriginRef.current.x + dxPct, 0, 100 - table.width);
-      const newY = clamp(dragOriginRef.current.y + dyPct, 0, 100 - table.height);
-      onUpdateTablePosition(draggingTableId, newX, newY);
+      const newX = clamp(dragOriginRef.current.x + dxPct, 0, 100 - item.width);
+      const newY = clamp(dragOriginRef.current.y + dyPct, 0, 100 - item.height);
+      if (dragging.kind === 'panel') {
+        onUpdateInfoPanelGeometry(dragging.id, { x: newX, y: newY, width: item.width, height: item.height });
+      } else {
+        onUpdateTablePosition(dragging.id, newX, newY);
+      }
       return;
     }
 
@@ -459,8 +507,8 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
       return;
     }
 
-    if (draggingTableId) {
-      setDraggingTableId(null);
+    if (dragging) {
+      setDragging(null);
       suppressClickAfterInteraction();
       return;
     }
@@ -473,7 +521,13 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
       setDrawingRect(null);
       // Too small to be an intentional zone (e.g. a stray click) - ignore it.
       if (width < MIN_ZONE_SIZE_PCT || height < MIN_ZONE_SIZE_PCT) return;
-      onOpenNewTableModal({ x, y, width, height });
+      if (drawKind === 'panel') {
+        onCreateInfoPanel(
+          floor,
+          { x, y, width, height },
+          { widthPx: (width / 100) * canvasPx.width, heightPx: (height / 100) * canvasPx.height }
+        );
+      } else onOpenNewTableModal({ x, y, width, height });
     }
   };
 
@@ -533,6 +587,24 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
             </button>
           )}
 
+          {isEditMode && (
+            <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-white/5 text-xs font-bold" role="group" aria-label="What to draw">
+              <span className="px-2 text-slate-400 font-semibold">Draw:</span>
+              {(['zone', 'panel'] as const).map((kind) => (
+                <button
+                  key={kind}
+                  onClick={() => setDrawKind(kind)}
+                  aria-pressed={drawKind === kind}
+                  className={`px-2.5 py-1 rounded-lg transition-all ${
+                    drawKind === kind ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  {kind === 'zone' ? 'Zone' : 'Info panel'}
+                </button>
+              ))}
+            </div>
+          )}
+
           <button
             id="btn-toggle-edit-mode"
             onClick={onToggleEditMode}
@@ -579,6 +651,20 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
           >
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
+          <button
+            id="btn-toggle-info-panels"
+            onClick={onToggleInfoPanels}
+            aria-pressed={showInfoPanels}
+            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${
+              showInfoPanels
+                ? 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30'
+                : 'bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white'
+            }`}
+            title={showInfoPanels ? 'Hide Info Panels' : 'Show Info Panels'}
+            aria-label={showInfoPanels ? 'Hide info panels' : 'Show info panels'}
+          >
+            <LayoutDashboard className="w-3.5 h-3.5" />
+          </button>
           {canFullscreen && (
             <button
               id="btn-fullscreen"
@@ -599,7 +685,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
           <div className="px-4 py-2 rounded-2xl bg-indigo-950/90 border border-indigo-400/40 text-indigo-200 text-xs font-medium shadow-2xl backdrop-blur-md flex items-center gap-2.5">
             <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
             <span>
-              <strong>Edit Mode:</strong> Drag a zone to move it • Click a zone to edit/rename • Drag a corner or edge handle to resize • Click and hold, then drag to draw a new zone
+              <strong>Edit Mode:</strong> Drag a zone or info panel to move it • Click it to edit • Drag a corner or edge handle to resize • Click and hold, then drag to draw a new {drawKind === 'panel' ? 'info panel' : 'zone'}
             </span>
           </div>
         </div>
@@ -650,6 +736,64 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
             </div>
           )}
 
+          {/* Info panels - read-only widgets in the plan's free space. Styled as dark
+              cards (no status fill) so they never read as a table or room. */}
+          {panelsVisible && floorPanels.map((panel) => {
+            // On-screen size decides how many columns fit (see InfoPanelView).
+            const panelPx = {
+              widthPx: (panel.width / 100) * canvasPx.width,
+              heightPx: (panel.height / 100) * canvasPx.height,
+            };
+            return (
+              <div
+                key={panel.id}
+                id={`map-panel-${panel.id}`}
+                onMouseDown={(e) => handleBodyMouseDown(e, 'panel', panel)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (hasDraggedRef.current) return;
+                  if (isEditMode) onOpenInfoPanel(panel, panelPx);
+                }}
+                className={`absolute group rounded-xl shadow-xl ${
+                  isEditMode
+                    ? 'cursor-grab active:cursor-grabbing border-2 border-dashed border-indigo-400/70'
+                    : 'border border-white/10'
+                } ${isDrawingNewZone ? 'pointer-events-none' : ''} ${
+                  dragging?.id === panel.id || resizingState?.id === panel.id ? 'z-40' : ''
+                }`}
+                style={{
+                  left: `${panel.x}%`,
+                  top: `${panel.y}%`,
+                  width: `${panel.width}%`,
+                  height: `${panel.height}%`,
+                  backgroundColor: 'rgba(15, 17, 32, 0.9)',
+                }}
+              >
+                {/* Scrolls only as a fallback when a panel is too short for its widgets' minimum sizes */}
+                <div className="absolute inset-0 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
+                  <InfoPanelView
+                    panel={panel}
+                    floorTables={floorTables}
+                    nowMs={nowMs}
+                    widthPx={panelPx.widthPx}
+                    heightPx={panelPx.heightPx}
+                    interactive={!isEditMode}
+                    onSelectTable={onSelectTable}
+                  />
+                </div>
+
+                {isEditMode && RESIZE_HANDLES.map((handle) => (
+                  <div
+                    key={handle}
+                    onMouseDown={(e) => handleResizeMouseDown(e, 'panel', panel, handle)}
+                    onClick={(e) => e.stopPropagation()}
+                    className={`absolute w-2.5 h-2.5 bg-white border border-indigo-500 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity z-50 ${HANDLE_POSITION_CLASSES[handle]} ${HANDLE_CURSOR_CLASSES[handle]}`}
+                  />
+                ))}
+              </div>
+            );
+          })}
+
           {/* Interactive Table / Room Zones */}
           {floorTables.map((table) => {
             const isSelected = selectedTableId === table.id;
@@ -657,18 +801,19 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
             const isHovered = !isEditMode && hoveredTableId === table.id;
             const isHighlighted = isTableHighlighted(table);
             const isDraggingThis = draggingTableId === table.id;
-            const isResizingThis = resizingState?.tableId === table.id;
+            const isResizingThis = resizingState?.kind === 'zone' && resizingState.id === table.id;
 
             const colors = getStatusColors(table.status);
 
             const timing = getRoomTiming(activeOrder, nowMs);
+            const itemCount = activeOrder?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
             const label = getZoneLabelLayout(
               (table.width / 100) * canvasPx.width,
               (table.height / 100) * canvasPx.height,
               timing,
-              activeOrder != null
+              activeOrder != null,
+              itemCount > 0
             );
-            const itemCount = activeOrder?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
 
             // Keep the hover preview card from clipping at the map's edges -
             // based on the zone's actual edges now that it has real width/height.
@@ -681,7 +826,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
               <div
                 key={table.id}
                 id={`map-zone-${table.id}`}
-                onMouseDown={(e) => handleZoneMouseDown(e, table)}
+                onMouseDown={(e) => handleBodyMouseDown(e, 'zone', table)}
                 onClick={(e) => {
                   e.stopPropagation();
                   // If the user just dragged/resized the zone, don't also open a modal
@@ -752,7 +897,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                   )}
                   {activeOrder && label.showOrderNo && (
                     <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
-                      #{activeOrder.orderNo}
+                      #{shortOrderNo(activeOrder.orderNo)}
                     </span>
                   )}
                   {activeOrder && label.showItemCount && (
@@ -766,7 +911,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                 {isEditMode && RESIZE_HANDLES.map((handle) => (
                   <div
                     key={handle}
-                    onMouseDown={(e) => handleResizeMouseDown(e, table, handle)}
+                    onMouseDown={(e) => handleResizeMouseDown(e, 'zone', table, handle)}
                     onClick={(e) => e.stopPropagation()}
                     className={`absolute w-2.5 h-2.5 bg-white border border-indigo-500 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity z-50 ${HANDLE_POSITION_CLASSES[handle]} ${HANDLE_CURSOR_CLASSES[handle]}`}
                   />

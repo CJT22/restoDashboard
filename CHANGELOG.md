@@ -8,6 +8,23 @@ entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links t
 to be relative to this new root location. Going forward, each bullet is tagged with which app it
 touches (see [CLAUDE.md](CLAUDE.md) for the convention).
 
+## [1.9.0]
+
+### Added
+- **[restoDashboard]** **Info panels: live widgets in the floor plan's free space.** The unused areas of the plans (the kitchen/billiards block and the lounge on the 1st floor, the empty hall on the 2nd) now show dark cards with information staff would otherwise have to hunt for. Each panel reports on its own floor only. There are four widgets:
+  - **Room Timers**: every running hourly room, most overdue first, then by time left ("ROOM 3 · 2h · EXPIRED +0:21:35").
+  - **Pending Orders**: unconfirmed orders, oldest first, with how long each has waited. Each order can expand to list its items ("2× Sisig", at most 4 per order, then "+N more"). If every order's items fit the widget's measured on-screen height, all start expanded; otherwise they start collapsed. Either way, staff can expand or collapse any order with its ▸ button. Tapping the order itself still opens the zone.
+  - **Available Now**: free tables and rooms, for seating walk-ins.
+  - **Occupancy**: an occupied/total bar, plus available, pending, running and expired counts.
+
+  Tapping a row or name opens that zone's detail modal. Panels are deliberately *not* zones: no green/yellow status fill, no seat behavior, and they never count toward zone totals, the Available/Occupied filters, All Tables & Rooms, or restoAdmin linking. Everything is derived from order data the dashboard already holds, driven by the map's existing 1-second tick, so panels add no network requests ([InfoPanelView.tsx](restoDashboard/src/components/InfoPanelView.tsx), [infoPanels.ts](restoDashboard/src/data/infoPanels.ts), [types.ts](restoDashboard/src/types.ts)).
+  - **[restoDashboard]** Three default panels are pre-placed over those free areas (floor 1: Room Timers + Pending Orders on the left, Available Now + Occupancy on the right; floor 2: Room Timers + Pending Orders). In **Edit Zones**, a new **Draw: Zone / Info panel** switch lets staff draw more panels. Panels move and resize with the same handles as zones, and clicking one opens a picker to choose its widgets or delete it. Panels are saved per browser like the zone layout, and "Reset Sample Orders & Tables" restores the defaults ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [InfoPanelModal.tsx](restoDashboard/src/components/InfoPanelModal.tsx), [App.tsx](restoDashboard/src/App.tsx)).
+  - **[restoDashboard]** **Panel layout and widget order are configurable** in the panel's settings. Layout can be **Auto** (as many columns as fit), **Stacked** (one column) or **Side by side** (one column per widget). Widgets are reordered with ↑/↓ buttons, which work reliably by touch, and added or removed from the same list. Because a panel's pixel size depends on the screen and zoom, the layout is a preference checked every time the map is drawn. Columns narrower than about 150px aren't allowed, so "Side by side" is greyed out when the panel is too narrow at its current size, and a panel set to side by side on a laptop still stacks on an iPad. In a column, summary widgets (Occupancy, Available Now) take only the space they need and list widgets (Room Timers, Pending Orders) share the rest, each scrolling on its own. Every widget sits on its own faint card with the same 8px gap whichever way it's arranged, so stacked widgets no longer look cramped next to side-by-side ones ([InfoPanelView.tsx](restoDashboard/src/components/InfoPanelView.tsx), [InfoPanelModal.tsx](restoDashboard/src/components/InfoPanelModal.tsx), [types.ts](restoDashboard/src/types.ts)).
+  - **[restoDashboard]** A **show/hide Info Panels** button in the top-right map controls hides every panel when staff don't need them. Each device remembers its own choice. Panels still appear in Edit Zones so they can be arranged ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [App.tsx](restoDashboard/src/App.tsx)).
+
+### Changed
+- **[restoDashboard]** **Zone labels no longer show "0 items"** on room-charge-only orders, and **order numbers are shortened to their last segment** ("#ORD-20260924-144956" → "#144956") so they fit small zones. The hover card still shows the full number ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [orderSync.ts](restoDashboard/src/services/orderSync.ts)).
+
 ## [1.8.0]
 
 ### Added

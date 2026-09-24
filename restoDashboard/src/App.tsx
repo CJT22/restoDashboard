@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { TableRoom, TableStatus, AdminOrderSummary } from './types';
+import { TableRoom, TableStatus, AdminOrderSummary, InfoPanel } from './types';
 import { INITIAL_TABLES } from './data/mockRestaurantData';
+import { INITIAL_INFO_PANELS } from './data/infoPanels';
+import { InfoPanelModal } from './components/InfoPanelModal';
 import { Sidebar } from './components/Sidebar';
 import { FloorPlanMap } from './components/FloorPlanMap';
 import { TableDetailModal } from './components/TableDetailModal';
@@ -16,6 +18,8 @@ import { subscribeToOrderUpdates, getActiveOrders, getActiveOrderForTable } from
 // its pending/served field. Old saves are simply ignored rather than
 // migrated, same precedent as the _v1 -> _v2 bump.
 const STORAGE_KEY_TABLES = 'restaurant_dashboard_tables_v3';
+const STORAGE_KEY_INFO_PANELS = 'restaurant_dashboard_info_panels_v1';
+const STORAGE_KEY_SHOW_INFO_PANELS = 'restaurant_dashboard_show_info_panels';
 const VALID_STATUSES: TableStatus[] = ['available', 'occupied'];
 
 export default function App() {
@@ -69,6 +73,59 @@ export default function App() {
     description: '',
     onConfirm: () => {},
   });
+
+  // Info panels (floor plan widgets) and whether this device shows them —
+  // both local to this browser, like the zone layout itself.
+  const [infoPanels, setInfoPanels] = useState<InfoPanel[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY_INFO_PANELS);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {
+      console.error('Failed to parse saved info panels:', e);
+    }
+    return INITIAL_INFO_PANELS;
+  });
+  const [showInfoPanels, setShowInfoPanels] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY_SHOW_INFO_PANELS) !== 'false';
+    } catch {
+      return true;
+    }
+  });
+  // The panel whose settings modal is open, with its on-screen size at the
+  // time (the modal greys out "Side by side" when it wouldn't fit).
+  const [editingPanel, setEditingPanel] = useState<{ id: string; widthPx: number; heightPx: number } | null>(null);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_INFO_PANELS, JSON.stringify(infoPanels));
+    } catch (e) {
+      console.error('Failed to save info panels:', e);
+    }
+  }, [infoPanels]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_SHOW_INFO_PANELS, String(showInfoPanels));
+    } catch {
+      // Private mode / blocked storage: the toggle still works for this session.
+    }
+  }, [showInfoPanels]);
+
+  const handleUpdateInfoPanelGeometry = (panelId: string, geometry: { x: number; y: number; width: number; height: number }) => {
+    setInfoPanels((prev) => prev.map((p) => (p.id === panelId ? { ...p, ...geometry } : p)));
+  };
+
+  // A freshly drawn panel starts with Room Timers and opens its widget picker.
+  const handleCreateInfoPanel = (
+    floor: 1 | 2,
+    rect: { x: number; y: number; width: number; height: number },
+    size: { widthPx: number; heightPx: number }
+  ) => {
+    const panel: InfoPanel = { id: `panel-${Date.now()}`, floor, widgets: ['roomTimers'], layout: 'auto', ...rect };
+    setInfoPanels((prev) => [...prev, panel]);
+    setEditingPanel({ id: panel.id, ...size });
+  };
 
   // Latest tables for the mount-once SSE subscriber below, whose closure
   // would otherwise only ever see the initial state.
@@ -325,11 +382,12 @@ export default function App() {
     setConfirmState({
       isOpen: true,
       title: 'Reset All Tables & Sample Orders?',
-      description: 'This will restore the floor plan to the default set of tables, rooms, and sample guest orders.',
+      description: 'This will restore the floor plan to the default set of tables, rooms, info panels, and sample guest orders.',
       confirmText: 'Reset Demo Data',
       confirmVariant: 'warning',
       onConfirm: () => {
         setTables(INITIAL_TABLES);
+        setInfoPanels(INITIAL_INFO_PANELS);
         setSelectedTable(null);
         localStorage.removeItem(STORAGE_KEY_TABLES);
       },
@@ -372,6 +430,12 @@ export default function App() {
             onOpenEditTableModal={handleOpenEditTableModal}
             onPromptDeleteSingleTable={handlePromptDeleteSingleTable}
             onPromptDeleteAll={handlePromptDeleteAll}
+            infoPanels={infoPanels}
+            showInfoPanels={showInfoPanels}
+            onToggleInfoPanels={() => setShowInfoPanels((prev) => !prev)}
+            onUpdateInfoPanelGeometry={handleUpdateInfoPanelGeometry}
+            onCreateInfoPanel={handleCreateInfoPanel}
+            onOpenInfoPanel={(panel, size) => setEditingPanel({ id: panel.id, ...size })}
           />
         )}
 
@@ -415,6 +479,20 @@ export default function App() {
       />
 
       {/* Safe In-App Confirmation Modal (Replaces window.confirm) */}
+      <InfoPanelModal
+        panel={infoPanels.find((p) => p.id === editingPanel?.id) ?? null}
+        panelSize={editingPanel}
+        onClose={() => setEditingPanel(null)}
+        onSave={(id, changes) => {
+          setInfoPanels((prev) => prev.map((p) => (p.id === id ? { ...p, ...changes } : p)));
+          setEditingPanel(null);
+        }}
+        onDelete={(id) => {
+          setInfoPanels((prev) => prev.filter((p) => p.id !== id));
+          setEditingPanel(null);
+        }}
+      />
+
       <ConfirmModal
         isOpen={confirmState.isOpen}
         onClose={() => setConfirmState((prev) => ({ ...prev, isOpen: false }))}
