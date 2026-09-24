@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { TableRoom, TableStatus, AdminOrderSummary } from './types';
 import { INITIAL_TABLES } from './data/mockRestaurantData';
 import { Sidebar } from './components/Sidebar';
@@ -9,7 +9,7 @@ import { OrderQueueView } from './components/OrderQueueView';
 import { EditTableModal } from './components/EditTableModal';
 import { ConfirmModal } from './components/ConfirmModal';
 import { getAdminTables, getAdminTableStatus, setLink, statusFromAdmin, subscribeToAdminUpdates } from './services/adminSync';
-import { subscribeToOrderUpdates, getActiveOrders } from './services/orderSync';
+import { subscribeToOrderUpdates, getActiveOrders, getActiveOrderForTable } from './services/orderSync';
 
 // Bumped again from _v2: TableStatus narrowed from 4 states to 2
 // (available/occupied only — see types.ts), and AdminOrderLineItem dropped
@@ -69,6 +69,11 @@ export default function App() {
     description: '',
     onConfirm: () => {},
   });
+
+  // Latest tables for the mount-once SSE subscriber below, whose closure
+  // would otherwise only ever see the initial state.
+  const tablesRef = useRef(tables);
+  tablesRef.current = tables;
 
   // Persist tables changes
   useEffect(() => {
@@ -181,20 +186,38 @@ export default function App() {
     const unsubscribeOrders = subscribeToOrderUpdates((event) => {
       if (event.tableId == null) return;
       const isActive = event.status === 2 || event.status === 3;
-      applyRemoteOrder(
-        event.tableId,
-        isActive
-          ? {
-              id: event.orderId,
-              orderNo: event.orderNo ?? '',
-              orderType: null,
-              status: event.status ?? 0,
-              subtotal: event.items.reduce((sum, i) => sum + i.lineTotal, 0),
-              grandTotal: event.grandTotal ?? 0,
-              items: event.items,
-            }
-          : undefined
-      );
+      if (!isActive) {
+        applyRemoteOrder(event.tableId, undefined);
+        return;
+      }
+
+      // Only restoAdmin's create/full-update events carry the room-timer
+      // fields (serviceCharge/roomRate/createdAt); item-level events don't,
+      // so keep what this zone already knew about the same order.
+      const adminTableId = event.tableId;
+      const prev = tablesRef.current.find((t) => t.adminTableId === adminTableId)?.activeOrder;
+      const known = prev && prev.id === event.orderId ? prev : undefined;
+      const order: AdminOrderSummary = {
+        id: event.orderId,
+        orderNo: event.orderNo ?? '',
+        orderType: null,
+        status: event.status ?? 0,
+        subtotal: event.items.reduce((sum, i) => sum + i.lineTotal, 0),
+        serviceCharge: event.serviceCharge ?? known?.serviceCharge,
+        roomRate: event.roomRate ?? known?.roomRate,
+        createdAt: event.createdAt ?? known?.createdAt,
+        grandTotal: event.grandTotal ?? 0,
+        items: event.items,
+      };
+      applyRemoteOrder(adminTableId, order);
+
+      // An order this tab hasn't seen in full (e.g. created through one of
+      // restoAdmin's other paths): pull it once so its timer can start.
+      if (!order.createdAt) {
+        getActiveOrderForTable(adminTableId)
+          .then((fresh) => applyRemoteOrder(adminTableId, fresh ?? undefined))
+          .catch((err) => console.warn('Order refetch for room timer failed:', err));
+      }
     });
 
     return () => {

@@ -29,6 +29,12 @@ export interface AdminOrderSummary {
   // never a line item in `items`. Optional because the order_created/
   // order_updated SSE event doesn't carry it yet; a full refetch does.
   serviceCharge?: number;
+  // orders.ENCODED_DT as an ISO instant — when a room's booked hours start
+  // counting down (see src/utils/roomTimer.ts).
+  createdAt?: string;
+  // The linked table's hourly ROOM_CHARGE at fetch time (0/undefined = not an
+  // hourly room). Booked hours = serviceCharge / roomRate.
+  roomRate?: number;
   grandTotal: number;
   items: AdminOrderLineItem[];
 }

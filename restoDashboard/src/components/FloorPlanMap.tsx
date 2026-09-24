@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { TableRoom } from '../types';
 import { getStatusColors } from '../utils/statusColors';
 import { getOrderStatusLabel, getOrderStatusColorClass } from '../services/orderSync';
+import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, RoomTiming } from '../utils/roomTimer';
 import {
   ZoomIn,
   ZoomOut,
@@ -68,6 +69,90 @@ interface ZoneRect {
   y: number;
   width: number;
   height: number;
+}
+
+// Zone info panel: one dark panel pinned to the zone's top-left, stacking
+// lines in priority order — name, room timer, order status, order number,
+// item count. Laid out in JS from the zone's rendered size in px (so zooming
+// in reveals more): text scales with the zone, and lines drop off the bottom
+// once they no longer fit. The name and an hourly room's timer are never
+// dropped. Anything cut here is still in the hover card and detail modal.
+const PANEL_PAD_X = 3;
+const PANEL_PAD_Y = 2;
+
+// Rough rendered width of a line, in em, for picking the longest timer
+// wording that fits (digits are tabular; letters are bold caps at worst).
+function estimateTextEm(text: string): number {
+  let em = 0;
+  for (const ch of text) em += /[0-9]/.test(ch) ? 0.56 : /[:.· ]/.test(ch) ? 0.3 : 0.62;
+  return em;
+}
+
+interface ZoneLabelLayout {
+  insetPx: number;
+  fontPx: number;
+  lineHeightPx: number;
+  nameMaxWidthPx: number;
+  timerLines: string[];
+  showStatusLine: boolean;
+  showOrderNo: boolean;
+  showItemCount: boolean;
+}
+
+function getZoneLabelLayout(
+  widthPx: number,
+  heightPx: number,
+  timing: RoomTiming | null,
+  hasOrder: boolean
+): ZoneLabelLayout {
+  const minSide = Math.min(widthPx, heightPx);
+  // Includes the zone's 2px border.
+  const insetPx = minSide < 60 ? 4 : 7;
+  const fontPx = clamp(Math.round(minSide * 0.12), 9, 13);
+  const lineHeightPx = Math.round(fontPx * 1.3);
+  const innerWidth = widthPx - 2 * insetPx - 2 * PANEL_PAD_X;
+  const innerHeight = heightPx - 2 * insetPx - 2 * PANEL_PAD_Y;
+
+  // Longest wording that fits the width. The last option always shows, even
+  // if it slightly overflows, since the timer must never be hidden; when
+  // expired it splits onto two lines so a narrow zone still says "EXPIRED".
+  let timerLines: string[] = [];
+  if (timing) {
+    const time = formatDuration(timing.remainingMs);
+    const candidates = timing.expired
+      ? [[`EXPIRED +${time}`], [`EXP +${time}`], ['EXPIRED', `+${time}`]]
+      : [[`${formatHours(timing.hours)} · ${time} left`], [`${time} left`], [time]];
+    timerLines =
+      candidates.find((lines) => lines.every((l) => estimateTextEm(l) * fontPx <= innerWidth)) ??
+      candidates[candidates.length - 1];
+  }
+
+  const linesThatFit = Math.floor(innerHeight / lineHeightPx);
+  let spareLines = linesThatFit - 1 - timerLines.length;
+  const take = (wanted: boolean) => {
+    if (!wanted || spareLines <= 0) return false;
+    spareLines -= 1;
+    return true;
+  };
+  const showStatusLine = take(hasOrder);
+  const showOrderNo = take(hasOrder);
+  const showItemCount = take(hasOrder);
+
+  return {
+    insetPx,
+    fontPx,
+    lineHeightPx,
+    nameMaxWidthPx: Math.max(0, innerWidth),
+    timerLines,
+    showStatusLine,
+    showOrderNo,
+    showItemCount,
+  };
+}
+
+// Matches getOrderStatusColorClass's hues, as a bare dot.
+function getOrderStatusDotClass(status: number): string {
+  return status === 3 ? 'bg-amber-400' : status === 2 ? 'bg-indigo-400' : 'bg-slate-400';
 }
 
 // Fullscreen API with the webkit-prefixed fallback older iPadOS Safari needs.
@@ -197,8 +282,28 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
   const mapCanvasRef = useRef<HTMLDivElement>(null);
 
+  // Rendered canvas size in px, so each zone's label can pick how much to
+  // show from its real on-screen size (zone geometry is in % of the canvas).
+  // Tracks zoom and window resizes alike.
+  const [canvasPx, setCanvasPx] = useState({ width: 0, height: 0 });
+  useLayoutEffect(() => {
+    const el = mapCanvasRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(([entry]) => {
+      const { width, height } = entry.contentRect;
+      setCanvasPx((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   // Filter tables by floor
   const floorTables = tables.filter((t) => t.floor === floor);
+
+  // One shared 1s tick drives every hourly room's countdown; only runs while
+  // this floor has one to show.
+  const hasRoomTimer = floorTables.some((t) => getRoomTiming(t.activeOrder, 0) != null);
+  const nowMs = useNow(hasRoomTimer);
 
   // Zoom helpers
   // Zoom resizes the canvas in layout (not a CSS transform) so the workspace's
@@ -556,6 +661,15 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
             const colors = getStatusColors(table.status);
 
+            const timing = getRoomTiming(activeOrder, nowMs);
+            const label = getZoneLabelLayout(
+              (table.width / 100) * canvasPx.width,
+              (table.height / 100) * canvasPx.height,
+              timing,
+              activeOrder != null
+            );
+            const itemCount = activeOrder?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
+
             // Keep the hover preview card from clipping at the map's edges -
             // based on the zone's actual edges now that it has real width/height.
             const zoneRight = table.x + table.width;
@@ -603,17 +717,49 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                   }}
                 />
 
-                {/* Name label - fixed light text on a dark backdrop chip, inset so it never touches the zone's border */}
-                <div className="absolute inset-1.5 flex items-center justify-center pointer-events-none">
+                {/* Info panel - one dark panel pinned to the top-left, inset from the zone's border.
+                    Lines, size and wording follow the zone's on-screen size (see getZoneLabelLayout). */}
+                <div
+                  className="absolute flex flex-col items-start rounded-md pointer-events-none"
+                  style={{
+                    top: label.insetPx,
+                    left: label.insetPx,
+                    padding: `${PANEL_PAD_Y}px ${PANEL_PAD_X}px`,
+                    fontSize: label.fontPx,
+                    lineHeight: `${label.lineHeightPx}px`,
+                    color: 'rgba(255, 255, 255, 0.95)',
+                    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                  }}
+                >
                   <span
-                    className="max-w-full truncate text-[11px] font-bold tracking-tight text-center leading-tight px-2 py-1 rounded-md"
-                    style={{
-                      color: 'rgba(255, 255, 255, 0.95)',
-                      backgroundColor: 'rgba(0, 0, 0, 0.65)',
-                    }}
+                    className="flex items-center gap-1 font-bold tracking-tight whitespace-nowrap"
+                    style={{ maxWidth: label.nameMaxWidthPx }}
                   >
-                    {table.name}
+                    {/* No room for a status line: keep the status visible as a dot beside the name */}
+                    {activeOrder && !label.showStatusLine && (
+                      <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${getOrderStatusDotClass(activeOrder.status)}`} />
+                    )}
+                    <span className="truncate">{table.name}</span>
                   </span>
+                  {label.timerLines.map((line) => (
+                    <span key={line} className="font-bold tabular-nums whitespace-nowrap">{line}</span>
+                  ))}
+                  {activeOrder && label.showStatusLine && (
+                    <span className="flex items-center gap-1 whitespace-nowrap text-slate-300" style={{ maxWidth: label.nameMaxWidthPx }}>
+                      <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${getOrderStatusDotClass(activeOrder.status)}`} />
+                      <span className="truncate">{getOrderStatusLabel(activeOrder.status)}</span>
+                    </span>
+                  )}
+                  {activeOrder && label.showOrderNo && (
+                    <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
+                      #{activeOrder.orderNo}
+                    </span>
+                  )}
+                  {activeOrder && label.showItemCount && (
+                    <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
+                      {itemCount} {itemCount === 1 ? 'item' : 'items'}
+                    </span>
+                  )}
                 </div>
 
                 {/* Edit mode: 8-point resize handles, shown on hover */}
@@ -682,6 +828,18 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                             {getOrderStatusLabel(activeOrder.status)}
                           </span>
                         </div>
+                        {timing && (
+                          <>
+                            <div className="text-slate-400">
+                              {formatHours(timing.hours)} booked · {formatClockTime(timing.startMs)} – {formatClockTime(timing.endMs)}
+                            </div>
+                            <div className="font-mono font-bold text-white tabular-nums">
+                              {timing.expired
+                                ? `Expired · ${formatDuration(timing.remainingMs)} over`
+                                : `${formatDuration(timing.remainingMs)} left`}
+                            </div>
+                          </>
+                        )}
                       </div>
                     )}
 

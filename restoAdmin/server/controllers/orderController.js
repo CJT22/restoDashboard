@@ -177,6 +177,11 @@ class OrderController {
 				table_id: payload.TABLE_ID,
 				status: payload.STATUS,
 				grand_total: payload.GRAND_TOTAL,
+				// service_charge/room_charge/encoded_dt let restoDashboard derive a
+				// room's booked hours and run its countdown without refetching.
+				service_charge: payload.SERVICE_CHARGE,
+				room_charge: fullOrder?.ROOM_CHARGE ?? null,
+				encoded_dt: fullOrder?.ENCODED_DT ?? null,
 				items: orderItems,
 				items_count: items.length,
 				encoded_by: req.session?.user_id || req.user?.user_id || null,
@@ -612,6 +617,11 @@ class OrderController {
 				order_type: updatedOrder.ORDER_TYPE,
 				status: updatedOrder.STATUS,
 				grand_total: updatedOrder.GRAND_TOTAL,
+				// This is the path room-charge hour changes go through, so carry
+				// what restoDashboard needs to re-derive the room's countdown.
+				service_charge: updatedOrder.SERVICE_CHARGE,
+				room_charge: updatedOrder.ROOM_CHARGE ?? null,
+				encoded_dt: updatedOrder.ENCODED_DT ?? null,
 				items: orderItems
 			});
 

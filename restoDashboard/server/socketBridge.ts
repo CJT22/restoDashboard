@@ -9,7 +9,7 @@
 
 import { EventEmitter } from 'events';
 import { io as ioClient, type Socket } from 'socket.io-client';
-import { ADMIN_API_BASE_URL, ADMIN_BRANCH_ID } from './adminClient.js';
+import { ADMIN_API_BASE_URL, ADMIN_BRANCH_ID, encodedDtToIso } from './adminClient.js';
 
 export interface TableUpdatedEvent {
   adminTableId: number;
@@ -30,6 +30,12 @@ export interface OrderEvent {
   orderNo: string | null;
   status: number | null;
   grandTotal: number | null;
+  // Only restoAdmin's order create / full-update events carry these three
+  // (null otherwise) — enough for the dashboard's room countdown to follow
+  // an hours change made in restoAdmin. See OrderController create/update.
+  serviceCharge: number | null;
+  roomRate: number | null;
+  createdAt: string | null;
   items: any[];
 }
 
@@ -80,6 +86,9 @@ export function connectSocketBridge(): void {
       orderNo: order.order_no || null,
       status: order.status != null ? Number(order.status) : null,
       grandTotal: order.grand_total != null ? Number(order.grand_total) : null,
+      serviceCharge: order.service_charge != null ? Number(order.service_charge) : null,
+      roomRate: order.room_charge != null ? Number(order.room_charge) : null,
+      createdAt: encodedDtToIso(order.encoded_dt),
       items: Array.isArray(order.items) ? order.items : [],
     };
     orderEvents.emit(emitName, event);

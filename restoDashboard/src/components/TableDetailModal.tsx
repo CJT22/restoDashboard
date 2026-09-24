@@ -15,6 +15,7 @@ import {
 } from '../services/orderSync';
 import { getAdminTables } from '../services/adminSync';
 import { getStatusColors } from '../utils/statusColors';
+import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow } from '../utils/roomTimer';
 import { NewOrderModal } from './NewOrderModal';
 import { SettlePaymentModal } from './SettlePaymentModal';
 import {
@@ -135,6 +136,12 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   // rate; re-derives automatically whenever the order refreshes.
   const roomChargeQty =
     roomChargeRate > 0 ? Math.max(1, Math.round(((activeOrder?.serviceCharge ?? 0) / roomChargeRate) * 2) / 2) : 0;
+
+  // Hourly room countdown, same as the map zone's (src/utils/roomTimer.ts).
+  // Falls back to this modal's own fetched rate if the order doesn't carry one.
+  const timedOrder = activeOrder ? { ...activeOrder, roomRate: activeOrder.roomRate || roomChargeRate } : undefined;
+  const nowMs = useNow(getRoomTiming(timedOrder, 0) != null);
+  const timing = getRoomTiming(timedOrder, nowMs);
 
   const refreshOrder = async () => {
     if (table.adminTableId == null) return;
@@ -421,6 +428,19 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                         <Plus className="w-3.5 h-3.5" />
                       </button>
                     </div>
+                  </div>
+                )}
+
+                {timing && (
+                  <div className="px-3 py-2 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between text-xs">
+                    <span className="text-slate-400">
+                      {formatHours(timing.hours)} booked · {formatClockTime(timing.startMs)} – {formatClockTime(timing.endMs)}
+                    </span>
+                    <span className="font-mono font-bold text-white tabular-nums">
+                      {timing.expired
+                        ? `EXPIRED +${formatDuration(timing.remainingMs)}`
+                        : `${formatDuration(timing.remainingMs)} left`}
+                    </span>
                   </div>
                 )}
 

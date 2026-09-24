@@ -144,8 +144,11 @@ class OrderModel {
 				o.SERVICE_CHARGE,
 				o.DISCOUNT_AMOUNT,
 				o.GRAND_TOTAL,
+				o.ENCODED_DT,
+				t.ROOM_CHARGE,
 				(SELECT bill.PAYMENT_METHOD FROM billing bill WHERE bill.ORDER_ID = o.IDNo ORDER BY bill.IDNo DESC LIMIT 1) AS payment_method
 			FROM orders o
+			LEFT JOIN restaurant_tables t ON t.IDNo = o.TABLE_ID
 			WHERE o.IDNo = ?
 			LIMIT 1
 		`;

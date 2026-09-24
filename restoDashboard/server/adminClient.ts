@@ -53,7 +53,25 @@ export interface AdminOrder {
   serviceCharge: number;
   discountAmount: number;
   grandTotal: number;
+  // orders.ENCODED_DT as an ISO instant (see encodedDtToIso) — when the order
+  // was created, which is when a room's booked hours start counting down.
+  createdAt: string | null;
+  // The linked table's hourly ROOM_CHARGE (null/0 = not an hourly room).
+  roomRate: number | null;
   items: AdminOrderItem[];
+}
+
+// Normalizes orders.ENCODED_DT to an ISO instant the same way restoAdmin's own
+// UI reads it (src/utils/manilaDateTime.ts parseEncodedDtToUtcMs): a Date or a
+// string with Z/offset is already an instant, while a naive
+// "YYYY-MM-DD HH:mm:ss" string is Asia/Manila wall-clock time.
+export function encodedDtToIso(value: unknown): string | null {
+  if (value == null || value === '') return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  const str = String(value).trim();
+  const naive = str.match(/^(\d{4}-\d{2}-\d{2})[ T](\d{2}:\d{2}(?::\d{2})?)(\.\d+)?$/);
+  const d = naive ? new Date(`${naive[1]}T${naive[2]}${naive[3] ?? ''}+08:00`) : new Date(str);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
 }
 
 export interface AdminMenuItem {
@@ -233,6 +251,8 @@ function mapAdminOrder(row: any, items: AdminOrderItem[]): AdminOrder {
     serviceCharge: Number(row.SERVICE_CHARGE ?? 0),
     discountAmount: Number(row.DISCOUNT_AMOUNT ?? 0),
     grandTotal: Number(row.GRAND_TOTAL ?? 0),
+    createdAt: encodedDtToIso(row.ENCODED_DT),
+    roomRate: row.ROOM_CHARGE != null ? Number(row.ROOM_CHARGE) : null,
     items,
   };
 }

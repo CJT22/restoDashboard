@@ -8,6 +8,21 @@ entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links t
 to be relative to this new root location. Going forward, each bullet is tagged with which app it
 touches (see [CLAUDE.md](CLAUDE.md) for the convention).
 
+## [1.8.0]
+
+### Added
+- **[restoDashboard]** **Hourly rooms now show a live countdown of their booked time.** For a room with a room charge and an open order, the zone shows how many hours are booked and how long is left, ticking every second (e.g. "2h · 1:23:45 left"). The booking starts when the order is created and ends that many hours later. Once time is up, the zone shows "EXPIRED +0:12:03" and keeps counting the overtime, so staff know how far over the guest is when billing extra. The room stays Occupied; nothing changes automatically. Booked hours are still derived from the order's service charge ÷ the room's rate (the same value the room-charge stepper uses), so changing the hours in either app just moves the end time. Adding hours to an expired room brings the countdown back, and cutting hours below the time already used switches it straight to overtime ([roomTimer.ts](restoDashboard/src/utils/roomTimer.ts), [FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **[restoDashboard]** **Each zone's details now sit in one dark info panel in its top-left corner**, replacing the centered name chip, so the whole zone can be used for information. Lines stack in priority order: name, room timer, order status (e.g. "● Pending"), order number, and item count. Only rooms with a room charge get a timer. Everything is laid out from the zone's real on-screen size, so zooming in reveals more:
+  - Text scales with the zone (9px in the smallest up to 13px in big rooms), so the smallest zones stay readable on an iPad.
+  - Lines drop off the bottom when they don't fit. The name and a room's timer never do.
+  - When the status line doesn't fit, the status shows as a colored dot beside the name.
+  - The timer picks the longest wording that fits the zone's width: "2h · 1:23:45 left", then "1:23:45 left", then "1:23:45". Expired rooms go from "EXPIRED +0:12:03" to "EXP +0:12:03", then split onto two lines ("EXPIRED" / "+0:12:03") in narrow zones, so an expired room is always labeled as such.
+  - The hover card and table detail modal always show a room's full booking details: hours booked, start–end time, and time left or overtime ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [TableDetailModal.tsx](restoDashboard/src/components/TableDetailModal.tsx)).
+
+### Changed
+- **[restoAdmin + restoDashboard]** **Orders now carry their creation time and the table's room rate to the dashboard**, which the countdown needs. restoAdmin's single-order lookup (`GET /orders/:id`) now also returns `ENCODED_DT` and the table's `ROOM_CHARGE`. Its order-created and order-updated live events now include `service_charge`, `room_charge` and `encoded_dt`, so an hours change made in restoAdmin updates the dashboard's countdown immediately instead of waiting for a refresh. The dashboard server normalizes `ENCODED_DT` to an exact instant the same way restoAdmin's own UI does (a naive timestamp is read as Manila time) ([orderModel.js](restoAdmin/server/models/orderModel.js), [orderController.js](restoAdmin/server/controllers/orderController.js), [adminClient.ts](restoDashboard/server/adminClient.ts), [socketBridge.ts](restoDashboard/server/socketBridge.ts), [types.ts](restoDashboard/src/types.ts), [orderSync.ts](restoDashboard/src/services/orderSync.ts)).
+- **[restoDashboard]** **Live order events that don't carry the room-charge fields (item adds, edits, deletes) no longer wipe them.** Previously any item change reset the order's known service charge, so the detail modal's room-charge stepper could briefly show 1 hour until the order was refetched. The dashboard now keeps the values it already had for that order. If an order arrives without a creation time (e.g. created through another restoAdmin path), the dashboard fetches it once so its timer can start ([App.tsx](restoDashboard/src/App.tsx)).
+
 ## [1.7.1]
 
 ### Added

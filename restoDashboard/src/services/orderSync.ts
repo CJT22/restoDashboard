@@ -112,6 +112,8 @@ export function mapAdminOrder(row: any): AdminOrderSummary {
     status: Number(row.status ?? 0),
     subtotal: Number(row.subtotal ?? 0),
     serviceCharge: row.serviceCharge != null ? Number(row.serviceCharge) : undefined,
+    createdAt: row.createdAt ?? undefined,
+    roomRate: row.roomRate != null ? Number(row.roomRate) : undefined,
     grandTotal: Number(row.grandTotal ?? 0),
     items: Array.isArray(row.items) ? row.items.map(mapAdminOrderItem) : [],
   };
@@ -243,6 +245,11 @@ export interface RemoteOrderUpdate {
   status: number | null;
   orderNo: string | null;
   grandTotal: number | null;
+  // Null unless the event came from restoAdmin's order create/full-update
+  // path — see server/socketBridge.ts OrderEvent.
+  serviceCharge: number | null;
+  roomRate: number | null;
+  createdAt: string | null;
   items: AdminOrderLineItem[];
 }
 
@@ -262,6 +269,9 @@ export function subscribeToOrderUpdates(onUpdate: (event: RemoteOrderUpdate) => 
         status: payload.status != null ? Number(payload.status) : null,
         orderNo: payload.orderNo ?? null,
         grandTotal: payload.grandTotal != null ? Number(payload.grandTotal) : null,
+        serviceCharge: payload.serviceCharge != null ? Number(payload.serviceCharge) : null,
+        roomRate: payload.roomRate != null ? Number(payload.roomRate) : null,
+        createdAt: payload.createdAt ?? null,
         items: Array.isArray(payload.items)
           ? payload.items.map((row: any) => ({
               id: Number(row.IDNo),
