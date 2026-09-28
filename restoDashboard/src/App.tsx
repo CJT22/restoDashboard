@@ -209,8 +209,13 @@ export default function App() {
             const remote = byId.get(t.adminTableId);
             if (!remote) return t;
             const remoteStatus = statusFromAdmin(remote.status);
-            if (remoteStatus === t.status && remote.tableNumber === t.adminTableName) return t;
-            return { ...t, status: remoteStatus, adminTableName: remote.tableNumber };
+            const roomCharge = remote.roomCharge ?? undefined;
+            if (
+              remoteStatus === t.status &&
+              remote.tableNumber === t.adminTableName &&
+              roomCharge === t.adminRoomCharge
+            ) return t;
+            return { ...t, status: remoteStatus, adminTableName: remote.tableNumber, adminRoomCharge: roomCharge };
           })
         );
       })
@@ -263,7 +268,7 @@ export default function App() {
         serviceCharge: event.serviceCharge ?? known?.serviceCharge,
         roomRate: event.roomRate ?? known?.roomRate,
         createdAt: event.createdAt ?? known?.createdAt,
-        grandTotal: event.grandTotal ?? 0,
+        grandTotal: event.grandTotal ?? known?.grandTotal ?? 0,
         items: event.items,
       };
       applyRemoteOrder(adminTableId, order);

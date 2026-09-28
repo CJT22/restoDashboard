@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { TableRoom, InfoPanel } from '../types';
 import { getStatusColors } from '../utils/statusColors';
-import { shortOrderNo } from '../services/orderSync';
 import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, RoomTiming } from '../utils/roomTimer';
 import {
   ZoomIn,
@@ -78,11 +77,20 @@ interface ZoneRect {
 }
 
 // Zone info panel: one dark panel pinned to the zone's top-left, stacking
-// lines in priority order — name, room timer, order number, item count. Laid out in JS from the zone's rendered size in px (so zooming
+// lines in priority order — name, room timer, item count, order total, then
+// the order's items ("2× Sisig"), with "+N more" when not all of them fit.
+// The total is drawn last (at the bottom) but claims its line before the
+// items do. Laid out in JS from the zone's rendered size in px (so zooming
 // in reveals more): text scales with the zone, and lines drop off the bottom
 // once they no longer fit. The name and an hourly room's timer are never
 // dropped. Anything cut here is still in the hover card and detail modal.
 const PANEL_PAD_X = 3;
+
+// Order items listed on a zone's hover card before the rest become "+N more".
+const HOVER_MAX_ITEMS = 5;
+
+const formatPeso = (amount: number) =>
+  `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const PANEL_PAD_Y = 2;
 
 // Rough rendered width of a line, in em, for picking the longest timer
@@ -99,8 +107,10 @@ interface ZoneLabelLayout {
   lineHeightPx: number;
   nameMaxWidthPx: number;
   timerLines: string[];
-  showOrderNo: boolean;
   showItemCount: boolean;
+  showTotal: boolean;
+  // How many order items get their own line; any left over become "+N more".
+  itemLinesShown: number;
 }
 
 function getZoneLabelLayout(
@@ -108,8 +118,9 @@ function getZoneLabelLayout(
   heightPx: number,
   timing: RoomTiming | null,
   hasOrder: boolean,
-  // A room-charge-only order has no items; "0 items" would just be noise.
-  hasItems: boolean
+  // Distinct order items. A room-charge-only order has none, and
+  // "0 items" would just be noise.
+  itemLineCount: number
 ): ZoneLabelLayout {
   const minSide = Math.min(widthPx, heightPx);
   // Includes the zone's 2px border.
@@ -140,8 +151,16 @@ function getZoneLabelLayout(
     spareLines -= 1;
     return true;
   };
-  const showOrderNo = take(hasOrder);
-  const showItemCount = take(hasOrder && hasItems);
+  const showItemCount = take(itemLineCount > 0);
+  const showTotal = take(hasOrder);
+
+  // All items if they fit; otherwise as many as fit above a "+N more" line.
+  // A lone "+N more" under the count adds nothing, so skip it.
+  let itemLinesShown = 0;
+  if (showItemCount && spareLines > 0) {
+    if (itemLineCount <= spareLines) itemLinesShown = itemLineCount;
+    else if (spareLines >= 2) itemLinesShown = spareLines - 1;
+  }
 
   return {
     insetPx,
@@ -149,8 +168,9 @@ function getZoneLabelLayout(
     lineHeightPx,
     nameMaxWidthPx: Math.max(0, innerWidth),
     timerLines,
-    showOrderNo,
     showItemCount,
+    showTotal,
+    itemLinesShown,
   };
 }
 
@@ -824,8 +844,9 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
               (table.height / 100) * canvasPx.height,
               timing,
               activeOrder != null,
-              itemCount > 0
+              activeOrder?.items.length ?? 0
             );
+            const orderItems = activeOrder?.items ?? [];
 
             // Keep the hover preview card from clipping at the map's edges -
             // based on the zone's actual edges now that it has real width/height.
@@ -897,14 +918,24 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                   {label.timerLines.map((line) => (
                     <span key={line} className="font-bold tabular-nums whitespace-nowrap">{line}</span>
                   ))}
-                  {activeOrder && label.showOrderNo && (
-                    <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
-                      #{shortOrderNo(activeOrder.orderNo)}
-                    </span>
-                  )}
-                  {activeOrder && label.showItemCount && (
+                  {label.showItemCount && (
                     <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
                       {itemCount} {itemCount === 1 ? 'item' : 'items'}
+                    </span>
+                  )}
+                  {orderItems.slice(0, label.itemLinesShown).map((item) => (
+                    <span key={item.id} className="truncate" style={{ maxWidth: label.nameMaxWidthPx }}>
+                      <span className="tabular-nums text-slate-300">{item.quantity}×</span> {item.name}
+                    </span>
+                  ))}
+                  {label.itemLinesShown > 0 && orderItems.length > label.itemLinesShown && (
+                    <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
+                      +{orderItems.length - label.itemLinesShown} more
+                    </span>
+                  )}
+                  {activeOrder && label.showTotal && (
+                    <span className="truncate font-bold tabular-nums" style={{ maxWidth: label.nameMaxWidthPx }}>
+                      {formatPeso(activeOrder.grandTotal)}
                     </span>
                   )}
                 </div>
@@ -963,30 +994,49 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                       </span>
                     </div>
 
-                    <div className="text-xs text-slate-400 capitalize">
-                      Status: {table.status}
-                    </div>
-
-                    {activeOrder && (
+                    {timing && (
                       <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px]">
-                        <div className="text-slate-400 mb-0.5">Order #{activeOrder.orderNo}</div>
-                        {timing && (
-                          <>
-                            <div className="text-slate-400">
-                              {formatHours(timing.hours)} booked · {formatClockTime(timing.startMs)} – {formatClockTime(timing.endMs)}
-                            </div>
-                            <div className="font-mono font-bold text-white tabular-nums">
-                              {timing.expired
-                                ? `Expired · ${formatDuration(timing.remainingMs)} over`
-                                : `${formatDuration(timing.remainingMs)} left`}
-                            </div>
-                          </>
+                        <div className="text-slate-400">
+                          {formatHours(timing.hours)} booked · {formatClockTime(timing.startMs)} – {formatClockTime(timing.endMs)}
+                        </div>
+                        <div className="font-mono font-bold text-white tabular-nums">
+                          {timing.expired
+                            ? `Expired · ${formatDuration(timing.remainingMs)} over`
+                            : `${formatDuration(timing.remainingMs)} left`}
+                        </div>
+                      </div>
+                    )}
+
+                    {orderItems.length > 0 && (
+                      <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px] text-slate-200 space-y-0.5">
+                        {orderItems.slice(0, HOVER_MAX_ITEMS).map((item) => (
+                          <div key={item.id} className="flex items-center gap-1.5">
+                            <span className="shrink-0 tabular-nums text-slate-400">{item.quantity}×</span>
+                            <span className="truncate">{item.name}</span>
+                          </div>
+                        ))}
+                        {orderItems.length > HOVER_MAX_ITEMS && (
+                          <div className="text-slate-400">+{orderItems.length - HOVER_MAX_ITEMS} more</div>
                         )}
                       </div>
                     )}
 
+                    {activeOrder && (
+                      <div className="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between text-[11px]">
+                        <span className="text-slate-400">Total</span>
+                        <span className="font-bold text-white tabular-nums">{formatPeso(activeOrder.grandTotal)}</span>
+                      </div>
+                    )}
+
+                    {!activeOrder && (
+                      <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px] text-slate-400">
+                        No order yet for this {(table.adminRoomCharge ?? 0) > 0 ? 'room' : 'table'}.
+                      </div>
+                    )}
+
                     <div className="mt-2 text-[10px] text-indigo-400 flex items-center gap-1 font-semibold">
-                      Click to view details & update <ChevronRight className="w-3 h-3" />
+                      {activeOrder ? 'Click to view details & update' : 'Click to create a new order'}
+                      <ChevronRight className="w-3 h-3" />
                     </div>
                   </div>
                 )}

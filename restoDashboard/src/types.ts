@@ -61,6 +61,9 @@ export interface TableRoom {
   // linked table above, so the UI can show what a zone is synced to without
   // an extra lookup. Kept in sync alongside adminTableId.
   adminTableName?: string;
+  // The linked table's hourly ROOM_CHARGE (restoAdmin's restaurant_tables),
+  // kept in sync alongside adminTableName. A zone with one is a room.
+  adminRoomCharge?: number;
   // Zone geometry on the interactive map: x/y is the top-left corner,
   // all four values are percentages (0-100) of the floor plan container.
   x: number;

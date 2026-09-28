@@ -124,6 +124,7 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
         status: finalStatus,
         adminTableId: selectedAdminTableId ?? undefined,
         adminTableName: linkedAdminTable?.tableNumber ?? undefined,
+        adminRoomCharge: linkedAdminTable?.roomCharge ?? undefined,
       });
     } else if (newRect) {
       const newTable: TableRoom = {

@@ -8,6 +8,15 @@ entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links t
 to be relative to this new root location. Going forward, each bullet is tagged with which app it
 touches (see [CLAUDE.md](CLAUDE.md) for the convention).
 
+## [1.12.0]
+
+### Added
+- **[restoDashboard]** **Occupied zones show the order's total at the bottom of the preview and the hover card.** Staff can see what a table owes without opening it. On the map it's the bold amount ("₱1,250.00") at the bottom of the zone's panel. When space is tight, the total keeps its line and the item list gives way first, so a small zone shows name, count and total. The hover card ends with a receipt-style "Total ₱1,250.00" row above the "Click to…" link. The amount is the order's grand total, including room charge, the same figure as the detail view's Grand Total. A live update from restoAdmin that doesn't carry a total now keeps the last known one rather than resetting it to ₱0.00 ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [App.tsx](restoDashboard/src/App.tsx)).
+
+### Changed
+- **[restoDashboard]** **Occupied zones now show what was ordered, not the order number.** Staff rarely looked at the order ID, and it's still one tap away in the detail view. On the map, an occupied zone's panel shows the item count, then the items themselves ("5× B&G"), as many as the zone's on-screen size allows. When some don't fit, the last line reads "+N more". Zooming in reveals more. The hover card now lists the order's items (up to 5, then "+N more") instead of the status and order number. Hourly rooms still show their booked hours, clock range and time left on hover ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **[restoDashboard]** **Hovering an available zone now says "Click to create a new order"**, since that's what tapping it does now. The redundant "Status: Available" line is gone. The zone's color already shows its status. In its place, below a divider, a line reads "No order yet for this table." ("…this room." for rooms). This gives the card the same name / divider / body / link shape as an occupied zone's card, instead of just a name and a link. A zone counts as a room when its linked restoAdmin table has an hourly room charge. The zone's local type setting isn't used, because rooms like ROOM 2 were saved as plain tables. To support this, zones now keep the linked table's room charge. It's refreshed from restoAdmin on every load and saved when a zone is linked in Edit Zones ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [types.ts](restoDashboard/src/types.ts), [App.tsx](restoDashboard/src/App.tsx), [EditTableModal.tsx](restoDashboard/src/components/EditTableModal.tsx)).
+
 ## [1.11.0]
 
 ### Changed
