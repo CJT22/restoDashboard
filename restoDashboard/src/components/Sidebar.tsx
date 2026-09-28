@@ -6,8 +6,6 @@ import {
   Clock,
   Wifi,
   RotateCw,
-  ChevronDown,
-  CheckCircle2,
   RefreshCcw,
   Check,
   Users,
@@ -18,7 +16,6 @@ import { TableRoom } from '../types';
 
 interface SidebarProps {
   currentFloor: 1 | 2;
-  onSelectFloor: (floor: 1 | 2) => void;
   activeNav: 'floorplan' | 'directory' | 'orders';
   onSelectNav: (nav: 'floorplan' | 'directory' | 'orders') => void;
   showAvailableFilter: boolean;
@@ -33,7 +30,6 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentFloor,
-  onSelectFloor,
   activeNav,
   onSelectNav,
   showAvailableFilter,
@@ -47,7 +43,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   // Live clock matching the screenshot "1:44:22 PM", "TUESDAY, SEPTEMBER 15"
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [isFloorDropdownOpen, setIsFloorDropdownOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const refreshDoneRef = useRef(false);
 
@@ -203,70 +198,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </span>
           )}
         </button>
-
-        {/* Floor selector matching the "Demo Floor Plan ▾" card in screenshot */}
-        <div className="relative pt-2">
-          <button
-            id="dropdown-floor-selector"
-            onClick={() => setIsFloorDropdownOpen(!isFloorDropdownOpen)}
-            className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-[#161829] border border-white/10 text-slate-200 hover:border-white/20 transition-all text-sm font-medium"
-          >
-            <div className="flex items-center gap-3">
-              <div className="w-6 h-6 rounded-lg bg-indigo-500/20 text-indigo-400 flex items-center justify-center font-bold text-xs">
-                F{currentFloor}
-              </div>
-              <div className="text-left">
-                <div className="text-xs text-slate-400 font-normal">Active Floor</div>
-                <div className="text-sm font-semibold text-white">
-                  {currentFloor === 1 ? '1st Floor • Main Dining' : '2nd Floor • KTV Rooms'}
-                </div>
-              </div>
-            </div>
-            <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform ${isFloorDropdownOpen ? 'rotate-180' : ''}`} />
-          </button>
-
-          {isFloorDropdownOpen && (
-            <div className="absolute top-full left-0 right-0 mt-2 p-1.5 rounded-2xl bg-[#1c1e33] border border-white/15 shadow-2xl z-30 space-y-1">
-              <button
-                id="btn-select-floor-1"
-                onClick={() => {
-                  onSelectFloor(1);
-                  setIsFloorDropdownOpen(false);
-                }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-left text-xs transition-colors ${
-                  currentFloor === 1
-                    ? 'bg-indigo-600 text-white font-semibold'
-                    : 'text-slate-300 hover:bg-white/10'
-                }`}
-              >
-                <div>
-                  <div className="font-semibold text-sm">1st Floor - Main Dining</div>
-                  <div className="text-[11px] opacity-80">Dining Pub Tables</div>
-                </div>
-                {currentFloor === 1 && <CheckCircle2 className="w-4 h-4 text-white" />}
-              </button>
-
-              <button
-                id="btn-select-floor-2"
-                onClick={() => {
-                  onSelectFloor(2);
-                  setIsFloorDropdownOpen(false);
-                }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-left text-xs transition-colors ${
-                  currentFloor === 2
-                    ? 'bg-indigo-600 text-white font-semibold'
-                    : 'text-slate-300 hover:bg-white/10'
-                }`}
-              >
-                <div>
-                  <div className="font-semibold text-sm">2nd Floor - KTV Rooms</div>
-                  <div className="text-[11px] opacity-80">Private Karaoke Rooms</div>
-                </div>
-                {currentFloor === 2 && <CheckCircle2 className="w-4 h-4 text-white" />}
-              </button>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* QUICK CONTROL / SERVICE FILTERS - Exactly the 2 requested buttons */}
@@ -370,6 +301,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Floor Statistics & Reset Demo Footer */}
       <div className="mt-auto p-6 pt-3 border-t border-white/5 bg-[#0e0f1a]">
+        <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">
+          {currentFloor === 1 ? '1st Floor' : '2nd Floor'}
+        </div>
         <div className="grid grid-cols-2 gap-2 mb-3">
           <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5">
             <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Available</div>

@@ -8,6 +8,15 @@ entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links t
 to be relative to this new root location. Going forward, each bullet is tagged with which app it
 touches (see [CLAUDE.md](CLAUDE.md) for the convention).
 
+## [1.10.0]
+
+### Changed
+- **[restoDashboard]** **Switching floors is now one tap from the floor plan header.** The "1st Floor • Main Dining Area · 23 zones" heading at the top left of the map is now a **1st Floor / 2nd Floor** segmented toggle. Both floors are always visible, and tapping the other one switches straight to it. It matches the height of the zoom controls on the right so the two bars line up. The area subtitle and zone count were removed to keep the toggle compact ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [App.tsx](restoDashboard/src/App.tsx)).
+- **[restoDashboard]** **The sidebar's Available/Occupied footer now shows which floor it's counting** with a small "1st Floor" / "2nd Floor" caption. Before, the Active Floor dropdown just above it gave that context ([Sidebar.tsx](restoDashboard/src/components/Sidebar.tsx)).
+
+### Removed
+- **[restoDashboard]** **The "Active Floor" dropdown in the sidebar.** It took two taps (open, then pick) and was redundant: the floor plan header toggle and the existing floor tabs in All Tables & Rooms and Active Orders already switch floors in one tap ([Sidebar.tsx](restoDashboard/src/components/Sidebar.tsx), [App.tsx](restoDashboard/src/App.tsx)).
+
 ## [1.9.0]
 
 ### Added

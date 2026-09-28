@@ -27,6 +27,10 @@ const FLOOR_PLAN_IMAGES: Record<1 | 2, string> = {
   1: '/floorplans/first_floor.webp',
   2: '/floorplans/second_floor.webp',
 };
+const FLOOR_OPTIONS: { value: 1 | 2; label: string }[] = [
+  { value: 1, label: '1st Floor' },
+  { value: 2, label: '2nd Floor' },
+];
 const FLOOR_PLAN_ASPECT_W = 16;
 const FLOOR_PLAN_ASPECT_H = 9;
 
@@ -220,6 +224,7 @@ function applyResize(orig: ZoneRect, handle: ResizeHandle, dxPct: number, dyPct:
 
 interface FloorPlanMapProps {
   floor: 1 | 2;
+  onSelectFloor: (floor: 1 | 2) => void;
   tables: TableRoom[];
   selectedTableId: string | null;
   onSelectTable: (table: TableRoom) => void;
@@ -248,6 +253,7 @@ type EditTarget = { kind: DrawKind; id: string };
 
 export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   floor,
+  onSelectFloor,
   tables,
   selectedTableId,
   onSelectTable,
@@ -555,15 +561,30 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
       <div className="absolute top-6 left-6 right-6 z-20 flex items-center justify-between pointer-events-none">
         {/* Floor & Status Information */}
         <div className="pointer-events-auto flex items-center gap-3">
-          {/* Plain heading, not a pill - the old bordered badge read as a button. */}
-          <h2 className="flex items-baseline gap-2.5 drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
-            <span className="text-base font-bold text-white tracking-wide">
-              {floor === 1 ? '1st Floor • Main Dining Area' : '2nd Floor • KTV Rooms Area'}
-            </span>
-            <span className="text-xs font-medium text-slate-400">
-              {floorTables.length} {floorTables.length === 1 ? 'zone' : 'zones'}
-            </span>
-          </h2>
+          {/* Floor switcher: segmented control so changing floors is a single tap
+              and both options are always visible. Styled like the zoom bar on the right. */}
+          <div
+            role="tablist"
+            aria-label="Floor"
+            className="flex items-center gap-1 bg-[#141628]/90 backdrop-blur-md border border-white/10 rounded-2xl p-1.5 shadow-xl"
+          >
+            {FLOOR_OPTIONS.map(({ value, label }) => (
+              <button
+                key={value}
+                id={`tab-map-floor-${value}`}
+                role="tab"
+                aria-selected={floor === value}
+                onClick={() => onSelectFloor(value)}
+                className={`h-8 px-4 flex items-center rounded-xl text-sm font-bold tracking-wide transition-all ${
+                  floor === value
+                    ? 'bg-indigo-600 text-white shadow-md'
+                    : 'text-slate-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
           {isFilterActive && (
             <div className="px-3 py-1.5 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-200 text-xs font-semibold flex items-center gap-2">

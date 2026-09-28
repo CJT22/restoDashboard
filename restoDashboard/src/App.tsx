@@ -399,7 +399,6 @@ export default function App() {
       {/* Left Navigation Sidebar matching Sample_UI.png with user's 2 quick control filters */}
       <Sidebar
         currentFloor={currentFloor}
-        onSelectFloor={(floor) => setCurrentFloor(floor)}
         activeNav={activeNav}
         onSelectNav={(nav) => setActiveNav(nav)}
         showAvailableFilter={showAvailableFilter}
@@ -417,6 +416,7 @@ export default function App() {
         {activeNav === 'floorplan' && (
           <FloorPlanMap
             floor={currentFloor}
+            onSelectFloor={(floor) => setCurrentFloor(floor)}
             tables={tables}
             selectedTableId={selectedTable?.id || null}
             onSelectTable={(table) => setSelectedTable(table)}
