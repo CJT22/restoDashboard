@@ -579,4 +579,36 @@ export async function settleOrder(
   return { ok: false, message: json?.error || json?.message || `Failed to settle order (${res.status})` };
 }
 
+export interface SalesTotal {
+  // Sum of billing.AMOUNT_PAID — money actually taken, so a partially paid
+  // order counts only what's been paid so far.
+  totalPaid: number;
+  paidCount: number;
+}
+
+// Branch-wide paid sales for an inclusive Manila-local date range
+// (YYYY-MM-DD). Reuses restoAdmin's own Billing page stats (billing rows on
+// confirmed/settled orders, dated by billing.ENCODED_DT), so the figure
+// matches what restoAdmin shows for the same range. limit=1 because only
+// the stats are wanted, not the rows.
+export async function getSalesTotal(startDate: string, endDate: string): Promise<SalesTotal> {
+  const qs = new URLSearchParams({
+    branch_id: String(ADMIN_BRANCH_ID),
+    start_date: startDate,
+    end_date: endDate,
+    include_stats: '1',
+    limit: '1',
+  });
+  const res = await authedFetch(`/billing/data?${qs}`);
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok || json?.success === false) {
+    throw new Error(json?.error || json?.message || `Failed to fetch sales from restoAdmin (${res.status})`);
+  }
+  const stats = json?.meta?.stats || {};
+  return {
+    totalPaid: Number(stats.totalPaid ?? 0),
+    paidCount: Number(stats.paidCount ?? 0),
+  };
+}
+
 export { ADMIN_API_BASE_URL };

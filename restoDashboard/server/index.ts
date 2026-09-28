@@ -23,6 +23,7 @@ import {
   deleteOrderItem,
   getBilling,
   settleOrder,
+  getSalesTotal,
 } from './adminClient.js';
 import { connectSocketBridge, tableEvents, orderEvents, type TableUpdatedEvent, type OrderEvent } from './socketBridge.js';
 
@@ -92,6 +93,52 @@ app.get('/api/admin/orders/by-table/:adminTableId', async (req, res) => {
     res.json({ success: true, data: order });
   } catch (err: any) {
     console.error('[GET /api/admin/orders/by-table/:adminTableId]', err.message || err);
+    res.status(502).json({ success: false, error: err.message || 'Failed to reach restoAdmin' });
+  }
+});
+
+// Manila (UTC+8, no DST) calendar date for a UTC instant, as YYYY-MM-DD.
+const MANILA_OFFSET_MS = 8 * 60 * 60 * 1000;
+const DAY_MS = 24 * 60 * 60 * 1000;
+const manilaDate = (ms: number) => new Date(ms + MANILA_OFFSET_MS).toISOString().slice(0, 10);
+
+type SalesPeriod = 'today' | 'yesterday' | 'week' | 'month';
+
+// Inclusive Manila-local date range for a sales period. Worked out here
+// rather than in the browser so a tablet with a wrong clock or time zone
+// can't shift the range. Days roll over at midnight; weeks start Monday.
+function salesPeriodRange(period: SalesPeriod, nowMs = Date.now()): { startDate: string; endDate: string } {
+  const today = manilaDate(nowMs);
+  if (period === 'yesterday') {
+    const yesterday = manilaDate(nowMs - DAY_MS);
+    return { startDate: yesterday, endDate: yesterday };
+  }
+  if (period === 'week') {
+    const weekday = new Date(`${today}T00:00:00Z`).getUTCDay(); // 0 = Sunday
+    const daysSinceMonday = (weekday + 6) % 7;
+    return { startDate: manilaDate(nowMs - daysSinceMonday * DAY_MS), endDate: today };
+  }
+  if (period === 'month') {
+    return { startDate: `${today.slice(0, 7)}-01`, endDate: today };
+  }
+  return { startDate: today, endDate: today };
+}
+
+function parseSalesPeriod(raw: unknown): SalesPeriod {
+  const value = String(raw || 'today');
+  return ['today', 'yesterday', 'week', 'month'].includes(value) ? (value as SalesPeriod) : 'today';
+}
+
+// GET branch-wide paid sales (both floors) for the Total Sales info-panel
+// widget. ?period=today|yesterday|week|month (default today).
+app.get('/api/admin/sales', async (req, res) => {
+  const period = parseSalesPeriod(req.query.period);
+  try {
+    const { startDate, endDate } = salesPeriodRange(period);
+    const total = await getSalesTotal(startDate, endDate);
+    res.json({ success: true, data: { period, startDate, endDate, ...total } });
+  } catch (err: any) {
+    console.error('[GET /api/admin/sales]', err.message || err);
     res.status(502).json({ success: false, error: err.message || 'Failed to reach restoAdmin' });
   }
 });

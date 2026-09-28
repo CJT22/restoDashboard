@@ -806,6 +806,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                   <InfoPanelView
                     panel={panel}
                     floorTables={floorTables}
+                    allTables={tables}
                     nowMs={nowMs}
                     widthPx={panelPx.widthPx}
                     heightPx={panelPx.heightPx}

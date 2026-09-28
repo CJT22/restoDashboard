@@ -1,13 +1,16 @@
-import React, { useLayoutEffect, useRef, useState } from 'react';
-import { Timer, ClipboardList, CircleCheck, Gauge, ChevronRight } from 'lucide-react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { Timer, ClipboardList, Banknote, Gauge, ChevronRight } from 'lucide-react';
 import { InfoPanel, InfoPanelLayout, InfoWidgetType, TableRoom } from '../types';
 import { INFO_WIDGET_META } from '../data/infoPanels';
 import { shortOrderNo } from '../services/orderSync';
+import { getSales, SALES_PERIODS, SalesPeriod, useLiveSales } from '../services/salesSync';
 import { getRoomTiming, formatDuration, formatHours, formatWait } from '../utils/roomTimer';
 
-// Read-only widgets for an info panel on the floor plan. Everything is derived
-// from the floor's tables (and their live activeOrder) already in memory — no
-// fetching — so the only ongoing cost is the map's shared 1s tick.
+// Read-only widgets for an info panel on the floor plan. Everything except
+// Total Sales is derived from the floor's tables (and their live activeOrder)
+// already in memory — no fetching — so their only ongoing cost is the map's
+// shared 1s tick. Total Sales fetches paid sales from restoAdmin (see
+// TotalSalesWidget).
 //
 // Every layout is a set of columns, each a vertical stack of widget cards:
 //   stack = 1 column, row = 1 column per widget, auto = as many columns as
@@ -18,7 +21,7 @@ import { getRoomTiming, formatDuration, formatHours, formatWait } from '../utils
 const WIDGET_ICONS: Record<InfoWidgetType, React.ComponentType<{ className?: string }>> = {
   roomTimers: Timer,
   activeOrders: ClipboardList,
-  availableNow: CircleCheck,
+  totalSales: Banknote,
   occupancy: Gauge,
 };
 
@@ -54,6 +57,8 @@ function getColumns(widgets: InfoWidgetType[], layout: InfoPanelLayout, maxColum
 interface InfoPanelViewProps {
   panel: InfoPanel;
   floorTables: TableRoom[];
+  // Both floors — Total Sales is branch-wide, not per floor.
+  allTables: TableRoom[];
   nowMs: number;
   widthPx: number;
   heightPx: number;
@@ -65,6 +70,7 @@ interface InfoPanelViewProps {
 
 interface WidgetProps {
   floorTables: TableRoom[];
+  allTables: TableRoom[];
   nowMs: number;
   compact: boolean;
   interactive: boolean;
@@ -74,6 +80,7 @@ interface WidgetProps {
 export const InfoPanelView: React.FC<InfoPanelViewProps> = ({
   panel,
   floorTables,
+  allTables,
   nowMs,
   widthPx,
   heightPx,
@@ -82,7 +89,7 @@ export const InfoPanelView: React.FC<InfoPanelViewProps> = ({
 }) => {
   const compact = isCompactPanel(widthPx, heightPx);
   const columns = getColumns(panel.widgets, panel.layout ?? 'auto', maxPanelColumns(widthPx, compact));
-  const widgetProps: WidgetProps = { floorTables, nowMs, compact, interactive, onSelectTable };
+  const widgetProps: WidgetProps = { floorTables, allTables, nowMs, compact, interactive, onSelectTable };
 
   return (
     <div
@@ -95,7 +102,7 @@ export const InfoPanelView: React.FC<InfoPanelViewProps> = ({
             <WidgetCard key={type} isList={LIST_WIDGETS.includes(type)}>
               {type === 'roomTimers' && <RoomTimersWidget {...widgetProps} />}
               {type === 'activeOrders' && <ActiveOrdersWidget {...widgetProps} />}
-              {type === 'availableNow' && <AvailableNowWidget {...widgetProps} />}
+              {type === 'totalSales' && <TotalSalesWidget {...widgetProps} />}
               {type === 'occupancy' && <OccupancyWidget {...widgetProps} />}
             </WidgetCard>
           ))}
@@ -262,28 +269,89 @@ const ActiveOrdersWidget: React.FC<WidgetProps> = ({ floorTables, nowMs, compact
   );
 };
 
-const AvailableNowWidget: React.FC<WidgetProps> = ({ floorTables, interactive, onSelectTable }) => {
-  const free = floorTables.filter((t) => t.status === 'available');
+const formatPeso = (amount: number) =>
+  `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+const STORAGE_KEY_SALES_PERIOD = 'restaurant_dashboard_sales_period';
+
+function loadSalesPeriod(): SalesPeriod {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY_SALES_PERIOD);
+    if (SALES_PERIODS.some((p) => p.value === saved)) return saved as SalesPeriod;
+  } catch {
+    // Storage blocked; fall through to the default.
+  }
+  return 'today';
+}
+
+// Branch-wide, so it shows the same figures on either floor's panel.
+// Headline = paid sales for the chosen period, from restoAdmin's billing
+// (the same figure restoAdmin's Billing page shows for that range).
+// Open tabs = grand totals of every open order on the map, both floors —
+// money still to be collected, computed locally so it's always current.
+// Expected = paid + open tabs: where the period lands if every open tab
+// settles. Hidden for Yesterday, since today's open tabs aren't
+// yesterday's money.
+const TotalSalesWidget: React.FC<WidgetProps> = ({ allTables, interactive }) => {
+  const [period, setPeriod] = useState<SalesPeriod>(loadSalesPeriod);
+  const { data: current, error } = useLiveSales(getSales, period);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_SALES_PERIOD, period);
+    } catch {
+      // Not remembered this time; harmless.
+    }
+  }, [period]);
+
+  const openOrders = allTables.filter((t) => t.activeOrder != null);
+  const openTotal = openOrders.reduce((sum, t) => sum + (t.activeOrder?.grandTotal ?? 0), 0);
+  const showExpected = current != null && period !== 'yesterday';
+
   return (
     <>
-      <WidgetHeader type="availableNow" count={free.length} />
-      {free.length ? (
-        <div className="flex flex-wrap gap-1 px-1">
-          {free.map((table) => (
+      <WidgetHeader type="totalSales" />
+      <div className="px-1 space-y-1">
+        <div className="text-[9px] font-semibold uppercase tracking-wider text-slate-500">Both floors · paid</div>
+        <div className="text-base font-extrabold tabular-nums text-white leading-tight truncate">
+          {current ? formatPeso(current.totalPaid) : error ? '—' : '…'}
+        </div>
+        <div className="text-slate-400 truncate">
+          {current
+            ? `${current.paidCount} ${current.paidCount === 1 ? 'order' : 'orders'} settled`
+            : error
+              ? "Can't reach restoAdmin"
+              : 'Loading…'}
+        </div>
+        <div className="pt-1 border-t border-white/[0.07] space-y-0.5">
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-slate-400 truncate">Open tabs ({openOrders.length})</span>
+            <span className="font-bold tabular-nums text-amber-300">{formatPeso(openTotal)}</span>
+          </div>
+          {showExpected && (
+            <div className="flex items-center justify-between gap-2" title="Paid sales plus open tabs, if every open tab settles">
+              <span className="text-slate-400 truncate">Expected</span>
+              <span className="font-bold tabular-nums text-emerald-300">{formatPeso(current.totalPaid + openTotal)}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-0.5 pt-0.5" role="group" aria-label="Sales period">
+          {SALES_PERIODS.map((option) => (
             <button
-              key={table.id}
-              onClick={() => onSelectTable(table)}
-              className={`px-1.5 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 font-semibold ${
-                interactive ? 'hover:bg-emerald-500/25 cursor-pointer' : 'pointer-events-none'
-              }`}
+              key={option.value}
+              onClick={() => setPeriod(option.value)}
+              aria-pressed={period === option.value}
+              className={`flex-1 min-w-0 truncate px-1 py-0.5 rounded-md text-[10px] font-semibold ${
+                period === option.value
+                  ? 'bg-indigo-500/30 text-indigo-100 border border-indigo-400/40'
+                  : 'text-slate-400 border border-transparent'
+              } ${interactive ? (period === option.value ? '' : 'hover:bg-white/10 cursor-pointer') : 'pointer-events-none'}`}
             >
-              {table.name}
+              {option.label}
             </button>
           ))}
         </div>
-      ) : (
-        <Empty>Everything is occupied</Empty>
-      )}
+      </div>
     </>
   );
 };

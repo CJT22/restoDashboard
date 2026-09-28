@@ -8,6 +8,15 @@ entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links t
 to be relative to this new root location. Going forward, each bullet is tagged with which app it
 touches (see [CLAUDE.md](CLAUDE.md) for the convention).
 
+## [1.13.0]
+
+### Added
+- **[restoDashboard]** **Total Sales info-panel widget.** It shows the branch's paid sales for **both floors** on either floor's panel, so a manager can see how the night is going without opening restoAdmin. Preset chips switch the period between **Today / Yesterday / This week / This month**. Days roll over at midnight Manila time, and weeks start Monday. Each device remembers the last chip used. Below the headline, the settled-order count and an **Open tabs** line show the grand total of every open order on the map, across both floors: money still to be collected. Paid sales come from restoAdmin's billing records through the dashboard server, which works out the date range in Manila time. That way a tablet with a wrong clock can't shift the range, and the figure matches restoAdmin's Billing page for the same dates. One consequence is that a sale is dated by when its order was opened, the same as restoAdmin. Paid sales refresh whenever an order changes and every minute as a fallback. Open tabs update instantly from the orders already on the map. If restoAdmin can't be reached, the widget says so instead of showing ₱0.00. restoAdmin itself needed no changes ([InfoPanelView.tsx](restoDashboard/src/components/InfoPanelView.tsx), [salesSync.ts](restoDashboard/src/services/salesSync.ts), [index.ts](restoDashboard/server/index.ts), [adminClient.ts](restoDashboard/server/adminClient.ts), [FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [infoPanels.ts](restoDashboard/src/data/infoPanels.ts), [types.ts](restoDashboard/src/types.ts)).
+  - **[restoDashboard]** **Expected total.** Below Open tabs, an **Expected** line shows paid sales plus open tabs. It's where the day, week or month lands if every open tab settles, which is the number a manager is usually working out in their head. It's hidden on **Yesterday**, because today's open tabs aren't yesterday's money ([InfoPanelView.tsx](restoDashboard/src/components/InfoPanelView.tsx)).
+
+### Removed
+- **[restoDashboard]** **The "Available Now" info-panel widget.** Free tables are already obvious from the green zones on the map and the sidebar's Available filter. Total Sales takes its place in the default 1st-floor panel above Occupancy. Panels saved with Available Now are migrated on load: Total Sales appears in the same slot ([InfoPanelView.tsx](restoDashboard/src/components/InfoPanelView.tsx), [infoPanels.ts](restoDashboard/src/data/infoPanels.ts), [types.ts](restoDashboard/src/types.ts)).
+
 ## [1.12.0]
 
 ### Added

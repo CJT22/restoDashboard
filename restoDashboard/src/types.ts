@@ -75,9 +75,10 @@ export interface TableRoom {
 // Info panels: read-only widgets drawn into a floor plan's free space (Edit
 // Zones → Draw: Info panel). Deliberately NOT a TableRoom — they aren't
 // seats, so they never count toward zone totals, filters, the directory or
-// restoAdmin linking. Each panel only reports on its own floor. See
+// restoAdmin linking. Each panel reports on its own floor, except Total
+// Sales, which is branch-wide (both floors). See
 // src/components/InfoPanelView.tsx.
-export type InfoWidgetType = 'roomTimers' | 'activeOrders' | 'availableNow' | 'occupancy';
+export type InfoWidgetType = 'roomTimers' | 'activeOrders' | 'totalSales' | 'occupancy';
 
 // auto = as many columns as fit; stack = one column; row = one column per
 // widget, falling back to stack when the panel is too narrow on screen.

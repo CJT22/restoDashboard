@@ -1,6 +1,6 @@
 import { InfoPanel, InfoWidgetType } from '../types';
 
-export const INFO_WIDGET_ORDER: InfoWidgetType[] = ['roomTimers', 'activeOrders', 'availableNow', 'occupancy'];
+export const INFO_WIDGET_ORDER: InfoWidgetType[] = ['roomTimers', 'activeOrders', 'totalSales', 'occupancy'];
 
 export const INFO_WIDGET_META: Record<InfoWidgetType, { title: string; description: string }> = {
   roomTimers: {
@@ -11,9 +11,9 @@ export const INFO_WIDGET_META: Record<InfoWidgetType, { title: string; descripti
     title: 'Active Orders',
     description: 'Open orders on this floor, oldest first.',
   },
-  availableNow: {
-    title: 'Available Now',
-    description: 'Free tables and rooms on this floor, for seating walk-ins.',
+  totalSales: {
+    title: 'Total Sales',
+    description: 'Paid sales for both floors (today, yesterday, this week or month), plus open tabs.',
   },
   occupancy: {
     title: 'Occupancy',
@@ -39,7 +39,7 @@ export const INITIAL_INFO_PANELS: InfoPanel[] = [
   {
     id: 'panel-f1-east',
     floor: 1,
-    widgets: ['availableNow', 'occupancy'],
+    widgets: ['totalSales', 'occupancy'],
     layout: 'auto',
     x: 62,
     y: 33.3,
@@ -58,14 +58,22 @@ export const INITIAL_INFO_PANELS: InfoPanel[] = [
   },
 ];
 
-// The "Pending Orders" widget became "Active Orders" once dashboard orders
-// started being confirmed on creation (nothing stays Pending for long).
-// Panels saved before that still name the old widget; map it across.
+// Widgets that were renamed or replaced, mapped to what panels saved with
+// them should show now:
+//   pendingOrders → activeOrders: dashboard orders are confirmed on
+//     creation, so nothing stays Pending for long.
+//   availableNow → totalSales: Available Now was dropped, and Total Sales
+//     takes its slot.
+const RENAMED_WIDGETS: Record<string, InfoWidgetType> = {
+  pendingOrders: 'activeOrders',
+  availableNow: 'totalSales',
+};
+
 export function migrateInfoPanels(panels: InfoPanel[]): InfoPanel[] {
   return panels.map((panel) => ({
     ...panel,
     widgets: Array.from(
-      new Set(panel.widgets.map((w) => ((w as string) === 'pendingOrders' ? 'activeOrders' : w)))
+      new Set(panel.widgets.map((w) => RENAMED_WIDGETS[w as string] ?? w))
     ) as InfoWidgetType[],
   }));
 }
