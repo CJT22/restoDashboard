@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { TableRoom, TableStatus, AdminOrderLineItem, AdminOrderSummary } from '../types';
 import {
   getActiveOrderForTable,
@@ -10,23 +10,19 @@ import {
   confirmOrder,
   cancelOrder,
   updateOrderRoomCharge,
-  getOrderStatusLabel,
-  getOrderStatusColorClass,
 } from '../services/orderSync';
 import { getAdminTables } from '../services/adminSync';
 import { getStatusColors } from '../utils/statusColors';
 import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow } from '../utils/roomTimer';
 import { NewOrderModal } from './NewOrderModal';
 import { SettlePaymentModal } from './SettlePaymentModal';
+import { QtyStepper } from './QtyStepper';
 import {
   X,
   Check,
   Users,
   UtensilsCrossed,
   Plus,
-  Minus,
-  Pencil,
-  Trash2,
   Link2,
   AlertTriangle,
   Wallet,
@@ -57,7 +53,6 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   const [loadingOrder, setLoadingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [insufficient, setInsufficient] = useState<any[] | null>(null);
-  const [showNewOrderModal, setShowNewOrderModal] = useState(false);
   const [showSettleModal, setShowSettleModal] = useState(false);
   const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -65,8 +60,8 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   const [menu, setMenu] = useState<AdminMenuItem[]>([]);
   const [selectedMenuId, setSelectedMenuId] = useState('');
   const [addQty, setAddQty] = useState(1);
-  const [editingItemId, setEditingItemId] = useState<number | null>(null);
-  const [editQty, setEditQty] = useState(1);
+  // The item whose −/+ change is in flight, so repeat taps can't race it.
+  const [savingItemId, setSavingItemId] = useState<number | null>(null);
 
   // This table's hourly room-charge rate (0 = no room charge), fetched on
   // demand — the dashboard equivalent of restoAdmin's own order-detail
@@ -143,6 +138,16 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   const nowMs = useNow(getRoomTiming(timedOrder, 0) != null);
   const timing = getRoomTiming(timedOrder, nowMs);
 
+  // Once this zone has shown an order, that order going away (cancelled,
+  // settled — here or from restoAdmin) closes the modal back to the map
+  // rather than falling through to the New Order form below.
+  const hadOrderRef = useRef(false);
+  useEffect(() => {
+    if (activeOrder) hadOrderRef.current = true;
+    else if (hadOrderRef.current) onClose();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeOrder]);
+
   const refreshOrder = async () => {
     if (table.adminTableId == null) return;
     const order = await getActiveOrderForTable(table.adminTableId);
@@ -191,19 +196,16 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
     }
   };
 
-  const handleStartEditItem = (item: AdminOrderLineItem) => {
-    setEditingItemId(item.id);
-    setEditQty(item.quantity);
-  };
-
-  const handleSubmitEditItem = async () => {
-    if (editingItemId == null || editQty <= 0) return;
+  // −/+ on an item row: saves each step straight to restoAdmin, like the
+  // room-charge stepper. Minimum 1 — removing is the trash button's job.
+  const handleItemQtyChange = async (item: AdminOrderLineItem, nextQty: number) => {
+    if (nextQty < 1 || savingItemId != null) return;
+    setSavingItemId(item.id);
     setOrderError(null);
     setInsufficient(null);
     try {
-      const result = await updateItemQty(editingItemId, editQty);
+      const result = await updateItemQty(item.id, nextQty);
       if (result.ok) {
-        setEditingItemId(null);
         await refreshOrder();
       } else if (result.kind === 'insufficient') {
         setInsufficient(result.insufficient ?? []);
@@ -212,6 +214,8 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
       }
     } catch (err: any) {
       setOrderError(err.message || 'Failed to update item');
+    } finally {
+      setSavingItemId(null);
     }
   };
 
@@ -265,6 +269,21 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
       setActionLoading(false);
     }
   };
+
+  // A linked zone with no open order goes straight to the New Order form —
+  // no intermediate "No Active Order" screen. Once the order is created,
+  // activeOrder is set and this same component renders the detail view.
+  // (hadOrderRef: skip this for the one render between an order clearing
+  // and the effect above closing the modal, so the form doesn't flash.)
+  if (table.adminTableId != null && !activeOrder && !hadOrderRef.current) {
+    return (
+      <NewOrderModal
+        table={table}
+        onClose={onClose}
+        onOrderChanged={(order) => onOrderChanged(tableId, order)}
+      />
+    );
+  }
 
   return (
     <div
@@ -335,11 +354,6 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
               <div className="flex items-center gap-2">
                 <UtensilsCrossed className="w-4 h-4 text-amber-400" />
                 <span className="text-sm font-bold text-white">Order</span>
-                {activeOrder && (
-                  <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase border ${getOrderStatusColorClass(activeOrder.status)}`}>
-                    {getOrderStatusLabel(activeOrder.status)}
-                  </span>
-                )}
               </div>
               {activeOrder && (
                 <div className="text-xs text-slate-400">
@@ -347,27 +361,6 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                 </div>
               )}
             </div>
-
-            {table.adminTableId != null && !activeOrder && !loadingOrder && (
-              <div className="p-10 rounded-3xl bg-white/[0.02] border-2 border-dashed border-white/10 text-center flex flex-col items-center gap-3">
-                <div className="w-14 h-14 rounded-2xl bg-indigo-500/15 text-indigo-400 flex items-center justify-center">
-                  <UtensilsCrossed className="w-7 h-7" />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-white">No Active Order</h3>
-                  <p className="text-xs text-slate-400 mt-1 max-w-xs mx-auto">
-                    This table is free — start a new order whenever guests are ready.
-                  </p>
-                </div>
-                <button
-                  id="btn-open-new-order"
-                  onClick={() => setShowNewOrderModal(true)}
-                  className="mt-1 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold shadow-lg shadow-indigo-600/25 flex items-center gap-2 transition-all"
-                >
-                  <Plus className="w-4 h-4" /> Create New Order
-                </button>
-              </div>
-            )}
 
             {table.adminTableId == null && (
               <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/30 flex items-start gap-3">
@@ -409,25 +402,16 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                       Room Charge — {roomChargeQty}h × ₱{roomChargeRate.toLocaleString()}
                       <span className="text-slate-500 text-xs ml-1.5">(1 hour minimum)</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        onClick={() => handleRoomChargeChange(roomChargeQty - 0.5)}
-                        disabled={roomChargeSaving || roomChargeQty <= 1}
-                        className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-slate-300"
-                      >
-                        <Minus className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="font-mono text-xs text-slate-300 w-16 text-right">
-                        ₱{(roomChargeQty * roomChargeRate).toFixed(2)}
-                      </span>
-                      <button
-                        onClick={() => handleRoomChargeChange(roomChargeQty + 0.5)}
-                        disabled={roomChargeSaving}
-                        className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-slate-300"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    <QtyStepper
+                      amount={`₱${(roomChargeQty * roomChargeRate).toFixed(2)}`}
+                      onDecrement={() => handleRoomChargeChange(roomChargeQty - 0.5)}
+                      onIncrement={() => handleRoomChargeChange(roomChargeQty + 0.5)}
+                      decrementDisabled={roomChargeSaving || roomChargeQty <= 1}
+                      incrementDisabled={roomChargeSaving}
+                      onReset={() => handleRoomChargeChange(1)}
+                      resetDisabled={roomChargeSaving || roomChargeQty <= 1}
+                      resetLabel="Reset to 1 hour"
+                    />
                   </div>
                 )}
 
@@ -454,57 +438,19 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                     {orderItems.map((item) => (
                       <div
                         key={item.id}
-                        className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between"
+                        className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between gap-3"
                       >
-                        {editingItemId === item.id ? (
-                          <>
-                            <div className="text-sm text-white">{item.name}</div>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="number"
-                                min={1}
-                                value={editQty}
-                                onChange={(e) => setEditQty(parseInt(e.target.value) || 1)}
-                                className="w-16 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-sm text-white text-center focus:outline-none focus:border-indigo-500"
-                              />
-                              <button
-                                onClick={handleSubmitEditItem}
-                                className="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold"
-                              >
-                                Save
-                              </button>
-                              <button
-                                onClick={() => setEditingItemId(null)}
-                                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-slate-400 text-xs"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-                          </>
-                        ) : (
-                          <>
-                            <div className="text-sm text-white">
-                              {item.quantity}x {item.name}
-                            </div>
-                            <div className="flex items-center gap-3">
-                              <span className="font-mono text-xs text-slate-300">₱{item.lineTotal.toFixed(2)}</span>
-                              <button
-                                onClick={() => handleStartEditItem(item)}
-                                className="text-slate-500 hover:text-indigo-400 p-1"
-                                title="Edit quantity"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteItem(item)}
-                                className="text-slate-500 hover:text-rose-400 p-1"
-                                title="Remove item"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </>
-                        )}
+                        <div className="text-sm text-white min-w-0 truncate" title={item.name}>
+                          {item.quantity}x {item.name}
+                        </div>
+                        <QtyStepper
+                          amount={`₱${item.lineTotal.toFixed(2)}`}
+                          onDecrement={() => handleItemQtyChange(item, item.quantity - 1)}
+                          onIncrement={() => handleItemQtyChange(item, item.quantity + 1)}
+                          decrementDisabled={savingItemId != null || item.quantity <= 1}
+                          incrementDisabled={savingItemId != null}
+                          onRemove={() => handleDeleteItem(item)}
+                        />
                       </div>
                     ))}
                   </div>
@@ -584,6 +530,8 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                   </button>
                 )}
 
+                {/* Dashboard orders are confirmed on creation; this only shows
+                    for a Pending order that came from restoAdmin. */}
                 {activeOrder.status === 3 && (
                   <button
                     onClick={handleConfirm}
@@ -615,14 +563,6 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
           </div>
         </div>
       </div>
-
-      {showNewOrderModal && table.adminTableId != null && (
-        <NewOrderModal
-          table={table}
-          onClose={() => setShowNewOrderModal(false)}
-          onOrderChanged={(order) => onOrderChanged(tableId, order)}
-        />
-      )}
 
       {showSettleModal && activeOrder && (
         <SettlePaymentModal

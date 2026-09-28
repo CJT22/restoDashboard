@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { TableRoom, InfoPanel } from '../types';
 import { getStatusColors } from '../utils/statusColors';
-import { getOrderStatusLabel, getOrderStatusColorClass, shortOrderNo } from '../services/orderSync';
+import { shortOrderNo } from '../services/orderSync';
 import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, RoomTiming } from '../utils/roomTimer';
 import {
   ZoomIn,
@@ -78,8 +78,7 @@ interface ZoneRect {
 }
 
 // Zone info panel: one dark panel pinned to the zone's top-left, stacking
-// lines in priority order — name, room timer, order status, order number,
-// item count. Laid out in JS from the zone's rendered size in px (so zooming
+// lines in priority order — name, room timer, order number, item count. Laid out in JS from the zone's rendered size in px (so zooming
 // in reveals more): text scales with the zone, and lines drop off the bottom
 // once they no longer fit. The name and an hourly room's timer are never
 // dropped. Anything cut here is still in the hover card and detail modal.
@@ -100,7 +99,6 @@ interface ZoneLabelLayout {
   lineHeightPx: number;
   nameMaxWidthPx: number;
   timerLines: string[];
-  showStatusLine: boolean;
   showOrderNo: boolean;
   showItemCount: boolean;
 }
@@ -142,7 +140,6 @@ function getZoneLabelLayout(
     spareLines -= 1;
     return true;
   };
-  const showStatusLine = take(hasOrder);
   const showOrderNo = take(hasOrder);
   const showItemCount = take(hasOrder && hasItems);
 
@@ -152,15 +149,9 @@ function getZoneLabelLayout(
     lineHeightPx,
     nameMaxWidthPx: Math.max(0, innerWidth),
     timerLines,
-    showStatusLine,
     showOrderNo,
     showItemCount,
   };
-}
-
-// Matches getOrderStatusColorClass's hues, as a bare dot.
-function getOrderStatusDotClass(status: number): string {
-  return status === 3 ? 'bg-amber-400' : status === 2 ? 'bg-indigo-400' : 'bg-slate-400';
 }
 
 // Fullscreen API with the webkit-prefixed fallback older iPadOS Safari needs.
@@ -901,21 +892,11 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                     className="flex items-center gap-1 font-bold tracking-tight whitespace-nowrap"
                     style={{ maxWidth: label.nameMaxWidthPx }}
                   >
-                    {/* No room for a status line: keep the status visible as a dot beside the name */}
-                    {activeOrder && !label.showStatusLine && (
-                      <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${getOrderStatusDotClass(activeOrder.status)}`} />
-                    )}
                     <span className="truncate">{table.name}</span>
                   </span>
                   {label.timerLines.map((line) => (
                     <span key={line} className="font-bold tabular-nums whitespace-nowrap">{line}</span>
                   ))}
-                  {activeOrder && label.showStatusLine && (
-                    <span className="flex items-center gap-1 whitespace-nowrap text-slate-300" style={{ maxWidth: label.nameMaxWidthPx }}>
-                      <span className={`w-1.5 h-1.5 shrink-0 rounded-full ${getOrderStatusDotClass(activeOrder.status)}`} />
-                      <span className="truncate">{getOrderStatusLabel(activeOrder.status)}</span>
-                    </span>
-                  )}
                   {activeOrder && label.showOrderNo && (
                     <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
                       #{shortOrderNo(activeOrder.orderNo)}
@@ -988,12 +969,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
                     {activeOrder && (
                       <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px]">
-                        <div className="flex items-center justify-between text-slate-400 mb-0.5">
-                          <span>Order #{activeOrder.orderNo}</span>
-                          <span className={`px-1.5 py-0.5 rounded-full border ${getOrderStatusColorClass(activeOrder.status)}`}>
-                            {getOrderStatusLabel(activeOrder.status)}
-                          </span>
-                        </div>
+                        <div className="text-slate-400 mb-0.5">Order #{activeOrder.orderNo}</div>
                         {timing && (
                           <>
                             <div className="text-slate-400">

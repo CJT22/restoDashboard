@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { Timer, Hourglass, CircleCheck, Gauge, ChevronRight } from 'lucide-react';
+import { Timer, ClipboardList, CircleCheck, Gauge, ChevronRight } from 'lucide-react';
 import { InfoPanel, InfoPanelLayout, InfoWidgetType, TableRoom } from '../types';
 import { INFO_WIDGET_META } from '../data/infoPanels';
 import { shortOrderNo } from '../services/orderSync';
@@ -17,17 +17,17 @@ import { getRoomTiming, formatDuration, formatHours, formatWait } from '../utils
 
 const WIDGET_ICONS: Record<InfoWidgetType, React.ComponentType<{ className?: string }>> = {
   roomTimers: Timer,
-  pendingOrders: Hourglass,
+  activeOrders: ClipboardList,
   availableNow: CircleCheck,
   occupancy: Gauge,
 };
 
 // Lists grow to fill their column; summaries keep their natural height.
-const LIST_WIDGETS: InfoWidgetType[] = ['roomTimers', 'pendingOrders'];
+const LIST_WIDGETS: InfoWidgetType[] = ['roomTimers', 'activeOrders'];
 
 const PANEL_PAD_PX = 8;
 const GAP_PX = 8;
-// Pending order items shown per order before collapsing the rest to "+N more".
+// Order items shown per order before collapsing the rest to "+N more".
 const MAX_ITEMS_PER_ORDER = 4;
 
 // Smaller type and columns on small panels (e.g. an iPad-sized canvas).
@@ -94,7 +94,7 @@ export const InfoPanelView: React.FC<InfoPanelViewProps> = ({
           {column.map((type) => (
             <WidgetCard key={type} isList={LIST_WIDGETS.includes(type)}>
               {type === 'roomTimers' && <RoomTimersWidget {...widgetProps} />}
-              {type === 'pendingOrders' && <PendingOrdersWidget {...widgetProps} />}
+              {type === 'activeOrders' && <ActiveOrdersWidget {...widgetProps} />}
               {type === 'availableNow' && <AvailableNowWidget {...widgetProps} />}
               {type === 'occupancy' && <OccupancyWidget {...widgetProps} />}
             </WidgetCard>
@@ -179,9 +179,9 @@ const RoomTimersWidget: React.FC<WidgetProps> = ({ floorTables, nowMs, compact, 
 // widget's measured height they all start expanded, otherwise collapsed;
 // either way staff can toggle any order with its ▸ button, and that choice
 // wins for as long as the page is open.
-const PendingOrdersWidget: React.FC<WidgetProps> = ({ floorTables, nowMs, compact, interactive, onSelectTable }) => {
+const ActiveOrdersWidget: React.FC<WidgetProps> = ({ floorTables, nowMs, compact, interactive, onSelectTable }) => {
   const rows = floorTables
-    .filter((t) => t.activeOrder?.status === 3)
+    .filter((t) => t.activeOrder != null)
     .sort((a, b) => (a.activeOrder?.createdAt ?? '').localeCompare(b.activeOrder?.createdAt ?? ''));
 
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -203,7 +203,7 @@ const PendingOrdersWidget: React.FC<WidgetProps> = ({ floorTables, nowMs, compac
 
   return (
     <>
-      <WidgetHeader type="pendingOrders" count={rows.length} />
+      <WidgetHeader type="activeOrders" count={rows.length} />
       <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
         {rows.length ? (
           rows.map((table) => {
@@ -255,7 +255,7 @@ const PendingOrdersWidget: React.FC<WidgetProps> = ({ floorTables, nowMs, compac
             );
           })
         ) : (
-          <Empty>All orders confirmed</Empty>
+          <Empty>No open orders</Empty>
         )}
       </div>
     </>
@@ -291,14 +291,14 @@ const AvailableNowWidget: React.FC<WidgetProps> = ({ floorTables, interactive, o
 const OccupancyWidget: React.FC<WidgetProps> = ({ floorTables, nowMs }) => {
   const total = floorTables.length;
   const occupied = floorTables.filter((t) => t.status === 'occupied').length;
-  const pending = floorTables.filter((t) => t.activeOrder?.status === 3).length;
+  const activeOrders = floorTables.filter((t) => t.activeOrder != null).length;
   const timings = floorTables.map((t) => getRoomTiming(t.activeOrder, nowMs)).filter((t) => t != null);
   const expired = timings.filter((t) => t.expired).length;
   const pct = total ? Math.round((occupied / total) * 100) : 0;
   const stats: [string, React.ReactNode][] = [
     ['Occupied', `${occupied} / ${total}`],
     ['Available', total - occupied],
-    ['Pending orders', pending],
+    ['Active orders', activeOrders],
   ];
   if (timings.length) {
     stats.push(['Rooms running', timings.length], ['Rooms expired', expired]);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { TableRoom, TableStatus, AdminOrderSummary, InfoPanel } from './types';
 import { INITIAL_TABLES } from './data/mockRestaurantData';
-import { INITIAL_INFO_PANELS } from './data/infoPanels';
+import { INITIAL_INFO_PANELS, migrateInfoPanels } from './data/infoPanels';
 import { InfoPanelModal } from './components/InfoPanelModal';
 import { Sidebar } from './components/Sidebar';
 import { FloorPlanMap } from './components/FloorPlanMap';
@@ -79,7 +79,7 @@ export default function App() {
   const [infoPanels, setInfoPanels] = useState<InfoPanel[]>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY_INFO_PANELS);
-      if (saved) return JSON.parse(saved);
+      if (saved) return migrateInfoPanels(JSON.parse(saved));
     } catch (e) {
       console.error('Failed to parse saved info panels:', e);
     }
@@ -460,12 +460,17 @@ export default function App() {
       </main>
 
       {/* Interactive Table / Room Detail Modal (View Status & Orders) */}
-      <TableDetailModal
-        table={selectedTable}
-        onClose={() => setSelectedTable(null)}
-        onOrderChanged={handleOrderChanged}
-        onOpenLinkModal={handleOpenEditTableModal}
-      />
+      {/* Keyed by zone so its per-zone state (new-order vs. detail view)
+          starts fresh for every zone opened. */}
+      {selectedTable && (
+        <TableDetailModal
+          key={selectedTable.id}
+          table={selectedTable}
+          onClose={() => setSelectedTable(null)}
+          onOrderChanged={handleOrderChanged}
+          onOpenLinkModal={handleOpenEditTableModal}
+        />
+      )}
 
       {/* Edit Table / Draw New Zone Modal */}
       <EditTableModal

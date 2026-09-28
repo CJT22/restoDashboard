@@ -1,15 +1,15 @@
 import { InfoPanel, InfoWidgetType } from '../types';
 
-export const INFO_WIDGET_ORDER: InfoWidgetType[] = ['roomTimers', 'pendingOrders', 'availableNow', 'occupancy'];
+export const INFO_WIDGET_ORDER: InfoWidgetType[] = ['roomTimers', 'activeOrders', 'availableNow', 'occupancy'];
 
 export const INFO_WIDGET_META: Record<InfoWidgetType, { title: string; description: string }> = {
   roomTimers: {
     title: 'Room Timers',
     description: 'Running rooms on this floor, expired first, then by time left.',
   },
-  pendingOrders: {
-    title: 'Pending Orders',
-    description: 'Orders still waiting to be confirmed, oldest first.',
+  activeOrders: {
+    title: 'Active Orders',
+    description: 'Open orders on this floor, oldest first.',
   },
   availableNow: {
     title: 'Available Now',
@@ -17,7 +17,7 @@ export const INFO_WIDGET_META: Record<InfoWidgetType, { title: string; descripti
   },
   occupancy: {
     title: 'Occupancy',
-    description: 'Occupied vs. available, plus pending orders and room timers.',
+    description: 'Occupied vs. available, plus active orders and room timers.',
   },
 };
 
@@ -29,7 +29,7 @@ export const INITIAL_INFO_PANELS: InfoPanel[] = [
   {
     id: 'panel-f1-west',
     floor: 1,
-    widgets: ['roomTimers', 'pendingOrders'],
+    widgets: ['roomTimers', 'activeOrders'],
     layout: 'auto',
     x: 5.1,
     y: 43,
@@ -49,7 +49,7 @@ export const INITIAL_INFO_PANELS: InfoPanel[] = [
   {
     id: 'panel-f2-hall',
     floor: 2,
-    widgets: ['roomTimers', 'pendingOrders'],
+    widgets: ['roomTimers', 'activeOrders'],
     layout: 'auto',
     x: 58.1,
     y: 35.1,
@@ -57,3 +57,15 @@ export const INITIAL_INFO_PANELS: InfoPanel[] = [
     height: 21,
   },
 ];
+
+// The "Pending Orders" widget became "Active Orders" once dashboard orders
+// started being confirmed on creation (nothing stays Pending for long).
+// Panels saved before that still name the old widget; map it across.
+export function migrateInfoPanels(panels: InfoPanel[]): InfoPanel[] {
+  return panels.map((panel) => ({
+    ...panel,
+    widgets: Array.from(
+      new Set(panel.widgets.map((w) => ((w as string) === 'pendingOrders' ? 'activeOrders' : w)))
+    ) as InfoWidgetType[],
+  }));
+}

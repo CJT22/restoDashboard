@@ -393,7 +393,19 @@ export async function createOrder(params: {
   const json: any = await res.json().catch(() => ({}));
 
   if (res.ok && json?.success !== false) {
-    return { ok: true, id: Number(json.data.id), orderNo: String(json.data.order_no) };
+    const id = Number(json.data.id);
+    // Dashboard orders skip the Pending step and go straight to Confirmed.
+    // This goes through restoAdmin's status endpoint rather than POSTing
+    // STATUS: 2 because confirming is what deducts inventory
+    // (InventoryDeductionService.deductOnOrderConfirmed) — a create alone
+    // never would. If the confirm fails, cancel the just-created order so
+    // the table isn't left holding a half-made one.
+    const confirmed = await updateOrderStatus(id, 2).catch((err: any) => ({ ok: false, message: err?.message }));
+    if (!confirmed.ok) {
+      await updateOrderStatus(id, -1).catch(() => undefined);
+      return { ok: false, kind: 'error', message: confirmed.message || 'Order was created but could not be confirmed, so it was cancelled.' };
+    }
+    return { ok: true, id, orderNo: String(json.data.order_no) };
   }
   if (res.status === 409 && json?.code === 'ACTIVE_ORDER_EXISTS') {
     return {

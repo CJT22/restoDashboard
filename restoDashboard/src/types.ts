@@ -74,7 +74,7 @@ export interface TableRoom {
 // seats, so they never count toward zone totals, filters, the directory or
 // restoAdmin linking. Each panel only reports on its own floor. See
 // src/components/InfoPanelView.tsx.
-export type InfoWidgetType = 'roomTimers' | 'pendingOrders' | 'availableNow' | 'occupancy';
+export type InfoWidgetType = 'roomTimers' | 'activeOrders' | 'availableNow' | 'occupancy';
 
 // auto = as many columns as fit; stack = one column; row = one column per
 // widget, falling back to stack when the panel is too narrow on screen.

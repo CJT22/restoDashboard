@@ -2,12 +2,15 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { TableRoom, AdminOrderSummary } from '../types';
 import { getMenu, createOrder, addItemsToOrder, getActiveOrderForTable, AdminMenuItem } from '../services/orderSync';
 import { getAdminTables } from '../services/adminSync';
-import { X, Plus, Minus, Trash2, AlertTriangle, ClipboardList, ChevronDown } from 'lucide-react';
+import { X, Plus, AlertTriangle, ClipboardList, ChevronDown } from 'lucide-react';
+import { QtyStepper } from './QtyStepper';
 
 const roundToHalf = (v: number) => Math.round(v * 2) / 2;
 
 interface NewOrderModalProps {
   table: TableRoom; // must have adminTableId set — caller gates on this
+  // Dismissed without creating an order. On success the modal only calls
+  // onOrderChanged — the caller decides what to show next.
   onClose: () => void;
   onOrderChanged: (order: AdminOrderSummary) => void;
 }
@@ -107,6 +110,12 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
     setQty(1);
   };
 
+  // Minimum 1 — removing an item is the trash button's job.
+  const handleItemQtyChange = (menuId: number, nextQty: number) => {
+    if (nextQty < 1) return;
+    setItems((prev) => prev.map((it) => (it.menuId === menuId ? { ...it, qty: nextQty } : it)));
+  };
+
   const handleRemoveItem = (menuId: number) => {
     setItems((prev) => prev.filter((it) => it.menuId !== menuId));
   };
@@ -131,8 +140,10 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
       );
       if (result.ok) {
         const fresh = await getActiveOrderForTable(table.adminTableId as number);
+        // No onClose on success: once the zone has an active order, the
+        // parent TableDetailModal swaps this modal for the order detail view.
         if (fresh) onOrderChanged(fresh);
-        onClose();
+        else onClose();
         return;
       }
       if (result.kind === 'conflict') {
@@ -160,7 +171,7 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
       if (result.ok) {
         const fresh = await getActiveOrderForTable(table.adminTableId as number);
         if (fresh) onOrderChanged(fresh);
-        onClose();
+        else onClose();
         return;
       }
       if (result.kind === 'insufficient') {
@@ -244,24 +255,15 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
                   {roomChargeQty}h × ₱{roomChargeRate.toLocaleString()}
                   <span className="text-slate-500 text-xs ml-1.5">(1 hour minimum)</span>
                 </div>
-                <div className="flex items-center gap-3">
-                  <button
-                    type="button"
-                    onClick={() => setRoomChargeQty((prev) => roundToHalf(Math.max(1, prev - 0.5)))}
-                    disabled={roomChargeQty <= 1}
-                    className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center text-slate-300"
-                  >
-                    <Minus className="w-3.5 h-3.5" />
-                  </button>
-                  <span className="font-mono text-xs text-slate-300 w-14 text-right">₱{roomChargeTotal.toFixed(2)}</span>
-                  <button
-                    type="button"
-                    onClick={() => setRoomChargeQty((prev) => roundToHalf(prev + 0.5))}
-                    className="w-7 h-7 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                <QtyStepper
+                  amount={`₱${roomChargeTotal.toFixed(2)}`}
+                  onDecrement={() => setRoomChargeQty((prev) => roundToHalf(Math.max(1, prev - 0.5)))}
+                  onIncrement={() => setRoomChargeQty((prev) => roundToHalf(prev + 0.5))}
+                  decrementDisabled={roomChargeQty <= 1}
+                  onReset={() => setRoomChargeQty(1)}
+                  resetDisabled={roomChargeQty <= 1}
+                  resetLabel="Reset to 1 hour"
+                />
               </div>
             </div>
           )}
@@ -318,20 +320,18 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
               {items.map((it) => (
                 <div
                   key={it.menuId}
-                  className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between"
+                  className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between gap-3"
                 >
-                  <div className="text-sm text-white">
+                  <div className="text-sm text-white min-w-0 truncate" title={it.name}>
                     {it.qty}x {it.name}
                   </div>
-                  <div className="flex items-center gap-3">
-                    <span className="font-mono text-xs text-slate-300">₱{(it.unitPrice * it.qty).toFixed(2)}</span>
-                    <button
-                      onClick={() => handleRemoveItem(it.menuId)}
-                      className="text-slate-500 hover:text-rose-400 p-1"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                  <QtyStepper
+                    amount={`₱${(it.unitPrice * it.qty).toFixed(2)}`}
+                    onDecrement={() => handleItemQtyChange(it.menuId, it.qty - 1)}
+                    onIncrement={() => handleItemQtyChange(it.menuId, it.qty + 1)}
+                    decrementDisabled={it.qty <= 1}
+                    onRemove={() => handleRemoveItem(it.menuId)}
+                  />
                 </div>
               ))}
             </div>

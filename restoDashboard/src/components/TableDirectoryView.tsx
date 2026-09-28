@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { TableRoom, TableStatus } from '../types';
 import { getStatusColors } from '../utils/statusColors';
-import { getOrderStatusLabel, getOrderStatusColorClass } from '../services/orderSync';
 import {
   Search,
   Flame
@@ -178,8 +177,8 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
               {/* Order summary */}
               <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
                 {activeOrder ? (
-                  <span className={`px-2 py-0.5 rounded-full font-bold border ${getOrderStatusColorClass(activeOrder.status)}`}>
-                    #{activeOrder.orderNo} • {getOrderStatusLabel(activeOrder.status)}
+                  <span className="px-2 py-0.5 rounded-full font-bold border bg-indigo-500/15 text-indigo-300 border-indigo-500/30">
+                    #{activeOrder.orderNo}
                   </span>
                 ) : (
                   <span className="text-slate-500 text-[11px]">No active order</span>

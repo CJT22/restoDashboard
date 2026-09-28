@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TableRoom, AdminOrderSummary } from '../types';
-import { confirmOrder, cancelOrder, getOrderStatusLabel, getOrderStatusColorClass } from '../services/orderSync';
+import { confirmOrder, cancelOrder } from '../services/orderSync';
 import { SettlePaymentModal } from './SettlePaymentModal';
 import {
   UtensilsCrossed,
@@ -166,10 +166,6 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
                         Order #{order.orderNo} • {order.items.length} item(s)
                       </div>
                     </div>
-
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold border ${getOrderStatusColorClass(order.status)}`}>
-                      {getOrderStatusLabel(order.status)}
-                    </span>
                   </div>
 
                   <div className="text-sm text-white font-mono font-bold">
@@ -212,6 +208,7 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
                       </button>
                     )}
 
+                    {/* Only for a Pending order from restoAdmin — dashboard orders are confirmed on creation. */}
                     {order.status === 3 && (
                       <button
                         onClick={() => handleConfirm(table)}
