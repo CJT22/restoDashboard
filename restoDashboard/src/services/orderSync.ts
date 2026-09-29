@@ -75,6 +75,11 @@ export function getOrderStatusLabel(status: number): string {
   }
 }
 
+// Order items listed before the rest collapse to "+N more", wherever a
+// fixed-length item list is shown (a zone's hover card, the Active Orders
+// widget), so an order reads the same in both.
+export const MAX_LISTED_ORDER_ITEMS = 5;
+
 // Compact order number for tight spots on the map: restoAdmin's generated
 // numbers look like "ORD-20260924-144956", whose last segment is enough to
 // tell today's orders apart. Anything without dashes is kept as-is.

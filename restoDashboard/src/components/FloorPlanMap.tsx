@@ -17,6 +17,7 @@ import {
   LayoutDashboard
 } from 'lucide-react';
 import { InfoPanelView } from './InfoPanelView';
+import { MAX_LISTED_ORDER_ITEMS } from '../services/orderSync';
 
 // Every floor plan image must share this exact 16:9 frame - zone geometry is
 // stored as percentages of it, so the canvas below is locked to this ratio.
@@ -85,9 +86,6 @@ interface ZoneRect {
 // once they no longer fit. The name and an hourly room's timer are never
 // dropped. Anything cut here is still in the hover card and detail modal.
 const PANEL_PAD_X = 3;
-
-// Order items listed on a zone's hover card before the rest become "+N more".
-const HOVER_MAX_ITEMS = 5;
 
 const formatPeso = (amount: number) =>
   `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -349,8 +347,9 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
   // One shared 1s tick drives every hourly room's countdown and the info
   // panels' timers/waiting times; only runs while there's one to show.
+  // Panels check both floors, since a widget can be set to 2F or All.
   const hasRoomTimer = floorTables.some((t) => getRoomTiming(t.activeOrder, 0) != null);
-  const panelsNeedTick = panelsVisible && floorPanels.length > 0 && floorTables.some((t) => t.activeOrder);
+  const panelsNeedTick = panelsVisible && floorPanels.length > 0 && tables.some((t) => t.activeOrder);
   const nowMs = useNow(hasRoomTimer || panelsNeedTick);
 
   // Zoom helpers
@@ -805,7 +804,6 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                 <div className="absolute inset-0 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
                   <InfoPanelView
                     panel={panel}
-                    floorTables={floorTables}
                     allTables={tables}
                     nowMs={nowMs}
                     widthPx={panelPx.widthPx}
@@ -1010,14 +1008,14 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
                     {orderItems.length > 0 && (
                       <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px] text-slate-200 space-y-0.5">
-                        {orderItems.slice(0, HOVER_MAX_ITEMS).map((item) => (
+                        {orderItems.slice(0, MAX_LISTED_ORDER_ITEMS).map((item) => (
                           <div key={item.id} className="flex items-center gap-1.5">
                             <span className="shrink-0 tabular-nums text-slate-400">{item.quantity}×</span>
                             <span className="truncate">{item.name}</span>
                           </div>
                         ))}
-                        {orderItems.length > HOVER_MAX_ITEMS && (
-                          <div className="text-slate-400">+{orderItems.length - HOVER_MAX_ITEMS} more</div>
+                        {orderItems.length > MAX_LISTED_ORDER_ITEMS && (
+                          <div className="text-slate-400">+{orderItems.length - MAX_LISTED_ORDER_ITEMS} more</div>
                         )}
                       </div>
                     )}

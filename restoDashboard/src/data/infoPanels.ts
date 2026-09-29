@@ -5,11 +5,11 @@ export const INFO_WIDGET_ORDER: InfoWidgetType[] = ['roomTimers', 'activeOrders'
 export const INFO_WIDGET_META: Record<InfoWidgetType, { title: string; description: string }> = {
   roomTimers: {
     title: 'Room Timers',
-    description: 'Running rooms on this floor, expired first, then by time left.',
+    description: 'Running rooms (1F, 2F or both), expired first, then A–Z.',
   },
   activeOrders: {
     title: 'Active Orders',
-    description: 'Open orders on this floor, oldest first.',
+    description: 'Open orders (1F, 2F or both), A–Z by zone.',
   },
   totalSales: {
     title: 'Total Sales',
@@ -17,7 +17,7 @@ export const INFO_WIDGET_META: Record<InfoWidgetType, { title: string; descripti
   },
   occupancy: {
     title: 'Occupancy',
-    description: 'Occupied vs. available, plus active orders and room timers.',
+    description: 'Occupied vs. available (1F, 2F or both), plus active orders and room timers.',
   },
 };
 

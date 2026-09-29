@@ -2,15 +2,19 @@ import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Timer, ClipboardList, Banknote, Gauge, ChevronRight } from 'lucide-react';
 import { InfoPanel, InfoPanelLayout, InfoWidgetType, TableRoom } from '../types';
 import { INFO_WIDGET_META } from '../data/infoPanels';
-import { shortOrderNo } from '../services/orderSync';
+import { MAX_LISTED_ORDER_ITEMS, shortOrderNo } from '../services/orderSync';
 import { getSales, SALES_PERIODS, SalesPeriod, useLiveSales } from '../services/salesSync';
 import { getRoomTiming, formatDuration, formatHours, formatWait } from '../utils/roomTimer';
 
 // Read-only widgets for an info panel on the floor plan. Everything except
-// Total Sales is derived from the floor's tables (and their live activeOrder)
+// Total Sales is derived from the tables (and their live activeOrder)
 // already in memory — no fetching — so their only ongoing cost is the map's
 // shared 1s tick. Total Sales fetches paid sales from restoAdmin (see
 // TotalSalesWidget).
+//
+// Room Timers, Active Orders and Occupancy each have a 1F / 2F / All toggle.
+// Each one starts on the panel's own floor and remembers its choice per
+// panel (see useFloorScope).
 //
 // Every layout is a set of columns, each a vertical stack of widget cards:
 //   stack = 1 column, row = 1 column per widget, auto = as many columns as
@@ -30,8 +34,6 @@ const LIST_WIDGETS: InfoWidgetType[] = ['roomTimers', 'activeOrders'];
 
 const PANEL_PAD_PX = 8;
 const GAP_PX = 8;
-// Order items shown per order before collapsing the rest to "+N more".
-const MAX_ITEMS_PER_ORDER = 4;
 
 // Smaller type and columns on small panels (e.g. an iPad-sized canvas).
 export function isCompactPanel(widthPx: number, heightPx: number): boolean {
@@ -56,8 +58,7 @@ function getColumns(widgets: InfoWidgetType[], layout: InfoPanelLayout, maxColum
 
 interface InfoPanelViewProps {
   panel: InfoPanel;
-  floorTables: TableRoom[];
-  // Both floors — Total Sales is branch-wide, not per floor.
+  // Both floors; each widget narrows these to the floor(s) it's set to.
   allTables: TableRoom[];
   nowMs: number;
   widthPx: number;
@@ -69,7 +70,7 @@ interface InfoPanelViewProps {
 }
 
 interface WidgetProps {
-  floorTables: TableRoom[];
+  panel: InfoPanel;
   allTables: TableRoom[];
   nowMs: number;
   compact: boolean;
@@ -79,7 +80,6 @@ interface WidgetProps {
 
 export const InfoPanelView: React.FC<InfoPanelViewProps> = ({
   panel,
-  floorTables,
   allTables,
   nowMs,
   widthPx,
@@ -89,7 +89,7 @@ export const InfoPanelView: React.FC<InfoPanelViewProps> = ({
 }) => {
   const compact = isCompactPanel(widthPx, heightPx);
   const columns = getColumns(panel.widgets, panel.layout ?? 'auto', maxPanelColumns(widthPx, compact));
-  const widgetProps: WidgetProps = { floorTables, allTables, nowMs, compact, interactive, onSelectTable };
+  const widgetProps: WidgetProps = { panel, allTables, nowMs, compact, interactive, onSelectTable };
 
   return (
     <div
@@ -148,36 +148,154 @@ const rowHeightPx = (compact: boolean) => (compact ? 16 : 18);
 const rowButtonClass = (interactive: boolean) =>
   `min-w-0 flex items-center gap-1.5 rounded-md text-left ${interactive ? 'hover:bg-white/10 cursor-pointer' : 'pointer-events-none'}`;
 
-const RoomTimersWidget: React.FC<WidgetProps> = ({ floorTables, nowMs, compact, interactive, onSelectTable }) => {
-  // Ascending remaining time puts the most-overdue rooms first.
-  const rows = floorTables
+// Segmented picker styled like the Total Sales period row; shared by that
+// and the floor toggles so they read as one control.
+function SegmentedToggle<T extends string | number>({
+  options,
+  value,
+  onChange,
+  interactive,
+  ariaLabel,
+}: {
+  options: readonly { value: T; label: string }[];
+  value: T;
+  onChange: (value: T) => void;
+  interactive: boolean;
+  ariaLabel: string;
+}) {
+  return (
+    <div className="shrink-0 flex gap-0.5 pt-0.5" role="group" aria-label={ariaLabel}>
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value}
+            onClick={() => onChange(option.value)}
+            aria-pressed={active}
+            className={`flex-1 min-w-0 truncate px-1 py-0.5 rounded-md text-[10px] font-semibold ${
+              active
+                ? 'bg-indigo-500/30 text-indigo-100 border border-indigo-400/40'
+                : 'text-slate-400 border border-transparent'
+            } ${interactive ? (active ? '' : 'hover:bg-white/10 cursor-pointer') : 'pointer-events-none'}`}
+          >
+            {option.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+type FloorScope = 1 | 2 | 'all';
+
+const FLOOR_SCOPES: { value: FloorScope; label: string }[] = [
+  { value: 1, label: '1F' },
+  { value: 2, label: '2F' },
+  { value: 'all', label: 'All' },
+];
+
+const FLOORS: (1 | 2)[] = [1, 2];
+const FLOOR_NAMES: Record<1 | 2, string> = { 1: '1st Floor', 2: '2nd Floor' };
+
+const STORAGE_KEY_FLOOR_SCOPE = 'restaurant_dashboard_widget_floor';
+
+// Which floor(s) a widget shows. Starts on the panel's own floor and is
+// remembered per panel + widget, so e.g. the 1st floor's Active Orders can
+// show All while its Occupancy stays on 1F.
+function useFloorScope(panel: InfoPanel, widget: InfoWidgetType): [FloorScope, (scope: FloorScope) => void] {
+  const key = `${STORAGE_KEY_FLOOR_SCOPE}:${panel.id}:${widget}`;
+  const [scope, setScope] = useState<FloorScope>(() => {
+    try {
+      const saved = localStorage.getItem(key);
+      const match = FLOOR_SCOPES.find((s) => String(s.value) === saved);
+      if (match) return match.value;
+    } catch {
+      // Storage blocked; fall through to the default.
+    }
+    return panel.floor;
+  });
+
+  const update = (next: FloorScope) => {
+    setScope(next);
+    try {
+      localStorage.setItem(key, String(next));
+    } catch {
+      // Not remembered this time; harmless.
+    }
+  };
+  return [scope, update];
+}
+
+const inScope = (table: TableRoom, scope: FloorScope) => scope === 'all' || table.floor === scope;
+
+// In All mode lists are split under a heading per floor; floors with
+// nothing to show are left out. Otherwise it's one untitled group.
+function groupByFloor<R>(rows: R[], floorOf: (row: R) => 1 | 2, scope: FloorScope): { floor?: 1 | 2; rows: R[] }[] {
+  if (scope !== 'all') return [{ rows }];
+  return FLOORS.map((floor) => ({ floor, rows: rows.filter((r) => floorOf(r) === floor) })).filter((g) => g.rows.length);
+}
+
+const FloorSubheading: React.FC<{ floor: 1 | 2; count: number; heightPx: number }> = ({ floor, count, heightPx }) => (
+  <div
+    className="flex items-center gap-1.5 px-1 text-[9px] font-semibold uppercase tracking-wider text-slate-500 border-b border-white/[0.07]"
+    style={{ height: heightPx }}
+  >
+    <span className="truncate">{FLOOR_NAMES[floor]}</span>
+    <span className="ml-auto shrink-0 tabular-nums">{count}</span>
+  </div>
+);
+
+const FloorToggle: React.FC<{ scope: FloorScope; onChange: (scope: FloorScope) => void; interactive: boolean }> = ({
+  scope,
+  onChange,
+  interactive,
+}) => <SegmentedToggle options={FLOOR_SCOPES} value={scope} onChange={onChange} interactive={interactive} ariaLabel="Floor" />;
+
+// A–Z with numbers compared by value, so ROOM 2 comes before ROOM 12 and
+// M9 before M10.
+const byZoneName = (a: TableRoom, b: TableRoom) =>
+  a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
+
+const RoomTimersWidget: React.FC<WidgetProps> = ({ panel, allTables, nowMs, compact, interactive, onSelectTable }) => {
+  const [scope, setScope] = useFloorScope(panel, 'roomTimers');
+  // Expired rooms are pinned to the top so they can't be missed; within
+  // that and the rest, rooms go A–Z.
+  const rows = allTables
+    .filter((table) => inScope(table, scope))
     .map((table) => ({ table, timing: getRoomTiming(table.activeOrder, nowMs) }))
     .filter((r): r is { table: TableRoom; timing: NonNullable<typeof r.timing> } => r.timing != null)
-    .sort((a, b) => a.timing.remainingMs - b.timing.remainingMs);
+    .sort((a, b) => Number(b.timing.expired) - Number(a.timing.expired) || byZoneName(a.table, b.table));
+  const rowPx = rowHeightPx(compact);
 
   return (
     <>
       <WidgetHeader type="roomTimers" count={rows.length} />
       <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
         {rows.length ? (
-          rows.map(({ table, timing }) => (
-            <button
-              key={table.id}
-              onClick={() => onSelectTable(table)}
-              className={`w-full px-1 ${rowButtonClass(interactive)}`}
-              style={{ height: rowHeightPx(compact) }}
-            >
-              <span className="truncate font-semibold text-white">{table.name}</span>
-              <span className="shrink-0 text-slate-500">{formatHours(timing.hours)}</span>
-              <span className="ml-auto shrink-0 font-bold tabular-nums text-white">
-                {timing.expired ? `EXPIRED +${formatDuration(timing.remainingMs)}` : `${formatDuration(timing.remainingMs)} left`}
-              </span>
-            </button>
+          groupByFloor(rows, (r) => r.table.floor, scope).map((group) => (
+            <div key={group.floor ?? 'floor'}>
+              {group.floor && <FloorSubheading floor={group.floor} count={group.rows.length} heightPx={rowPx} />}
+              {group.rows.map(({ table, timing }) => (
+                <button
+                  key={table.id}
+                  onClick={() => onSelectTable(table)}
+                  className={`w-full px-1 ${rowButtonClass(interactive)}`}
+                  style={{ height: rowPx }}
+                >
+                  <span className="truncate font-semibold text-white">{table.name}</span>
+                  <span className="shrink-0 text-slate-500">{formatHours(timing.hours)}</span>
+                  <span className="ml-auto shrink-0 font-bold tabular-nums text-white">
+                    {timing.expired ? `EXPIRED +${formatDuration(timing.remainingMs)}` : `${formatDuration(timing.remainingMs)} left`}
+                  </span>
+                </button>
+              ))}
+            </div>
           ))
         ) : (
           <Empty>No rooms running</Empty>
         )}
       </div>
+      <FloorToggle scope={scope} onChange={setScope} interactive={interactive} />
     </>
   );
 };
@@ -186,10 +304,12 @@ const RoomTimersWidget: React.FC<WidgetProps> = ({ floorTables, nowMs, compact, 
 // widget's measured height they all start expanded, otherwise collapsed;
 // either way staff can toggle any order with its ▸ button, and that choice
 // wins for as long as the page is open.
-const ActiveOrdersWidget: React.FC<WidgetProps> = ({ floorTables, nowMs, compact, interactive, onSelectTable }) => {
-  const rows = floorTables
-    .filter((t) => t.activeOrder != null)
-    .sort((a, b) => (a.activeOrder?.createdAt ?? '').localeCompare(b.activeOrder?.createdAt ?? ''));
+const ActiveOrdersWidget: React.FC<WidgetProps> = ({ panel, allTables, nowMs, compact, interactive, onSelectTable }) => {
+  const [scope, setScope] = useFloorScope(panel, 'activeOrders');
+  const rows = allTables
+    .filter((t) => t.activeOrder != null && inScope(t, scope))
+    .sort(byZoneName);
+  const groups = groupByFloor(rows, (t) => t.floor, scope);
 
   const bodyRef = useRef<HTMLDivElement>(null);
   const [bodyHeightPx, setBodyHeightPx] = useState(0);
@@ -204,8 +324,10 @@ const ActiveOrdersWidget: React.FC<WidgetProps> = ({ floorTables, nowMs, compact
   const [expandedOverrides, setExpandedOverrides] = useState<Record<number, boolean>>({});
 
   const rowPx = rowHeightPx(compact);
-  const itemLineCount = (count: number) => Math.min(count, MAX_ITEMS_PER_ORDER) + (count > MAX_ITEMS_PER_ORDER ? 1 : 0);
-  const linesIfAllExpanded = rows.reduce((sum, t) => sum + 1 + itemLineCount(t.activeOrder!.items.length), 0);
+  const itemLineCount = (count: number) => Math.min(count, MAX_LISTED_ORDER_ITEMS) + (count > MAX_LISTED_ORDER_ITEMS ? 1 : 0);
+  const floorHeadingLines = groups.filter((g) => g.floor).length;
+  const linesIfAllExpanded =
+    floorHeadingLines + rows.reduce((sum, t) => sum + 1 + itemLineCount(t.activeOrder!.items.length), 0);
   const allFit = linesIfAllExpanded * rowPx <= bodyHeightPx;
 
   return (
@@ -213,58 +335,64 @@ const ActiveOrdersWidget: React.FC<WidgetProps> = ({ floorTables, nowMs, compact
       <WidgetHeader type="activeOrders" count={rows.length} />
       <div ref={bodyRef} className="flex-1 min-h-0 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
         {rows.length ? (
-          rows.map((table) => {
-            const order = table.activeOrder!;
-            const startMs = order.createdAt ? Date.parse(order.createdAt) : NaN;
-            const hasItems = order.items.length > 0;
-            const expanded = hasItems && (expandedOverrides[order.id] ?? allFit);
-            return (
-              <div key={table.id}>
-                <div className="flex items-center gap-1 px-1" style={{ height: rowPx }}>
-                  <button onClick={() => onSelectTable(table)} className={`flex-1 ${rowButtonClass(interactive)}`}>
-                    <span className="truncate font-semibold text-white">{table.name}</span>
-                    <span className="truncate text-slate-500">#{shortOrderNo(order.orderNo)}</span>
-                    <span className="ml-auto shrink-0 tabular-nums text-slate-300">
-                      {Number.isFinite(startMs) ? formatWait(nowMs - startMs) : ''}
-                    </span>
-                  </button>
-                  {hasItems ? (
-                    <button
-                      onClick={() => setExpandedOverrides((prev) => ({ ...prev, [order.id]: !expanded }))}
-                      className={`shrink-0 w-4 h-4 rounded flex items-center justify-center text-slate-400 ${
-                        interactive ? 'hover:bg-white/10 hover:text-white cursor-pointer' : 'pointer-events-none'
-                      }`}
-                      aria-expanded={expanded}
-                      aria-label={expanded ? `Hide items for ${table.name}` : `Show items for ${table.name}`}
-                    >
-                      <ChevronRight className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`} />
-                    </button>
-                  ) : (
-                    <span className="shrink-0 w-4" />
-                  )}
-                </div>
-                {expanded && (
-                  <div className="pl-3 pr-1 text-slate-400">
-                    {order.items.slice(0, MAX_ITEMS_PER_ORDER).map((item) => (
-                      <div key={item.id} className="flex items-center gap-1.5" style={{ height: rowPx }}>
-                        <span className="shrink-0 tabular-nums text-slate-300">{item.quantity}×</span>
-                        <span className="truncate">{item.name}</span>
-                      </div>
-                    ))}
-                    {order.items.length > MAX_ITEMS_PER_ORDER && (
-                      <div className="italic text-slate-500" style={{ height: rowPx }}>
-                        +{order.items.length - MAX_ITEMS_PER_ORDER} more
+          groups.map((group) => (
+            <div key={group.floor ?? 'floor'}>
+              {group.floor && <FloorSubheading floor={group.floor} count={group.rows.length} heightPx={rowPx} />}
+              {group.rows.map((table) => {
+                const order = table.activeOrder!;
+                const startMs = order.createdAt ? Date.parse(order.createdAt) : NaN;
+                const hasItems = order.items.length > 0;
+                const expanded = hasItems && (expandedOverrides[order.id] ?? allFit);
+                return (
+                  <div key={table.id}>
+                    <div className="flex items-center gap-1 px-1" style={{ height: rowPx }}>
+                      <button onClick={() => onSelectTable(table)} className={`flex-1 ${rowButtonClass(interactive)}`}>
+                        <span className="truncate font-semibold text-white">{table.name}</span>
+                        <span className="truncate text-slate-500">#{shortOrderNo(order.orderNo)}</span>
+                        <span className="ml-auto shrink-0 tabular-nums text-slate-300">
+                          {Number.isFinite(startMs) ? formatWait(nowMs - startMs) : ''}
+                        </span>
+                      </button>
+                      {hasItems ? (
+                        <button
+                          onClick={() => setExpandedOverrides((prev) => ({ ...prev, [order.id]: !expanded }))}
+                          className={`shrink-0 w-4 h-4 rounded flex items-center justify-center text-slate-400 ${
+                            interactive ? 'hover:bg-white/10 hover:text-white cursor-pointer' : 'pointer-events-none'
+                          }`}
+                          aria-expanded={expanded}
+                          aria-label={expanded ? `Hide items for ${table.name}` : `Show items for ${table.name}`}
+                        >
+                          <ChevronRight className={`w-3 h-3 transition-transform ${expanded ? 'rotate-90' : ''}`} />
+                        </button>
+                      ) : (
+                        <span className="shrink-0 w-4" />
+                      )}
+                    </div>
+                    {expanded && (
+                      <div className="pl-3 pr-1 text-slate-400">
+                        {order.items.slice(0, MAX_LISTED_ORDER_ITEMS).map((item) => (
+                          <div key={item.id} className="flex items-center gap-1.5" style={{ height: rowPx }}>
+                            <span className="shrink-0 tabular-nums text-slate-300">{item.quantity}×</span>
+                            <span className="truncate">{item.name}</span>
+                          </div>
+                        ))}
+                        {order.items.length > MAX_LISTED_ORDER_ITEMS && (
+                          <div className="italic text-slate-500" style={{ height: rowPx }}>
+                            +{order.items.length - MAX_LISTED_ORDER_ITEMS} more
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
-                )}
-              </div>
-            );
-          })
+                );
+              })}
+            </div>
+          ))
         ) : (
           <Empty>No open orders</Empty>
         )}
       </div>
+      <FloorToggle scope={scope} onChange={setScope} interactive={interactive} />
     </>
   );
 };
@@ -335,32 +463,25 @@ const TotalSalesWidget: React.FC<WidgetProps> = ({ allTables, interactive }) => 
             </div>
           )}
         </div>
-        <div className="flex gap-0.5 pt-0.5" role="group" aria-label="Sales period">
-          {SALES_PERIODS.map((option) => (
-            <button
-              key={option.value}
-              onClick={() => setPeriod(option.value)}
-              aria-pressed={period === option.value}
-              className={`flex-1 min-w-0 truncate px-1 py-0.5 rounded-md text-[10px] font-semibold ${
-                period === option.value
-                  ? 'bg-indigo-500/30 text-indigo-100 border border-indigo-400/40'
-                  : 'text-slate-400 border border-transparent'
-              } ${interactive ? (period === option.value ? '' : 'hover:bg-white/10 cursor-pointer') : 'pointer-events-none'}`}
-            >
-              {option.label}
-            </button>
-          ))}
-        </div>
+        <SegmentedToggle<SalesPeriod>
+          options={SALES_PERIODS}
+          value={period}
+          onChange={setPeriod}
+          interactive={interactive}
+          ariaLabel="Sales period"
+        />
       </div>
     </>
   );
 };
 
-const OccupancyWidget: React.FC<WidgetProps> = ({ floorTables, nowMs }) => {
-  const total = floorTables.length;
-  const occupied = floorTables.filter((t) => t.status === 'occupied').length;
-  const activeOrders = floorTables.filter((t) => t.activeOrder != null).length;
-  const timings = floorTables.map((t) => getRoomTiming(t.activeOrder, nowMs)).filter((t) => t != null);
+// Occupancy stats (bar + rows) for a set of tables. The room rows only
+// appear when some of those tables have a room running.
+const OccupancyStats: React.FC<{ tables: TableRoom[]; nowMs: number }> = ({ tables, nowMs }) => {
+  const total = tables.length;
+  const occupied = tables.filter((t) => t.status === 'occupied').length;
+  const activeOrders = tables.filter((t) => t.activeOrder != null).length;
+  const timings = tables.map((t) => getRoomTiming(t.activeOrder, nowMs)).filter((t) => t != null);
   const expired = timings.filter((t) => t.expired).length;
   const pct = total ? Math.round((occupied / total) * 100) : 0;
   const stats: [string, React.ReactNode][] = [
@@ -374,17 +495,53 @@ const OccupancyWidget: React.FC<WidgetProps> = ({ floorTables, nowMs }) => {
 
   return (
     <>
+      <div className="h-1.5 rounded-full bg-white/10 overflow-hidden" title={`${pct}% occupied`}>
+        <div className="h-full rounded-full bg-amber-400/80" style={{ width: `${pct}%` }} />
+      </div>
+      {stats.map(([label, value]) => (
+        <div key={label} className="flex items-center justify-between gap-2">
+          <span className="text-slate-400">{label}</span>
+          <span className="font-bold tabular-nums text-white">{value}</span>
+        </div>
+      ))}
+    </>
+  );
+};
+
+// All = both floors combined on top, then one compact line per floor (label,
+// bar, occupied / total) so the split is visible without doubling the
+// widget's height. The full per-floor stats are one tap away on 1F / 2F.
+// A floor with no zones is left out.
+const OccupancyWidget: React.FC<WidgetProps> = ({ panel, allTables, nowMs, interactive }) => {
+  const [scope, setScope] = useFloorScope(panel, 'occupancy');
+  const scopedTables = allTables.filter((t) => inScope(t, scope));
+  const floorGroups = groupByFloor(scopedTables, (t) => t.floor, scope).filter((g) => g.floor);
+
+  return (
+    <>
       <WidgetHeader type="occupancy" />
       <div className="px-1 space-y-1">
-        <div className="h-1.5 rounded-full bg-white/10 overflow-hidden" title={`${pct}% occupied`}>
-          <div className="h-full rounded-full bg-amber-400/80" style={{ width: `${pct}%` }} />
-        </div>
-        {stats.map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between gap-2">
-            <span className="text-slate-400">{label}</span>
-            <span className="font-bold tabular-nums text-white">{value}</span>
+        <OccupancyStats tables={scopedTables} nowMs={nowMs} />
+        {floorGroups.length > 0 && (
+          <div className="pt-1 border-t border-white/[0.07] space-y-0.5">
+            {floorGroups.map(({ floor, rows }) => {
+              const occupied = rows.filter((t) => t.status === 'occupied').length;
+              const pct = Math.round((occupied / rows.length) * 100);
+              return (
+                <div key={floor} className="flex items-center gap-1.5" title={`${FLOOR_NAMES[floor!]}: ${pct}% occupied`}>
+                  <span className="shrink-0 w-4 font-semibold text-slate-400">{floor}F</span>
+                  <div className="flex-1 min-w-0 h-1 rounded-full bg-white/10 overflow-hidden">
+                    <div className="h-full rounded-full bg-amber-400/80" style={{ width: `${pct}%` }} />
+                  </div>
+                  <span className="shrink-0 font-bold tabular-nums text-white">
+                    {occupied} / {rows.length}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        ))}
+        )}
+        <FloorToggle scope={scope} onChange={setScope} interactive={interactive} />
       </div>
     </>
   );
