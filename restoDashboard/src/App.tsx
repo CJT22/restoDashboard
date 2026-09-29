@@ -6,7 +6,15 @@ import { FloorPlanMap } from './components/FloorPlanMap';
 import { TableDetailModal } from './components/TableDetailModal';
 import { TableDirectoryView } from './components/TableDirectoryView';
 import { OrderQueueView } from './components/OrderQueueView';
-import { getAdminTables, getAdminTableStatus, statusFromAdmin, subscribeToAdminUpdates, warnOnLayoutLinkDrift } from './services/adminSync';
+import {
+  ConnectionStatus,
+  getAdminTables,
+  getAdminTableStatus,
+  statusFromAdmin,
+  subscribeToAdminUpdates,
+  subscribeToConnectionStatus,
+  warnOnLayoutLinkDrift,
+} from './services/adminSync';
 import { subscribeToOrderUpdates, getActiveOrders, getActiveOrderForTable } from './services/orderSync';
 import { LAYOUT_EDITOR_ENABLED } from './config/layoutEditor';
 
@@ -176,47 +184,80 @@ export default function App() {
     }
   };
 
-  // Reconcile linked tables with restoAdmin once on load (covers drift while
-  // the dashboard was closed), then keep listening for live changes. Both
-  // steps fail silently if the sync backend/restoAdmin aren't reachable —
-  // the dashboard stays fully usable locally either way.
-  useEffect(() => {
-    getAdminTables()
-      .then((adminTables) => {
-        warnOnLayoutLinkDrift(initialLayout.zones, adminTables);
-        const byId = new Map(adminTables.map((t) => [t.id, t]));
-        setTables((prev) =>
-          prev.map((t) => {
-            if (t.adminTableId == null) return t;
-            const remote = byId.get(t.adminTableId);
-            if (!remote) return t;
-            const remoteStatus = statusFromAdmin(remote.status);
-            const roomCharge = remote.roomCharge ?? undefined;
-            if (
-              remoteStatus === t.status &&
-              remote.tableNumber === t.adminTableName &&
-              roomCharge === t.adminRoomCharge
-            ) return t;
-            return { ...t, status: remoteStatus, adminTableName: remote.tableNumber, adminRoomCharge: roomCharge };
-          })
-        );
-      })
-      .catch((err) => console.warn('Initial restoAdmin reconciliation failed:', err));
+  // Live connection state for the sidebar badge, and when the last full
+  // resync from restoAdmin succeeded (see resyncFromAdmin).
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  const [lastSyncedAt, setLastSyncedAt] = useState<number | null>(null);
 
-    // Same reconciliation, but for order data: without this, a table with a
-    // pre-existing Pending/Confirmed order would correctly show Occupied
-    // (from the status reconciliation above) but have no activeOrder — so
-    // it wouldn't appear on "Active Orders" or show its Confirm/Cancel/Settle
-    // actions until someone happened to open its detail modal. Batched into
-    // one call (getActiveOrders) rather than one per linked table.
-    getActiveOrders()
-      .then((entries) => {
-        const orderByAdminTableId = new Map(entries.map((e) => [e.adminTableId, e.order]));
-        setTables((prev) =>
-          prev.map((t) => (t.adminTableId != null ? { ...t, activeOrder: orderByAdminTableId.get(t.adminTableId) } : t))
-        );
-      })
-      .catch((err) => console.warn('Initial active-orders reconciliation failed:', err));
+  // Pulls every linked zone's status and active order fresh from restoAdmin,
+  // covering anything the live stream didn't deliver. Runs on load (drift
+  // while the dashboard was closed), from the sidebar's refresh button, and
+  // automatically when the live connection comes back after an outage.
+  // Rejects if either half failed, so the refresh button can say so; the
+  // half that did succeed is still applied.
+  const resyncFromAdmin = async (isInitialLoad = false): Promise<void> => {
+    const [tablesResult, ordersResult] = await Promise.allSettled([getAdminTables(), getActiveOrders()]);
+
+    if (tablesResult.status === 'fulfilled') {
+      const adminTables = tablesResult.value;
+      if (isInitialLoad) warnOnLayoutLinkDrift(initialLayout.zones, adminTables);
+      const byId = new Map(adminTables.map((t) => [t.id, t]));
+      setTables((prev) =>
+        prev.map((t) => {
+          if (t.adminTableId == null) return t;
+          const remote = byId.get(t.adminTableId);
+          if (!remote) return t;
+          const remoteStatus = statusFromAdmin(remote.status);
+          const roomCharge = remote.roomCharge ?? undefined;
+          if (
+            remoteStatus === t.status &&
+            remote.tableNumber === t.adminTableName &&
+            roomCharge === t.adminRoomCharge
+          ) return t;
+          return { ...t, status: remoteStatus, adminTableName: remote.tableNumber, adminRoomCharge: roomCharge };
+        })
+      );
+    } else {
+      console.warn('restoAdmin table reconciliation failed:', tablesResult.reason);
+    }
+
+    // Same, for order data: without this, a table with a pre-existing
+    // Pending/Confirmed order would correctly show Occupied (from the status
+    // reconciliation above) but have no activeOrder — so it wouldn't appear
+    // on "Active Orders" or show its Confirm/Cancel/Settle actions until
+    // someone happened to open its detail modal. Batched into one call
+    // (getActiveOrders) rather than one per linked table.
+    if (ordersResult.status === 'fulfilled') {
+      const orderByAdminTableId = new Map(ordersResult.value.map((e) => [e.adminTableId, e.order]));
+      setTables((prev) =>
+        prev.map((t) => (t.adminTableId != null ? { ...t, activeOrder: orderByAdminTableId.get(t.adminTableId) } : t))
+      );
+    } else {
+      console.warn('Active-orders reconciliation failed:', ordersResult.reason);
+    }
+
+    if (tablesResult.status === 'rejected' || ordersResult.status === 'rejected') {
+      throw new Error('Could not refresh everything from restoAdmin');
+    }
+    setLastSyncedAt(Date.now());
+  };
+
+  // Reconcile with restoAdmin on load, then keep listening for live changes.
+  // Everything fails soft if the sync backend/restoAdmin aren't reachable —
+  // the dashboard stays usable and catches up once they're back.
+  useEffect(() => {
+    resyncFromAdmin(true).catch(() => {});
+
+    // Back from an outage: events sent while the stream (or this backend's
+    // link to restoAdmin) was down are never replayed, so catch up in full.
+    let previousStatus: ConnectionStatus | null = null;
+    const unsubscribeStatus = subscribeToConnectionStatus((status) => {
+      setConnectionStatus(status);
+      if (status === 'live' && (previousStatus === 'offline' || previousStatus === 'adminOffline')) {
+        resyncFromAdmin().catch(() => {});
+      }
+      previousStatus = status;
+    });
 
     const unsubscribeTables = subscribeToAdminUpdates(({ adminTableId, status }) => {
       applyRemoteStatus(adminTableId, status);
@@ -265,6 +306,7 @@ export default function App() {
     });
 
     return () => {
+      unsubscribeStatus();
       unsubscribeTables();
       unsubscribeOrders();
     };
@@ -284,6 +326,11 @@ export default function App() {
         showOccupiedFilter={showOccupiedFilter}
         onToggleOccupiedFilter={() => setShowOccupiedFilter(!showOccupiedFilter)}
         tables={tables}
+        onSelectFloor={(floor) => setCurrentFloor(floor)}
+        onSelectTable={(table) => setSelectedTable(table)}
+        connectionStatus={connectionStatus}
+        lastSyncedAt={lastSyncedAt}
+        onRefresh={() => resyncFromAdmin()}
       />
 
       {/* Main View Area */}

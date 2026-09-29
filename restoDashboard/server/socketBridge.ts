@@ -42,6 +42,20 @@ export interface OrderEvent {
 export const tableEvents = new EventEmitter();
 export const orderEvents = new EventEmitter();
 
+// Whether this backend currently has a live Socket.IO connection to
+// restoAdmin. The browser's SSE stream can be up while this is down (then no
+// realtime events arrive), so index.ts forwards it as `bridge_status` for
+// the sidebar's connection badge. Emits 'status' (boolean) on every change.
+export const bridgeEvents = new EventEmitter();
+let bridgeConnected = false;
+export const isBridgeConnected = () => bridgeConnected;
+
+function setBridgeConnected(connected: boolean) {
+  if (bridgeConnected === connected) return;
+  bridgeConnected = connected;
+  bridgeEvents.emit('status', connected);
+}
+
 let socket: Socket | null = null;
 
 export function connectSocketBridge(): void {
@@ -53,6 +67,7 @@ export function connectSocketBridge(): void {
   });
 
   socket.on('connect', () => {
+    setBridgeConnected(true);
     console.log('[socketBridge] connected to restoAdmin, joining branch', ADMIN_BRANCH_ID, 'rooms');
     socket!.emit('join_kitchen', ADMIN_BRANCH_ID);
     socket!.emit('join_cashier', ADMIN_BRANCH_ID);
@@ -97,6 +112,7 @@ export function connectSocketBridge(): void {
   socket.on('order_updated', handleOrderEvent('order_updated'));
 
   socket.on('disconnect', (reason) => {
+    setBridgeConnected(false);
     console.warn('[socketBridge] disconnected from restoAdmin:', reason);
   });
 

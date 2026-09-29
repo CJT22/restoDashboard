@@ -25,7 +25,7 @@ import {
   settleOrder,
   getSalesTotal,
 } from './adminClient.js';
-import { connectSocketBridge, tableEvents, orderEvents, type TableUpdatedEvent, type OrderEvent } from './socketBridge.js';
+import { connectSocketBridge, tableEvents, orderEvents, bridgeEvents, isBridgeConnected, type TableUpdatedEvent, type OrderEvent } from './socketBridge.js';
 
 const app = express();
 app.use(express.json());
@@ -301,6 +301,8 @@ app.put('/api/admin/orders/:id/settle', async (req, res) => {
 // Server-Sent Events stream: forwards restoAdmin's realtime table_updated
 // and order_created/order_updated events (via socketBridge.ts) down to the
 // dashboard's browser tab(s). One connection carries every event type.
+// bridge_status ({ connected }) is sent on connect and whenever this
+// backend's own link to restoAdmin drops or comes back.
 app.get('/api/admin/stream', (req, res) => {
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -308,6 +310,12 @@ app.get('/api/admin/stream', (req, res) => {
     Connection: 'keep-alive',
   });
   res.write('\n');
+
+  const writeBridgeStatus = (connected: boolean) => {
+    res.write(`event: bridge_status\ndata: ${JSON.stringify({ connected })}\n\n`);
+  };
+  writeBridgeStatus(isBridgeConnected());
+  bridgeEvents.on('status', writeBridgeStatus);
 
   const onTableUpdated = (event: TableUpdatedEvent) => {
     res.write(`event: table_updated\ndata: ${JSON.stringify(event)}\n\n`);
@@ -326,6 +334,7 @@ app.get('/api/admin/stream', (req, res) => {
 
   req.on('close', () => {
     clearInterval(heartbeat);
+    bridgeEvents.off('status', writeBridgeStatus);
     tableEvents.off('table_updated', onTableUpdated);
     orderEvents.off('order_created', onOrderCreated);
     orderEvents.off('order_updated', onOrderUpdated);

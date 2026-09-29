@@ -76,36 +76,153 @@ export interface RemoteTableUpdate {
   dashboardZoneId: string | null;
 }
 
-// Single shared EventSource for /api/admin/stream — table sync (this module)
-// and order sync (services/orderSync.ts) both attach listeners to the same
-// connection rather than each opening their own. Reference-counted so it
-// closes once nothing is subscribed, and reopens if resubscribed later.
-let sharedSource: EventSource | null = null;
-let sharedSourceRefCount = 0;
+// Single shared EventSource for /api/admin/stream. Table sync (this module),
+// order sync (services/orderSync.ts) and the connection badge all register
+// listeners here rather than each opening their own connection. The stream
+// opens with the first listener and closes when the last one goes.
+//
+// EventSource retries a dropped connection by itself, but gives up for good
+// if a retry gets an HTTP error — e.g. the dev proxy's 502 while this
+// backend restarts — which used to stop live updates until a page reload.
+// So a stream that ends up closed is recreated here after a short delay,
+// with every registered listener re-attached.
+type StreamHandler = (e: MessageEvent) => void;
 
-export function acquireAdminEventSource(): EventSource | null {
-  if (!sharedSource) {
-    try {
-      sharedSource = new EventSource('/api/admin/stream');
-      sharedSource.onerror = () => {
-        // EventSource auto-reconnects; just log so silent backend outages are visible in devtools.
-        console.warn('[adminSync] SSE stream error (will retry)');
-      };
-    } catch (err) {
-      console.warn('[adminSync] could not open SSE stream', err);
-      return null;
-    }
-  }
-  sharedSourceRefCount++;
-  return sharedSource;
+const REOPEN_DELAY_MS = 3000;
+
+const streamListeners = new Map<string, Set<StreamHandler>>();
+let sharedSource: EventSource | null = null;
+let attachedEvents = new Set<string>();
+let reopenTimer: ReturnType<typeof setTimeout> | null = null;
+
+// Connection state, for the sidebar badge (see subscribeToConnectionStatus).
+type StreamState = 'connecting' | 'open' | 'down';
+let streamState: StreamState = 'connecting';
+// This backend's own link to restoAdmin, from the stream's bridge_status
+// event; null until the (possibly restarted) backend has reported it.
+let bridgeConnected: boolean | null = null;
+
+const hasListeners = () => [...streamListeners.values()].some((set) => set.size > 0);
+
+function attachEvent(source: EventSource, eventName: string) {
+  if (attachedEvents.has(eventName)) return;
+  attachedEvents.add(eventName);
+  source.addEventListener(eventName, (e) => {
+    streamListeners.get(eventName)?.forEach((handler) => handler(e as MessageEvent));
+  });
 }
 
-export function releaseAdminEventSource(): void {
-  sharedSourceRefCount = Math.max(0, sharedSourceRefCount - 1);
-  if (sharedSourceRefCount === 0 && sharedSource) {
-    sharedSource.close();
-    sharedSource = null;
+function openStream() {
+  if (sharedSource) return;
+  let source: EventSource;
+  try {
+    source = new EventSource('/api/admin/stream');
+  } catch (err) {
+    console.warn('[adminSync] could not open SSE stream', err);
+    setStreamState('down');
+    scheduleReopen();
+    return;
   }
+  sharedSource = source;
+  attachedEvents = new Set();
+  streamListeners.forEach((_, eventName) => attachEvent(source, eventName));
+
+  source.onopen = () => {
+    bridgeConnected = null;
+    setStreamState('open');
+  };
+  source.onerror = () => {
+    console.warn('[adminSync] SSE stream error (will retry)');
+    setStreamState('down');
+    if (source.readyState === EventSource.CLOSED) {
+      source.close();
+      if (sharedSource === source) sharedSource = null;
+      scheduleReopen();
+    }
+  };
+}
+
+function scheduleReopen() {
+  if (reopenTimer) return;
+  reopenTimer = setTimeout(() => {
+    reopenTimer = null;
+    if (hasListeners()) openStream();
+  }, REOPEN_DELAY_MS);
+}
+
+function closeStreamIfUnused() {
+  if (hasListeners()) return;
+  if (reopenTimer) {
+    clearTimeout(reopenTimer);
+    reopenTimer = null;
+  }
+  sharedSource?.close();
+  sharedSource = null;
+  streamState = 'connecting';
+  bridgeConnected = null;
+}
+
+// Registers a handler for one SSE event type on the shared stream (opening
+// it if needed). Returns the matching unsubscribe.
+export function listenToAdminStream(eventName: string, handler: StreamHandler): () => void {
+  let handlers = streamListeners.get(eventName);
+  if (!handlers) {
+    handlers = new Set();
+    streamListeners.set(eventName, handlers);
+  }
+  handlers.add(handler);
+  if (sharedSource) attachEvent(sharedSource, eventName);
+  else openStream();
+
+  return () => {
+    handlers!.delete(handler);
+    closeStreamIfUnused();
+  };
+}
+
+// What the sidebar's connection badge shows:
+//   connecting   — first connection attempt still in progress
+//   live         — stream up and this backend is connected to restoAdmin
+//   adminOffline — stream up, but this backend can't reach restoAdmin, so
+//                  no live updates arrive
+//   offline      — this dashboard's own backend is unreachable (retrying)
+export type ConnectionStatus = 'connecting' | 'live' | 'adminOffline' | 'offline';
+
+const statusSubscribers = new Set<(status: ConnectionStatus) => void>();
+
+export function getConnectionStatus(): ConnectionStatus {
+  if (streamState === 'connecting') return 'connecting';
+  if (streamState === 'down') return 'offline';
+  return bridgeConnected === false ? 'adminOffline' : 'live';
+}
+
+function notifyStatus() {
+  const status = getConnectionStatus();
+  statusSubscribers.forEach((cb) => cb(status));
+}
+
+function setStreamState(next: StreamState) {
+  streamState = next;
+  notifyStatus();
+}
+
+// Calls onChange with the current status now and on every change after.
+// Keeps the shared stream open while subscribed.
+export function subscribeToConnectionStatus(onChange: (status: ConnectionStatus) => void): () => void {
+  statusSubscribers.add(onChange);
+  const stopListening = listenToAdminStream('bridge_status', (e) => {
+    try {
+      bridgeConnected = Boolean(JSON.parse(e.data).connected);
+      notifyStatus();
+    } catch (err) {
+      console.warn('[adminSync] bad bridge_status payload', err);
+    }
+  });
+  onChange(getConnectionStatus());
+  return () => {
+    statusSubscribers.delete(onChange);
+    stopListening();
+  };
 }
 
 // Subscribes to restoAdmin table_updated events on the shared stream and
@@ -114,10 +231,7 @@ export function releaseAdminEventSource(): void {
 // swallowed — the dashboard should keep working locally even if live sync
 // is unavailable.
 export function subscribeToAdminUpdates(onUpdate: (event: RemoteTableUpdate) => void): () => void {
-  const source = acquireAdminEventSource();
-  if (!source) return () => {};
-
-  const handler = (e: MessageEvent) => {
+  return listenToAdminStream('table_updated', (e) => {
     try {
       const payload = JSON.parse(e.data);
       if (payload.status == null) return;
@@ -129,13 +243,7 @@ export function subscribeToAdminUpdates(onUpdate: (event: RemoteTableUpdate) => 
     } catch (err) {
       console.warn('[adminSync] bad table_updated payload', err);
     }
-  };
-  source.addEventListener('table_updated', handler);
-
-  return () => {
-    source.removeEventListener('table_updated', handler);
-    releaseAdminEventSource();
-  };
+  });
 }
 
 // Startup sanity check for the fixed layout (src/data/floorLayout.json):

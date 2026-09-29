@@ -71,9 +71,17 @@ in this whole feature is unrelated to orders: collapsing `restaurant_tables.STAT
 ### The shared SSE connection
 
 The table sync already opens one `EventSource` (`/api/admin/stream`) per browser tab. Rather than open
-a second one for orders, `adminSync.ts` exposes `acquireAdminEventSource`/`releaseAdminEventSource` —
-a reference-counted singleton — and `orderSync.ts`'s `subscribeToOrderUpdates` attaches its
-`order_created`/`order_updated` listeners to that same connection.
+a second one for orders, `adminSync.ts` exposes `listenToAdminStream(eventName, handler)`, a shared
+connection that opens with the first listener and closes with the last. `orderSync.ts`'s
+`subscribeToOrderUpdates` attaches its `order_created`/`order_updated` listeners to it the same way
+table sync attaches `table_updated`.
+
+If that connection is closed for good (the browser stops retrying after an HTTP error, e.g. the dev
+proxy's 502 while the backend restarts), `adminSync.ts` reopens it after 3 s and re-attaches every
+listener. The stream also carries a `bridge_status` event (`{ connected }`), which the backend sends
+on connect and whenever its own Socket.IO link to restoAdmin drops or returns. The sidebar's
+connection badge is built from both (Live / restoAdmin offline / Offline). When the badge goes back to
+Live, `App.tsx` runs a full `resyncFromAdmin`, since events sent during the outage are never replayed.
 
 ## Table status is derived, not pushed
 

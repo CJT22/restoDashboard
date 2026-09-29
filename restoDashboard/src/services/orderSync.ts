@@ -4,7 +4,7 @@
 // this app's own same-origin /api/admin/* routes.
 
 import { AdminOrderLineItem, AdminOrderSummary } from '../types';
-import { acquireAdminEventSource, releaseAdminEventSource } from './adminSync';
+import { listenToAdminStream } from './adminSync';
 
 export interface AdminMenuItem {
   id: number;
@@ -269,9 +269,6 @@ export interface RemoteOrderUpdate {
 // connection adminSync.ts's subscribeToAdminUpdates uses for table_updated —
 // one EventSource, multiple event listeners, rather than a second connection.
 export function subscribeToOrderUpdates(onUpdate: (event: RemoteOrderUpdate) => void): () => void {
-  const source = acquireAdminEventSource();
-  if (!source) return () => {};
-
   const handle = (e: MessageEvent) => {
     try {
       const payload = JSON.parse(e.data);
@@ -299,12 +296,10 @@ export function subscribeToOrderUpdates(onUpdate: (event: RemoteOrderUpdate) => 
       console.warn('[orderSync] bad order event payload', err);
     }
   };
-  source.addEventListener('order_created', handle);
-  source.addEventListener('order_updated', handle);
-
+  const stopCreated = listenToAdminStream('order_created', handle);
+  const stopUpdated = listenToAdminStream('order_updated', handle);
   return () => {
-    source.removeEventListener('order_created', handle);
-    source.removeEventListener('order_updated', handle);
-    releaseAdminEventSource();
+    stopCreated();
+    stopUpdated();
   };
 }
