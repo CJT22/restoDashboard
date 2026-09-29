@@ -301,9 +301,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
             Quick Control & Filter
           </div>
-          {(showAvailableFilter || showOccupiedFilter) && (
-            <span className="text-[10px] text-indigo-400 font-medium">Filter active</span>
-          )}
+          <span
+            className={`text-[10px] text-indigo-400 font-medium transition-opacity duration-300 ${
+              showAvailableFilter || showOccupiedFilter ? 'opacity-100' : 'opacity-0'
+            }`}
+          >
+            Filter active
+          </span>
         </div>
 
         {/* Button 1: Available Tables/Rooms (Emerald glow when on) */}
@@ -332,12 +336,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          {/* Toggle switch pill */}
-          <div className={`w-12 h-6 rounded-full p-0.5 transition-colors duration-200 flex items-center ${
-            showAvailableFilter ? 'bg-white justify-end' : 'bg-white/10 justify-start'
+          {/* Toggle switch pill: the knob slides the 24px track (w-12 minus
+              p-0.5 padding and the w-5 knob) rather than flipping justify, which can't animate */}
+          <div className={`w-12 h-6 rounded-full p-0.5 transition-colors duration-300 flex items-center ${
+            showAvailableFilter ? 'bg-white' : 'bg-white/10'
           }`}>
-            <div className={`w-5 h-5 rounded-full shadow-md transition-all ${
-              showAvailableFilter ? 'bg-emerald-600' : 'bg-slate-400'
+            <div className={`w-5 h-5 rounded-full shadow-md transition-[translate,background-color] duration-300 ease-out ${
+              showAvailableFilter ? 'translate-x-6 bg-emerald-600' : 'translate-x-0 bg-slate-400'
             }`} />
           </div>
         </div>
@@ -368,11 +373,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
 
-          <div className={`w-12 h-6 rounded-full p-0.5 transition-colors duration-200 flex items-center ${
-            showOccupiedFilter ? 'bg-white justify-end' : 'bg-white/10 justify-start'
+          <div className={`w-12 h-6 rounded-full p-0.5 transition-colors duration-300 flex items-center ${
+            showOccupiedFilter ? 'bg-white' : 'bg-white/10'
           }`}>
-            <div className={`w-5 h-5 rounded-full shadow-md transition-all ${
-              showOccupiedFilter ? 'bg-orange-500' : 'bg-slate-400'
+            <div className={`w-5 h-5 rounded-full shadow-md transition-[translate,background-color] duration-300 ease-out ${
+              showOccupiedFilter ? 'translate-x-6 bg-orange-500' : 'translate-x-0 bg-slate-400'
             }`} />
           </div>
         </div>

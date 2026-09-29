@@ -308,6 +308,14 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   // If only Occupied is on, show only occupied.
   const isFilterActive = (showAvailableFilter && !showOccupiedFilter) || (!showAvailableFilter && showOccupiedFilter);
 
+  // The badge's label only updates while a filter is active, so it doesn't
+  // change text while the badge fades out.
+  const [lastFilterLabel, setLastFilterLabel] = useState<'Available' | 'Occupied'>('Available');
+  if (isFilterActive) {
+    const label = showAvailableFilter ? 'Available' : 'Occupied';
+    if (label !== lastFilterLabel) setLastFilterLabel(label);
+  }
+
   const isTableHighlighted = (table: TableRoom) => {
     if (!isFilterActive) return true;
     if (showAvailableFilter && !showOccupiedFilter) {
@@ -366,12 +374,18 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
             ))}
           </div>
 
-          {isFilterActive && (
-            <div className="px-3 py-1.5 rounded-xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-200 text-xs font-semibold flex items-center gap-2">
-              <Info className="w-3.5 h-3.5" />
-              <span>Filtering: {showAvailableFilter ? 'Available Only' : 'Occupied Only'}</span>
-            </div>
-          )}
+          {/* Filter badge: same height as the floor switcher (h-8 + p-1.5 + border).
+              Always mounted so it can fade/slide out; it keeps showing the
+              last filter while leaving instead of blanking mid-fade. */}
+          <div
+            aria-hidden={!isFilterActive}
+            className={`h-[46px] px-4 rounded-2xl bg-indigo-500/20 backdrop-blur-md border border-indigo-500/40 text-indigo-200 text-sm font-bold tracking-wide flex items-center gap-2 shadow-xl transition-[opacity,translate] duration-300 ease-out ${
+              isFilterActive ? 'opacity-100 translate-x-0' : 'opacity-0 -translate-x-2 pointer-events-none'
+            }`}
+          >
+            <Info className="w-4 h-4" />
+            <span>Filtering: {lastFilterLabel} Only</span>
+          </div>
         </div>
 
         {/* View bar: Info Panels & Fullscreen, plus Edit Zones and zoom when
@@ -589,8 +603,11 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                 }}
                 onMouseEnter={() => setHoveredTableId(table.id)}
                 onMouseLeave={() => setHoveredTableId(null)}
-                className={`absolute rounded-lg cursor-pointer ${
-                  !isHighlighted ? 'opacity-20 filter grayscale pointer-events-none' : 'opacity-100'
+                // Fades between full and dimmed when a sidebar filter flips.
+                // grayscale-0 keeps the same filter function on both ends so
+                // the grayscale eases in rather than snapping.
+                className={`absolute rounded-lg cursor-pointer transition-[opacity,filter] duration-300 ease-out ${
+                  !isHighlighted ? 'opacity-20 grayscale pointer-events-none' : 'opacity-100 grayscale-0'
                 } ${isSelected ? 'ring-2 ring-indigo-400 z-30' : ''} ${isHovered ? 'z-50' : ''}`}
                 style={{
                   left: `${table.x}%`,

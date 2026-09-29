@@ -8,6 +8,13 @@ entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links t
 to be relative to this new root location. Going forward, each bullet is tagged with which app it
 touches (see [CLAUDE.md](CLAUDE.md) for the convention).
 
+## [1.18.0]
+
+### Changed
+- **[restoDashboard]** **Turning on the Available or Occupied Zones filter now fades zones in and out instead of snapping.** Zones that don't match the filter still dim to faded grey and can't be tapped, but they now fade into that state over 0.3 s and fade back when the filter is turned off. This makes it easier to see which zones the filter affected ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+- **[restoDashboard]** **The sidebar's Quick Control switches now slide.** The knob on the Available/Occupied Zones switches used to jump from one side to the other. It now slides across while changing color. The "Filter active" label fades in and out instead of popping ([Sidebar.tsx](restoDashboard/src/components/Sidebar.tsx)).
+- **[restoDashboard]** **The "Filtering: … Only" badge now matches the floor tabs and the top-right bar.** It was shorter, with smaller text, so it looked out of place next to the floor switcher. It's now the same height, with the same rounded corners and bold text, and keeps its indigo tint so it still reads as a status badge. It fades and slides in when a filter turns on, and back out when the filter turns off. While fading out it keeps its last label ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+
 ## [1.17.0]
 
 ### Removed
