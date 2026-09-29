@@ -33,6 +33,24 @@ export function getRoomTiming(order: AdminOrderSummary | undefined, nowMs: numbe
   return { hours, startMs, endMs, remainingMs, expired: remainingMs <= 0 };
 }
 
+// How urgent a running room looks everywhere its timer is shown (zone label,
+// hover card, order details, Room Timers widget): yellow in the last 15
+// minutes so staff can offer the guests more time, red once it has expired.
+export const ENDING_SOON_MS = 15 * 60 * 1000;
+
+export type TimerTone = 'normal' | 'endingSoon' | 'expired';
+
+export function getTimerTone(timing: RoomTiming): TimerTone {
+  if (timing.expired) return 'expired';
+  return timing.remainingMs <= ENDING_SOON_MS ? 'endingSoon' : 'normal';
+}
+
+export const TIMER_TEXT_CLASS: Record<TimerTone, string> = {
+  normal: 'text-white',
+  endingSoon: 'text-yellow-300',
+  expired: 'text-rose-400',
+};
+
 // h:mm:ss, e.g. 1:05:09.
 export function formatDuration(ms: number): string {
   const totalSec = Math.floor(Math.abs(ms) / 1000);

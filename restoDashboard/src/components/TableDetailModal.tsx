@@ -13,7 +13,7 @@ import {
 } from '../services/orderSync';
 import { getAdminTables } from '../services/adminSync';
 import { getStatusColors } from '../utils/statusColors';
-import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow } from '../utils/roomTimer';
+import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, getTimerTone, TIMER_TEXT_CLASS, TimerTone } from '../utils/roomTimer';
 import { NewOrderModal } from './NewOrderModal';
 import { SettlePaymentModal } from './SettlePaymentModal';
 import { QtyStepper } from './QtyStepper';
@@ -31,6 +31,14 @@ import {
 } from 'lucide-react';
 
 const roundToHalf = (v: number) => Math.round(v * 2) / 2;
+
+// The room-timer row's background/border, tinted to match its countdown
+// colour (see getTimerTone) so an ending or expired room stands out here too.
+const TIMER_ROW_CLASS: Record<TimerTone, string> = {
+  normal: 'bg-white/[0.03] border-white/5',
+  endingSoon: 'bg-yellow-400/10 border-yellow-400/30',
+  expired: 'bg-rose-500/10 border-rose-500/30',
+};
 
 interface TableDetailModalProps {
   table: TableRoom | null;
@@ -416,11 +424,13 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                 )}
 
                 {timing && (
-                  <div className="px-3 py-2 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between text-xs">
-                    <span className="text-slate-400">
+                  <div
+                    className={`px-3 py-2 rounded-2xl border flex items-center justify-between text-xs ${TIMER_ROW_CLASS[getTimerTone(timing)]}`}
+                  >
+                    <span className="text-white">
                       {formatHours(timing.hours)} booked · {formatClockTime(timing.startMs)} – {formatClockTime(timing.endMs)}
                     </span>
-                    <span className="font-mono font-bold text-white tabular-nums">
+                    <span className={`font-mono font-bold tabular-nums ${TIMER_TEXT_CLASS[getTimerTone(timing)]}`}>
                       {timing.expired
                         ? `EXPIRED +${formatDuration(timing.remainingMs)}`
                         : `${formatDuration(timing.remainingMs)} left`}

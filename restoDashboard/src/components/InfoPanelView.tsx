@@ -4,7 +4,7 @@ import { InfoPanel, InfoPanelLayout, InfoWidgetType, TableRoom } from '../types'
 import { INFO_WIDGET_META } from '../data/infoPanels';
 import { MAX_LISTED_ORDER_ITEMS, shortOrderNo } from '../services/orderSync';
 import { getSales, SALES_PERIODS, SalesPeriod, useLiveSales } from '../services/salesSync';
-import { getRoomTiming, formatDuration, formatHours, formatWait } from '../utils/roomTimer';
+import { getRoomTiming, formatDuration, formatHours, formatWait, formatClockTime, getTimerTone, TIMER_TEXT_CLASS } from '../utils/roomTimer';
 
 // Read-only widgets for an info panel on the floor plan. Everything except
 // Total Sales is derived from the tables (and their live activeOrder)
@@ -275,20 +275,34 @@ const RoomTimersWidget: React.FC<WidgetProps> = ({ panel, allTables, nowMs, comp
           groupByFloor(rows, (r) => r.table.floor, scope).map((group) => (
             <div key={group.floor ?? 'floor'}>
               {group.floor && <FloorSubheading floor={group.floor} count={group.rows.length} heightPx={rowPx} />}
-              {group.rows.map(({ table, timing }) => (
-                <button
-                  key={table.id}
-                  onClick={() => onSelectTable(table)}
-                  className={`w-full px-1 ${rowButtonClass(interactive)}`}
-                  style={{ height: rowPx }}
-                >
-                  <span className="truncate font-semibold text-white">{table.name}</span>
-                  <span className="shrink-0 text-slate-500">{formatHours(timing.hours)}</span>
-                  <span className="ml-auto shrink-0 font-bold tabular-nums text-white">
-                    {timing.expired ? `EXPIRED +${formatDuration(timing.remainingMs)}` : `${formatDuration(timing.remainingMs)} left`}
-                  </span>
-                </button>
-              ))}
+              {group.rows.map(({ table, timing }) => {
+                const time = formatDuration(timing.remainingMs);
+                return (
+                  <button
+                    key={table.id}
+                    onClick={() => onSelectTable(table)}
+                    className={`w-full px-1 ${rowButtonClass(interactive)}`}
+                    style={{ height: rowPx }}
+                    // Fixed text only: a native tooltip whose text changes
+                    // every second (the countdown) closes and redraws on each
+                    // tick, so it shows the booking's end time instead.
+                    title={`${table.name} · ${formatHours(timing.hours)} booked · ${timing.expired ? 'expired' : 'ends'} ${formatClockTime(timing.endMs)}`}
+                  >
+                    {/* The room name is what staff scan for, so the booked
+                        hours give way first (shrink-[999] empties it before
+                        the name starts to truncate), and an expired room shows
+                        just its red overtime rather than "EXPIRED +h:mm:ss" -
+                        the colour and pin-to-top already say it's expired. */}
+                    <span className="truncate font-semibold text-white">{table.name}</span>
+                    <span className="min-w-0 shrink-[999] truncate text-slate-400">{formatHours(timing.hours)}</span>
+                    <span
+                      className={`ml-auto shrink-0 font-bold tabular-nums ${TIMER_TEXT_CLASS[getTimerTone(timing)]}`}
+                    >
+                      {timing.expired ? `+${time}` : `${time} left`}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           ))
         ) : (
@@ -369,10 +383,10 @@ const ActiveOrdersWidget: React.FC<WidgetProps> = ({ panel, allTables, nowMs, co
                       )}
                     </div>
                     {expanded && (
-                      <div className="pl-3 pr-1 text-slate-400">
+                      <div className="pl-3 pr-1 text-slate-200">
                         {order.items.slice(0, MAX_LISTED_ORDER_ITEMS).map((item) => (
                           <div key={item.id} className="flex items-center gap-1.5" style={{ height: rowPx }}>
-                            <span className="shrink-0 tabular-nums text-slate-300">{item.quantity}×</span>
+                            <span className="shrink-0 tabular-nums text-slate-400">{item.quantity}×</span>
                             <span className="truncate">{item.name}</span>
                           </div>
                         ))}

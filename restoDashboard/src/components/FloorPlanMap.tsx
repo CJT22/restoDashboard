@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { TableRoom, InfoPanel } from '../types';
 import { getStatusColors } from '../utils/statusColors';
-import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, RoomTiming } from '../utils/roomTimer';
+import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, RoomTiming, getTimerTone, TIMER_TEXT_CLASS } from '../utils/roomTimer';
 import {
   ZoomIn,
   ZoomOut,
@@ -915,7 +915,12 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                     <span className="truncate">{table.name}</span>
                   </span>
                   {label.timerLines.map((line) => (
-                    <span key={line} className="font-bold tabular-nums whitespace-nowrap">{line}</span>
+                    <span
+                      key={line}
+                      className={`font-bold tabular-nums whitespace-nowrap ${timing ? TIMER_TEXT_CLASS[getTimerTone(timing)] : ''}`}
+                    >
+                      {line}
+                    </span>
                   ))}
                   {label.showItemCount && (
                     <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
@@ -995,10 +1000,10 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
                     {timing && (
                       <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px]">
-                        <div className="text-slate-400">
+                        <div className="text-white">
                           {formatHours(timing.hours)} booked · {formatClockTime(timing.startMs)} – {formatClockTime(timing.endMs)}
                         </div>
-                        <div className="font-mono font-bold text-white tabular-nums">
+                        <div className={`font-mono font-bold tabular-nums ${TIMER_TEXT_CLASS[getTimerTone(timing)]}`}>
                           {timing.expired
                             ? `Expired · ${formatDuration(timing.remainingMs)} over`
                             : `${formatDuration(timing.remainingMs)} left`}
