@@ -492,7 +492,7 @@ export const MenuItemAnalyticsPanel: React.FC<MenuItemAnalyticsPanelProps> = ({
                       height={20}
                       tickLine={false}
                       axisLine={false}
-                      tick={({ x, y, payload }: { x?: number; y?: number; payload?: { value: number } }) => {
+                      tick={({ x, y, payload }: { x?: number | string; y?: number | string; payload?: { value: number | string } }) => {
                         const point = dailySeries.find((d) => d.dayNum === Number(payload?.value));
                         const fill = point?.isSaturday
                           ? '#f87171'
@@ -502,7 +502,7 @@ export const MenuItemAnalyticsPanel: React.FC<MenuItemAnalyticsPanelProps> = ({
                         return (
                           <text
                             x={x}
-                            y={(y ?? 0) + 12}
+                            y={((y as number) ?? 0) + 12}
                             textAnchor="middle"
                             fill={fill}
                             fontSize={10}

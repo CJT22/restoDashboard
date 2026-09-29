@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { TableRoom, TableStatus, AdminOrderLineItem, AdminOrderSummary } from '../types';
+import { TableRoom, AdminOrderLineItem, AdminOrderSummary } from '../types';
 import {
   getActiveOrderForTable,
   getMenu,
@@ -56,7 +56,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
 }) => {
   if (!table) return null;
 
-  const [loadingOrder, setLoadingOrder] = useState(false);
+  const [, setLoadingOrder] = useState(false);
   const [orderError, setOrderError] = useState<string | null>(null);
   const [insufficient, setInsufficient] = useState<any[] | null>(null);
   const [showSettleModal, setShowSettleModal] = useState(false);

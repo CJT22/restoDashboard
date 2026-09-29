@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/authHeaders';
+
 const API_BASE = '/data-api';
 
 type ApiResponse<T> = {
@@ -5,13 +7,6 @@ type ApiResponse<T> = {
     data: T;
     message?: string;
     error?: string;
-};
-
-const authHeaders = (): Record<string, string> => {
-    const token = localStorage.getItem('token');
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
 };
 
 const buildUrl = (path: string, params?: Record<string, string>) => {
@@ -77,7 +72,7 @@ export async function fetchReceiptScanHistoryList(
     if (options?.sources?.length) params.sources = options.sources.join(',');
     const res = await fetch(buildUrl('/receipt-scan-history', params), {
         credentials: 'include',
-        headers: authHeaders(),
+        headers: authHeaders({ accept: true }),
     });
     const json = (await res.json()) as ApiResponse<ReceiptScanHistoryListRow[]>;
     if (!res.ok || !json.success) {
@@ -89,7 +84,7 @@ export async function fetchReceiptScanHistoryList(
 export async function fetchReceiptScanHistoryById(id: number | string): Promise<ReceiptScanHistoryDetail> {
     const res = await fetch(buildUrl(`/receipt-scan-history/${id}`), {
         credentials: 'include',
-        headers: authHeaders(),
+        headers: authHeaders({ accept: true }),
     });
     const json = (await res.json()) as ApiResponse<ReceiptScanHistoryDetail>;
     if (!res.ok || !json.success) {
@@ -115,7 +110,7 @@ export async function saveReceiptScanHistory(payload: SaveReceiptScanHistoryPayl
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(),
+            ...authHeaders({ accept: true }),
         },
         body: JSON.stringify({
             branch_id: payload.branch_id,

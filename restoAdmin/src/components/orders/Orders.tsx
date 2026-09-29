@@ -39,7 +39,6 @@ import { Select2 } from '../ui/Select2';
 import { SkeletonPageHeader, SkeletonStatCards, SkeletonTable } from '../ui/Skeleton';
 import { toast } from 'sonner';
 import {
-    getOrders,
     getOrdersWithMeta,
     getOrderItems,
     getOrderById,
@@ -61,7 +60,7 @@ import {
 } from '../../services/orderService';
 import { getMenus, type MenuRecord } from '../../services/menuService';
 import { toUserFriendlyError } from '../../utils/userFriendlyErrors';
-import { compressReceiptImage, fetchReceiptScannerGeminiKey } from '../../services/receiptScannerService';
+import { compressReceiptImage } from '../../services/receiptScannerService';
 import { extractOrderLinesFromReceiptImage, type ReceiptOrderExtractionResult } from '../../services/receiptOrderExtraction';
 import { ReceiptOrderBlockCard } from './ReceiptOrderBlockCard';
 import { isReceiptLineMappedToMenu, matchReceiptLineToMenu } from '../../services/receiptOrderMenuMatch';
@@ -337,7 +336,7 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
     const [detailRoomChargeQty, setDetailRoomChargeQty] = useState<number>(1);
     const [detailRoomChargeSaving, setDetailRoomChargeSaving] = useState(false);
 
-  const { canCreate, canUpdate, canDelete } = useCrudPermissions();
+  const { canCreate, canUpdate } = useCrudPermissions();
 
     useEffect(() => {
         if (!(import.meta as any)?.env?.DEV) return;
@@ -1588,15 +1587,6 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
         return false;
     }, [receiptExtractResult?.items, receiptRows]);
 
-    const receiptPreviewSubtotal = useMemo(() => {
-        return receiptRows.reduce((sum, row) => {
-            if (!row.menuId) return sum;
-            const menu = receiptOrderMenus.find((m) => m.id === row.menuId);
-            if (!menu) return sum;
-            return sum + Number(row.qty) * Number(menu.price || 0);
-        }, 0);
-    }, [receiptRows, receiptOrderMenus]);
-
     const receiptRowsByOrder = useMemo(() => {
         const grouped = new Map<number, typeof receiptRows>();
         for (const row of receiptRows) {
@@ -1627,30 +1617,6 @@ export const Orders: React.FC<OrdersProps> = ({ selectedBranch, dateRange }) => 
             }),
         [receiptRows, receiptMenuIdSet, receiptOrderMenus]
     );
-
-    const receiptPreviewServiceCharge = useMemo(() => {
-        if (!isEesomeBranchId(effectiveReceiptBranchId)) return 0;
-        if (receiptDetectedHasServiceCharge) return 0;
-        return Number(
-            receiptRowsByOrder
-                .reduce((sum, [orderId, blockRows]) => {
-                    const ot = receiptMetaById[orderId]?.orderType ?? receiptOrderType;
-                    if (!isDineInOrderType(ot)) return sum;
-                    const blockSubtotal = blockRows.reduce((s, row) => {
-                        if (!row.menuId) return s;
-                        const menu = receiptOrderMenus.find((m) => m.id === row.menuId);
-                        if (!menu) return s;
-                        return s + Number(row.qty) * Number(menu.price || 0);
-                    }, 0);
-                    return sum + eesomeTenPercentServiceCharge(blockSubtotal);
-                }, 0)
-                .toFixed(2)
-        );
-    }, [effectiveReceiptBranchId, receiptDetectedHasServiceCharge, receiptMetaById, receiptOrderMenus, receiptOrderType, receiptRowsByOrder]);
-
-    const receiptPreviewTotalDue = useMemo(() => {
-        return Number((receiptPreviewSubtotal + receiptPreviewServiceCharge).toFixed(2));
-    }, [receiptPreviewSubtotal, receiptPreviewServiceCharge]);
 
     // Receipt-based totals (same as tablet UI): computed from extracted receipt line totals.
     const receiptPreviewReceiptTotal = useMemo(() => {

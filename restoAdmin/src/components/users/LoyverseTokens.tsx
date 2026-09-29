@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
 import { SkeletonStatCards, SkeletonPageHeader, SkeletonTable } from '../ui/Skeleton';
 import { useUser } from '../../context/UserContext';
+import { authHeaders } from '../../lib/authHeaders';
 
 interface TokenRow {
   id: number;
@@ -22,14 +23,6 @@ interface BranchOption {
   code: string;
   name: string;
 }
-
-const authHeaders = (json = true): HeadersInit => {
-  const token = localStorage.getItem('token');
-  return {
-    ...(json ? { 'Content-Type': 'application/json' } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
 
 const maskToken = (token: string): string => {
   if (token.length <= 10) return '•'.repeat(token.length);
@@ -61,7 +54,7 @@ export const LoyverseTokens: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/loyverse/tokens', { headers: authHeaders() });
+      const res = await fetch('/api/loyverse/tokens', { headers: authHeaders({ json: true }) });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(json.error || `Failed to load tokens (${res.status})`);
@@ -87,7 +80,7 @@ export const LoyverseTokens: React.FC = () => {
 
   const fetchBranchOptions = useCallback(async () => {
     try {
-      const res = await fetch('/branch', { headers: authHeaders() });
+      const res = await fetch('/branch', { headers: authHeaders({ json: true }) });
       const json = await res.json();
       if (!res.ok) return;
       const rawData = json.data ?? json;
@@ -154,7 +147,7 @@ export const LoyverseTokens: React.FC = () => {
       }
       const res = await fetch(url, {
         method,
-        headers: authHeaders(),
+        headers: authHeaders({ json: true }),
         body: JSON.stringify(body),
       });
       let data: { success?: boolean; error?: string; message?: string };

@@ -1,9 +1,4 @@
-const authHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('token');
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-};
+import { authHeaders } from '../lib/authHeaders';
 
 export type ReceiptExpenseItem = {
   qty: number;
@@ -35,7 +30,7 @@ export async function extractExpenseItemsFromReceiptImage(params: {
     credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...authHeaders(),
+      ...authHeaders({ accept: true }),
     },
     body: JSON.stringify({ base64, categories: params.categories }),
   });

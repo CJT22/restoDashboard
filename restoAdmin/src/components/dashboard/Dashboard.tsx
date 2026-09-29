@@ -10,14 +10,11 @@ import {
   UtensilsCrossed,
   MessageSquare,
   Star,
-  Calendar,
-  ChevronDown,
   DollarSign,
 } from 'lucide-react';
 import {
   CartesianGrid,
   Tooltip,
-  ResponsiveContainer,
   PieChart,
   Pie,
   Cell,
@@ -46,7 +43,6 @@ import {
   buildBranchDashboardCacheKey,
   clearKnownEmptyBranch,
   hasBranchDashboardCacheData,
-  isBranchDashboardCacheFresh,
   isBranchDashboardPayloadEmpty,
   isBranchDashboardPayloadIncomplete,
   isKnownEmptyBranch,
@@ -94,12 +90,6 @@ function ChartContainer({
   );
 }
 
-const toYYYYMMDD = (d: Date): string =>
-  d.getFullYear() +
-  '-' +
-  String(d.getMonth() + 1).padStart(2, '0') +
-  '-' +
-  String(d.getDate()).padStart(2, '0');
 
 const WEEKDAY_ABBR_TO_JS_DAY: Record<string, number> = {
   Sun: 0,
@@ -160,8 +150,6 @@ const formatDateLabel = (dateStr: string) => {
     day: 'numeric',
   });
 };
-
-const TOP_CATEGORY_COLORS = ['#0f172a', '#2563eb', '#f97316', '#16a34a', '#7c3aed', '#e11d48'];
 
 const DEFAULT_TRENDING_IMAGE =
   'https://images.unsplash.com/photo-1540189549336-e6e99c3679fe?q=80&w=800&auto=format&fit=crop';
@@ -249,11 +237,6 @@ const parseDateSafe = (value: string) => {
   if (!value) return null;
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
-};
-
-const isBetweenInclusive = (value: Date, start: Date, end: Date) => {
-  const t = value.getTime();
-  return t >= start.getTime() && t <= end.getTime();
 };
 
 const statusBadgeClass = (status: number) =>

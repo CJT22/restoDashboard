@@ -4,7 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
-import { AlertCircle, ExternalLink, Loader2, Search, Store } from 'lucide-react';
+import { ExternalLink, Search, Store } from 'lucide-react';
 import { Skeleton } from '../ui/Skeleton';
 import {
   BarChart,

@@ -1,6 +1,6 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { TrendingUp, TrendingDown, MapPin, Check } from 'lucide-react';
+import { MapPin, Check } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export type BranchPerformanceData = {

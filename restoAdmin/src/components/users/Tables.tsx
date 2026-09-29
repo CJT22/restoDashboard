@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation } from 'react-router-dom';
-import { Search, Loader2, Plus, Edit2, Trash2, Hash, Tablet, Link2 } from 'lucide-react';
+import { Search, Loader2, Plus, Edit2, Trash2, Hash, Link2 } from 'lucide-react';
 import { io, type Socket } from 'socket.io-client';
 import { DataTable, type ColumnDef } from '../ui/DataTable';
 import { Modal } from '../ui/Modal';
@@ -13,6 +13,7 @@ import { SkeletonPageHeader, SkeletonStatCards, SkeletonTable } from '../ui/Skel
 import { useUser } from '../../context/UserContext';
 import { useCrudPermissions } from '../../hooks/useCrudPermissions';
 import { isFloorEnabledBranch, type TableFloor } from '../../utils/floorScope';
+import { authHeaders } from '../../lib/authHeaders';
 
 interface TableRow {
   id: string | number;
@@ -26,14 +27,6 @@ interface TableRow {
   dashboardZoneId: string | null;
   encodedAt: string | null;
 }
-
-const authHeaders = (): HeadersInit => {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
 
 export const Tables: React.FC = () => {
   const { t } = useTranslation();
@@ -132,7 +125,7 @@ export const Tables: React.FC = () => {
 
   const fetchBranches = useCallback(async () => {
     try {
-      const res = await fetch('/branch', { headers: authHeaders() });
+      const res = await fetch('/branch', { headers: authHeaders({ json: true }) });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(json.error || `Failed to load branches (${res.status})`);
@@ -156,7 +149,7 @@ export const Tables: React.FC = () => {
         ? `?branch_id=${encodeURIComponent(String(effectiveBranchIdForAdmin))}`
         : '';
       const res = await fetch(`/data-api/restaurant_tables${branchQuery}`, {
-        headers: authHeaders(),
+        headers: authHeaders({ json: true }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -344,7 +337,7 @@ export const Tables: React.FC = () => {
 
       const res = await fetch(url, {
         method,
-        headers: authHeaders(),
+        headers: authHeaders({ json: true }),
         body: JSON.stringify(payload),
       });
 
@@ -390,7 +383,7 @@ export const Tables: React.FC = () => {
     try {
       const res = await fetch(`/data-api/restaurant_table/${tableToDelete.id}`, {
         method: 'DELETE',
-        headers: authHeaders(),
+        headers: authHeaders({ json: true }),
       });
       let data: any = {};
       try {

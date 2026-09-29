@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/authHeaders';
+
 type ApiResponse<T> = {
 	success: boolean;
 	data: T;
@@ -67,16 +69,6 @@ const buildUrl = (path: string, params?: Record<string, string>) => {
 	return url.toString();
 };
 
-const authHeaders = (): Record<string, string> => {
-	const token = localStorage.getItem('token');
-	const headers: Record<string, string> = {
-		Accept: 'application/json',
-		'Content-Type': 'application/json',
-	};
-	if (token) headers.Authorization = `Bearer ${token}`;
-	return headers;
-};
-
 const toNumber = (value: number | string | null | undefined) => {
 	const parsed = Number(value);
 	return Number.isFinite(parsed) ? parsed : 0;
@@ -114,7 +106,7 @@ export async function getInventoryItems(branchId?: string, categoryId?: string |
 	};
 	const response = await fetch(buildUrl('/inventory/items', params), {
 		credentials: 'include',
-		headers: authHeaders(),
+		headers: authHeaders({ accept: true, json: true }),
 	});
 	const data = await handleResponse<InventoryItemApiRecord[]>(response);
 	return data.map(mapItemRecord);
@@ -144,7 +136,7 @@ export async function getInventoryCategoryMetrics(
 	};
 	const response = await fetch(buildUrl('/inventory/category-metrics', params), {
 		credentials: 'include',
-		headers: authHeaders(),
+		headers: authHeaders({ accept: true, json: true }),
 	});
 	return handleResponse<InventoryCategoryMetricsResponse>(response);
 }
@@ -153,7 +145,7 @@ export async function createInventoryItem(payload: SaveInventoryItemPayload): Pr
 	const response = await fetch(buildUrl('/inventory/items'), {
 		method: 'POST',
 		credentials: 'include',
-		headers: authHeaders(),
+		headers: authHeaders({ accept: true, json: true }),
 		body: JSON.stringify({
 			BRANCH_ID: payload.branchId,
 			ITEM_NAME: payload.itemName,
@@ -177,7 +169,7 @@ export async function updateInventoryItem(id: string, payload: SaveInventoryItem
 	const response = await fetch(buildUrl(`/inventory/items/${id}`), {
 		method: 'PUT',
 		credentials: 'include',
-		headers: authHeaders(),
+		headers: authHeaders({ accept: true, json: true }),
 		body: JSON.stringify({
 			ITEM_NAME: payload.itemName,
 			MASTER_CAT_ID: payload.categoryId,
@@ -199,7 +191,7 @@ export async function deleteInventoryItem(id: string): Promise<void> {
 	const response = await fetch(buildUrl(`/inventory/items/${id}`), {
 		method: 'DELETE',
 		credentials: 'include',
-		headers: authHeaders(),
+		headers: authHeaders({ accept: true, json: true }),
 	});
 	const json = (await response.json()) as ApiResponse<null>;
 	if (!response.ok || !json.success) {
@@ -218,7 +210,7 @@ export async function adjustStock(
 	const response = await fetch(buildUrl('/inventory/items/adjust'), {
 		method: 'POST',
 		credentials: 'include',
-		headers: authHeaders(),
+		headers: authHeaders({ accept: true, json: true }),
 		body: JSON.stringify({
 			ingredientId,
 			branchId,

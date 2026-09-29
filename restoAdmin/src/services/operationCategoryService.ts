@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/authHeaders';
+
 // ---- Types ----
 
 export interface OperationCategory {
@@ -39,16 +41,6 @@ const buildUrl = (path: string, params?: Record<string, string>) => {
   return url.toString();
 };
 
-const authHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('token');
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-};
-
 const handleResponse = async <T,>(response: Response): Promise<T> => {
   const json = (await response.json()) as ApiResponse<T>;
   if (!response.ok || !json.success) {
@@ -75,7 +67,7 @@ export const getOperationCategories = async (branchId?: string | null): Promise<
 
   const response = await fetch(buildUrl('/operation-category', params), {
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
 
   const rows = await handleResponse<OperationCategoryApiRecord[]>(response);
@@ -96,7 +88,7 @@ export const createOperationCategory = async (
   const response = await fetch(buildUrl('/operation-category'), {
     method: 'POST',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
     body: JSON.stringify({
       BRANCH_ID: payload.branchId ?? null,
       NAME: payload.name,
@@ -127,7 +119,7 @@ export const updateOperationCategory = async (
   const response = await fetch(buildUrl(`/operation-category/${id}`), {
     method: 'PUT',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
     body: JSON.stringify({
       NAME: payload.name,
       DESCRIPTION: payload.description ?? null,
@@ -145,7 +137,7 @@ export const deleteOperationCategory = async (id: string): Promise<void> => {
   const response = await fetch(buildUrl(`/operation-category/${id}`), {
     method: 'DELETE',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
 
   const json = (await response.json()) as ApiResponse<null>;

@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/authHeaders';
+
 // ---- Types ----
 
 export interface MenuCategory {
@@ -86,13 +88,6 @@ const buildUrl = (path: string, params?: Record<string, string>) => {
     return url.toString();
 };
 
-const authHeaders = (): Record<string, string> => {
-    const token = localStorage.getItem('token');
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-};
-
 const handleResponse = async <T>(response: Response): Promise<T> => {
     const json = (await response.json()) as ApiResponse<T>;
     if (!response.ok || !json.success) {
@@ -152,7 +147,7 @@ export const getMenus = async (
     };
     const response = await fetch(buildUrl('/menus', params), {
         credentials: 'include',
-        headers: authHeaders(),
+        headers: authHeaders({ accept: true }),
     });
     const data = await handleResponse<MenuApiRecord[]>(response);
     return data.map(mapMenuRecord);
@@ -161,7 +156,7 @@ export const getMenus = async (
 export const getMenuById = async (id: string): Promise<Pick<MenuRecord, 'description'>> => {
     const response = await fetch(buildUrl(`/menu/${id}`), {
         credentials: 'include',
-        headers: authHeaders(),
+        headers: authHeaders({ accept: true }),
     });
     const data = await handleResponse<{ MENU_DESCRIPTION?: string | null }>(response);
     return { description: data?.MENU_DESCRIPTION ?? null };
@@ -174,7 +169,7 @@ export const getMenuCategories = async (branchId?: string): Promise<MenuCategory
     };
     const response = await fetch(buildUrl('/categories', params), {
         credentials: 'include',
-        headers: authHeaders(),
+        headers: authHeaders({ accept: true }),
     });
     const data = await handleResponse<CategoryApiRecord[]>(response);
     return data.map(mapCategoryRecord);
@@ -196,7 +191,7 @@ export async function createMenuCategory(branchId: string | null, payload: Creat
     const response = await fetch(buildUrl('/category'), {
         method: 'POST',
         credentials: 'include',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        headers: { ...authHeaders({ accept: true }), 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
     const json = (await response.json()) as ApiResponse<{ id: number }>;
@@ -218,7 +213,7 @@ export async function migrateFlatCategoriesUnderMain(
     const response = await fetch(buildUrl('/category/migrate-flat-under-main'), {
         method: 'POST',
         credentials: 'include',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        headers: { ...authHeaders({ accept: true }), 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
     const json = (await response.json()) as ApiResponse<{ moved: number; newMainId: number | null }>;
@@ -244,7 +239,7 @@ export async function updateMenuCategory(
     const response = await fetch(buildUrl(`/category/${id}`), {
         method: 'PUT',
         credentials: 'include',
-        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        headers: { ...authHeaders({ accept: true }), 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
     const json = (await response.json()) as ApiResponse<null> & { error?: string };
@@ -257,7 +252,7 @@ export async function deleteMenuCategory(id: string): Promise<void> {
     const response = await fetch(buildUrl(`/category/${id}`), {
         method: 'DELETE',
         credentials: 'include',
-        headers: authHeaders(),
+        headers: authHeaders({ accept: true }),
     });
     const json = (await response.json()) as ApiResponse<null> & { error?: string };
     if (!response.ok || !json.success) {
@@ -374,7 +369,7 @@ export async function deleteMenu(id: string): Promise<void> {
     const response = await fetch(buildUrl(`/menu/${id}`), {
         method: 'DELETE',
         credentials: 'include',
-        headers: authHeaders(),
+        headers: authHeaders({ accept: true }),
     });
     const json = (await response.json()) as ApiResponse<null> & { error?: string };
     if (!response.ok || !json.success) {

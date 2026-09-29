@@ -14,8 +14,7 @@ import {
   Camera,
   Mail,
   Check,
-  AlertCircle,
-  Loader2
+  AlertCircle
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -102,7 +101,7 @@ export const AccountSettingsPanel: React.FC<AccountSettingsPanelProps> = ({
   const [username, setUsername] = useState('');
 
   // UI State
-  const [isSaving, setIsSaving] = useState(false);
+  const [isSaving] = useState(false);
   const [toast, setToast] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
   const displayName = user ? `${user.firstname} ${user.lastname}` : 'User';

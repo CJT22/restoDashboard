@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/authHeaders';
+
 // ---- Types ----
 
 export interface ExpenseRecord {
@@ -63,16 +65,6 @@ const buildUrl = (path: string, params?: Record<string, string>) => {
   return url.toString();
 };
 
-const authHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('token');
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-};
-
 const handleResponse = async <T,>(response: Response): Promise<T> => {
   const json = (await response.json()) as ApiResponse<T>;
   if (!response.ok || !json.success) {
@@ -115,7 +107,7 @@ export const getExpenses = async (
   if (options.endDate) params.end_date = options.endDate;
   const response = await fetch(buildUrl('/expenses', params), {
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
   const rows = await handleResponse<ExpenseApiRecord[]>(response);
   return rows.map(mapExpense);
@@ -138,7 +130,7 @@ export async function createExpense(payload: CreateExpensePayload): Promise<numb
   const response = await fetch(buildUrl('/expenses'), {
     method: 'POST',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
     body: JSON.stringify({
       BRANCH_ID: payload.branchId,
       MASTER_CAT_ID: payload.masterCatId,
@@ -173,7 +165,7 @@ export async function updateExpense(id: string, payload: UpdateExpensePayload): 
   const response = await fetch(buildUrl(`/expenses/${id}`), {
     method: 'PUT',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
     body: JSON.stringify({
       MASTER_CAT_ID: payload.masterCatId,
       EXP_DESC: payload.expDesc,
@@ -195,7 +187,7 @@ export async function deleteExpense(id: string): Promise<void> {
   const response = await fetch(buildUrl(`/expenses/${id}`), {
     method: 'DELETE',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
   const json = (await response.json()) as ApiResponse<null>;
   if (!response.ok || !json.success) {
@@ -215,7 +207,7 @@ export async function updateInventoryStock(
   const response = await fetch(buildUrl(`/inventory/items/by-expense/${expenseId}`), {
     method: 'PATCH',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
     body: JSON.stringify(body),
   });
   const json = (await response.json()) as ApiResponse<null>;

@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/authHeaders';
+
 type ApiResponse<T> = {
   success?: boolean;
   data?: T;
@@ -14,13 +16,6 @@ type UploadResult = {
 };
 
 const API_BASE = '/data-api';
-
-const authHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('token');
-  const headers: Record<string, string> = { Accept: 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-};
 
 function toPathname(urlOrPath: string): string {
   const raw = String(urlOrPath || '').trim();
@@ -45,7 +40,7 @@ export async function uploadExpenseReceipt(file: File): Promise<{ url: string; p
   const res = await fetch(url.toString(), {
     method: 'POST',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true }),
     body: form,
   });
 

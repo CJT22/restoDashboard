@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/authHeaders';
+
 type ApiResponse<T> = {
   success: boolean;
   data: T;
@@ -42,16 +44,6 @@ const buildUrl = (path: string, params?: Record<string, string>) => {
   return url.toString();
 };
 
-const authHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('token');
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-};
-
 const handleResponse = async <T>(response: Response): Promise<T> => {
   const json = (await response.json()) as ApiResponse<T>;
   if (!response.ok || !json.success) {
@@ -77,7 +69,7 @@ export async function getIngredients(branchId?: string, categoryId?: string | nu
   };
   const response = await fetch(buildUrl('/ingredients', params), {
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
   const data = await handleResponse<IngredientApiRecord[]>(response);
   return data.map(mapIngredient);
@@ -86,7 +78,7 @@ export async function getIngredients(branchId?: string, categoryId?: string | nu
 export async function getIngredientById(id: string): Promise<Ingredient | null> {
   const response = await fetch(buildUrl(`/ingredients/${id}`), {
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
   const data = await handleResponse<IngredientApiRecord | null>(response);
   return data ? mapIngredient(data) : null;
@@ -101,7 +93,7 @@ export async function createIngredient(payload: {
   const response = await fetch(buildUrl('/ingredients'), {
     method: 'POST',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
     body: JSON.stringify({
       BRANCH_ID: payload.branchId,
       NAME: payload.name,
@@ -123,7 +115,7 @@ export async function updateIngredient(
   const response = await fetch(buildUrl(`/ingredients/${id}`), {
     method: 'PUT',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
     body: JSON.stringify({
       NAME: payload.name,
       MASTER_CAT_ID: payload.categoryId ?? null,
@@ -140,7 +132,7 @@ export async function deleteIngredient(id: string): Promise<void> {
   const response = await fetch(buildUrl(`/ingredients/${id}`), {
     method: 'DELETE',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
   const json = (await response.json()) as ApiResponse<null>;
   if (!response.ok || !json.success) {
@@ -152,7 +144,7 @@ export async function syncIngredientsFromExpenses(): Promise<void> {
   const response = await fetch(buildUrl('/ingredients/sync'), {
     method: 'POST',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
   const json = (await response.json()) as ApiResponse<null>;
   if (!response.ok || !json.success) {

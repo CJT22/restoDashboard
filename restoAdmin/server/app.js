@@ -8,14 +8,9 @@ const http = require('http');
 const routes = require('./routes');
 const bodyParser = require('body-parser');
 const cookieParser = require('cookie-parser');
-const passport = require('passport');
 const session = require('express-session');
 const flash = require('connect-flash');
 const i18n = require('i18n');
-
-// Telegram bot removed - not needed for template
-// const { startTelegramBot } = require('./utils/telegram');
-// startTelegramBot(); // run once when server starts
 
 const compression = require('compression');
 const cors = require('cors');
@@ -118,17 +113,6 @@ app.use((req, res, next) => {
   res.locals.messages = req.flash();
   next();
 });
-
-// Session middleware for API routes (if needed)
-// Note: Pure REST API - no EJS views, session mainly for backward compatibility
-app.use((req, res, next) => {
-  // Session data available for API routes if needed
-  next();
-});
-
-
-app.use(passport.initialize());
-app.use(passport.session());
 
 // Set port
 app.set('port', process.env.PORT || 2000);

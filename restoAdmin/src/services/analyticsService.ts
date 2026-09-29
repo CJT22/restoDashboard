@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/authHeaders';
+
 // Analytics can be served either by the Python service (preferred when configured)
 // or by the Node backend (fallback) for environments where PyServer isn't reachable.
 const ENV_BASE_URL = (import.meta as any).env?.VITE_ANALYTICS_BASE_URL as string | undefined;
@@ -6,15 +8,6 @@ const getAnalyticsBaseUrl = () => {
   // If VITE_ANALYTICS_BASE_URL is missing, use same-origin Node backend.
   // This prevents "no data" screens when PyServer isn't deployed.
   return (ENV_BASE_URL || '').trim();
-};
-
-const getAuthHeaders = (): Record<string, string> => {
-  try {
-    const token = (localStorage.getItem('token') || '').trim();
-    return token ? { Authorization: `Bearer ${token}` } : {};
-  } catch {
-    return {};
-  }
 };
 
 const isSameOriginUrl = (url: string) => url.startsWith('/') && !url.startsWith('//');
@@ -29,7 +22,7 @@ export function isAnalyticsFetchTimeout(err: unknown): boolean {
 }
 
 async function fetchJson(url: string, timeoutMs = ANALYTICS_FETCH_MS): Promise<{ res: Response; json: any }> {
-  const headers = isSameOriginUrl(url) ? getAuthHeaders() : {};
+  const headers = isSameOriginUrl(url) ? authHeaders() : {};
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort('timeout'), timeoutMs);
   try {

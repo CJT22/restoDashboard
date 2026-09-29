@@ -17,7 +17,7 @@ import {
 } from '../../services/inventoryService';
 import { getExpenses, type ExpenseRecord, createExpense, updateExpense, deleteExpense, updateInventoryStock } from '../../services/expenseService';
 import { uploadExpenseReceipt } from '../../services/uploadService';
-import { compressReceiptImage, fetchReceiptScannerGeminiKey, stitchReceiptImages } from '../../services/receiptScannerService';
+import { compressReceiptImage, stitchReceiptImages } from '../../services/receiptScannerService';
 import { extractExpenseItemsFromReceiptImage, type ReceiptExpenseExtractionResult } from '../../services/receiptExpenseExtraction';
 import { syncIngredientsFromExpenses } from '../../services/ingredientService';
 import { preferredSubCategoryLabels, resolveExistingMasterCategoryId } from '../../utils/expenseCategoryResolve';
@@ -66,7 +66,6 @@ type GlobalSearchHit = {
 };
 
 const ITEMS_PER_PAGE = 50;
-const PIE_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#22c55e', '#f97316'];
 
 const distinctSeriesColor = (idx: number): string => {
   // Golden-angle palette: visually distinct even for many rows.
@@ -435,8 +434,6 @@ export const ExpensesMock: React.FC<ExpensesMockProps> = ({ selectedBranch, date
   const [addingAmountValue, setAddingAmountValue] = useState('');
   const [addingQtyValue, setAddingQtyValue] = useState('');
   const [addingUnitValue, setAddingUnitValue] = useState('');
-  const [editingQtyForId, setEditingQtyForId] = useState<string | null>(null);
-  const [editingQtyValue, setEditingQtyValue] = useState('');
 
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState(false);
   const [receiptUploadLoading, setReceiptUploadLoading] = useState(false);
@@ -1637,40 +1634,8 @@ export const ExpensesMock: React.FC<ExpensesMockProps> = ({ selectedBranch, date
         },
       },
     ],
-    [masterCategories, addingAmountForId, addingAmountValue, addingQtyValue, addingUnitValue, dreamMartDiscountEnabled, itemsForCategory, isSubmitting, isInventoryCategory, editingQtyForId, editingQtyValue, operations, selectedOperationId, totalForView],
+    [masterCategories, addingAmountForId, addingAmountValue, addingQtyValue, addingUnitValue, dreamMartDiscountEnabled, itemsForCategory, isSubmitting, isInventoryCategory, operations, selectedOperationId, totalForView],
   );
-
-  const handleSaveQty = async (row: ExpenseRecord) => {
-    if (!isInventoryCategory) {
-      toast.error('Stock updates apply only when Inventory is enabled on the main category.');
-      return;
-    }
-    const qty = Number(editingQtyValue);
-    if (!branchId || !Number.isFinite(qty) || qty < 0) {
-      toast.error('Enter a valid quantity');
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      await updateInventoryStock(row.id, qty, branchId);
-      const list = await loadExpenseList(branchId);
-      const filtered = list.filter((e) => String(e.branchId) === branchId);
-      setExpenses(filtered);
-      setEditingQtyForId(null);
-      setEditingQtyValue('');
-      toast.success('Inventory quantity updated');
-    } catch (error) {
-      console.error('Failed to update inventory qty:', error);
-      toast.error(error instanceof Error ? error.message : 'Failed to update quantity');
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleCancelEditQty = () => {
-    setEditingQtyForId(null);
-    setEditingQtyValue('');
-  };
 
   const handleSelectOperation = (opId: string) => {
     setGlobalSearch('');

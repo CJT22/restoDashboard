@@ -7,8 +7,9 @@ import { SidePanel } from '../ui/SidePanel';
 import { cn } from '../../lib/utils';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';
-import { SkeletonPage, SkeletonStatCards, SkeletonPageHeader, SkeletonTable } from '../ui/Skeleton';
+import { SkeletonStatCards, SkeletonPageHeader, SkeletonTable } from '../ui/Skeleton';
 import { useUser } from '../../context/UserContext';
+import { authHeaders } from '../../lib/authHeaders';
 
 interface BranchRow {
   id: string | number;
@@ -21,14 +22,6 @@ interface BranchRow {
   categoryLevel: 1 | 2;
   status: 'Active' | 'Inactive';
 }
-
-const authHeaders = (json = true): HeadersInit => {
-  const token = localStorage.getItem('token');
-  return {
-    ...(json ? { 'Content-Type': 'application/json' } : {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
 
 const resolveLogoUrl = (logoPath: string | null | undefined): string | null => {
   if (!logoPath || logoPath === '—') return null;
@@ -73,7 +66,7 @@ export const Branches: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/branch', { headers: authHeaders() });
+      const res = await fetch('/branch', { headers: authHeaders({ json: true }) });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(json.error || `Failed to load branches (${res.status})`);
@@ -178,7 +171,7 @@ export const Branches: React.FC = () => {
       const method = editingBranch ? 'PUT' : 'POST';
       const res = await fetch(url, {
         method,
-        headers: authHeaders(false),
+        headers: authHeaders(),
         body: form,
       });
       let data: { success?: boolean; error?: string; message?: string };
@@ -206,7 +199,7 @@ export const Branches: React.FC = () => {
     try {
       const res = await fetch(`/branch/${branchToDelete.id}`, {
         method: 'DELETE',
-        headers: authHeaders(),
+        headers: authHeaders({ json: true }),
       });
       const data = await res.json();
       if (!res.ok) {

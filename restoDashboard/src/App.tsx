@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { TableRoom, AdminOrderSummary, InfoPanel } from './types';
 import { FLOOR_LAYOUT, FloorLayout, toFloorLayout, zonesFromLayout } from './data/floorLayout';
 import { Sidebar } from './components/Sidebar';

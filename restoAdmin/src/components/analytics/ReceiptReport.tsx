@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
@@ -12,8 +12,6 @@ import { Modal } from '../ui/Modal';
 import {
   fetchReceiptReportApi,
   fetchReceiptDetailApi,
-  type ApiReceiptReportRow,
-  type ApiReceiptDetail,
 } from '../../services/analyticsService';
 import { getOrderById, getOrderItems } from '../../services/orderService';
 import { useAnalyticsReportLoad } from '../../hooks/useAnalyticsReportLoad';
@@ -58,8 +56,6 @@ type ReceiptDetail = {
   items: ReceiptLineItem[];
 };
 
-const MOCK_RECEIPT_BASE: Omit<ReceiptReportRow, 'id'>[] = [];
-
 export const ReceiptReport: React.FC<ReceiptReportProps> = ({ selectedBranch, dateRange }) => {
   const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');
@@ -67,7 +63,7 @@ export const ReceiptReport: React.FC<ReceiptReportProps> = ({ selectedBranch, da
   const [selectedReceipt, setSelectedReceipt] = useState<ReceiptReportRow | null>(null);
   const [receiptDetail, setReceiptDetail] = useState<ReceiptDetail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState<string | null>(null);
+  const [, setDetailError] = useState<string | null>(null);
 
   const [receiptImageOpen, setReceiptImageOpen] = useState(false);
   const [receiptImageLoading, setReceiptImageLoading] = useState(false);
@@ -154,10 +150,6 @@ export const ReceiptReport: React.FC<ReceiptReportProps> = ({ selectedBranch, da
 
   const allReceiptsCount = useMemo(
     () => rows.length,
-    [rows]
-  );
-  const allReceiptsAmount = useMemo(
-    () => rows.reduce((sum, row) => sum + Number(row.total || 0), 0),
     [rows]
   );
   const salesAmount = useMemo(

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Search, Loader2, Plus, Edit2, Trash2, Shield, User as UserIcon, MoreVertical } from 'lucide-react';
+import { Search, Loader2, Plus, Edit2, Trash2, Shield, User as UserIcon } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { toast } from 'sonner';
 import { motion, AnimatePresence } from 'framer-motion';

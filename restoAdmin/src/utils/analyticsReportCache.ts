@@ -1,78 +1,24 @@
 import { getManilaMonthToDateRange } from './manilaDateTime';
+import { createTwoTierCache } from './twoTierCache';
 
-type CacheStore = Record<string, { at: number; data: unknown }>;
+type AnalyticsReportKind = 'menu' | 'category' | 'payment' | 'receipt';
 
-const SESSION_KEYS: Record<string, string> = {
-  menu: 'resto_menu_report_cache_v1',
-  category: 'resto_category_report_cache_v1',
-  payment: 'resto_payment_report_cache_v1',
-  receipt: 'resto_receipt_report_cache_v1',
-};
+const reportCache = (report: AnalyticsReportKind) =>
+  createTwoTierCache<unknown>({
+    sessionKey: `resto_${report}_report_cache_v1`,
+    localKey: `resto_${report}_report_cache_v1_local`,
+    maxEntries: 10,
+  });
 
-const LOCAL_KEYS: Record<string, string> = {
-  menu: 'resto_menu_report_cache_v1_local',
-  category: 'resto_category_report_cache_v1_local',
-  payment: 'resto_payment_report_cache_v1_local',
-  receipt: 'resto_receipt_report_cache_v1_local',
+const CACHES: Record<AnalyticsReportKind, ReturnType<typeof reportCache>> = {
+  menu: reportCache('menu'),
+  category: reportCache('category'),
+  payment: reportCache('payment'),
+  receipt: reportCache('receipt'),
 };
 
 const LOCAL_CACHE_TTL_MS = 30 * 1000;
 const STALE_LOCAL_CACHE_TTL_MS = 5 * 60 * 1000;
-const MAX_ENTRIES = 10;
-
-function readCacheStore(storage: Storage, storageKey: string): CacheStore | null {
-  try {
-    const raw = storage.getItem(storageKey);
-    if (!raw) return null;
-    return JSON.parse(raw) as CacheStore;
-  } catch {
-    return null;
-  }
-}
-
-function pruneCacheStore(store: CacheStore): CacheStore {
-  const keys = Object.entries(store)
-    .sort(([, a], [, b]) => b.at - a.at)
-    .map(([k]) => k);
-  for (const k of keys.slice(MAX_ENTRIES)) {
-    delete store[k];
-  }
-  return store;
-}
-
-function writeCacheStore(storage: Storage, storageKey: string, store: CacheStore): void {
-  storage.setItem(storageKey, JSON.stringify(pruneCacheStore(store)));
-}
-
-function readEntry<T>(
-  report: keyof typeof SESSION_KEYS,
-  key: string,
-  maxAgeMs: number | null,
-): T | null {
-  const now = Date.now();
-
-  try {
-    const sessionStore = readCacheStore(sessionStorage, SESSION_KEYS[report]);
-    const sessionEntry = sessionStore?.[key];
-    if (sessionEntry?.data != null) {
-      return sessionEntry.data as T;
-    }
-  } catch {
-    // fall through
-  }
-
-  if (maxAgeMs == null) return null;
-
-  try {
-    const localStore = readCacheStore(localStorage, LOCAL_KEYS[report]);
-    const localEntry = localStore?.[key];
-    if (localEntry?.data == null) return null;
-    if (now - localEntry.at > maxAgeMs) return null;
-    return localEntry.data as T;
-  } catch {
-    return null;
-  }
-}
 
 export function buildAnalyticsReportCacheKey(
   prefix: string,
@@ -88,39 +34,23 @@ export function buildAnalyticsReportCacheKey(
   return `${prefix}:${params.start}|${params.end}|${branch}${extra}`;
 }
 
-export function readAnalyticsReportCache<T>(report: keyof typeof SESSION_KEYS, key: string): T | null {
-  return readEntry<T>(report, key, LOCAL_CACHE_TTL_MS);
+export function readAnalyticsReportCache<T>(report: AnalyticsReportKind, key: string): T | null {
+  return CACHES[report].read(key, LOCAL_CACHE_TTL_MS) as T | null;
 }
 
 export function readAnalyticsReportCacheIncludingStale<T>(
-  report: keyof typeof SESSION_KEYS,
+  report: AnalyticsReportKind,
   key: string,
 ): T | null {
-  return readEntry<T>(report, key, STALE_LOCAL_CACHE_TTL_MS);
+  return CACHES[report].read(key, STALE_LOCAL_CACHE_TTL_MS) as T | null;
 }
 
 export function writeAnalyticsReportCache<T>(
-  report: keyof typeof SESSION_KEYS,
+  report: AnalyticsReportKind,
   key: string,
   data: T,
 ): void {
-  const entry = { at: Date.now(), data };
-
-  try {
-    const store = readCacheStore(sessionStorage, SESSION_KEYS[report]) ?? {};
-    store[key] = entry;
-    writeCacheStore(sessionStorage, SESSION_KEYS[report], store);
-  } catch {
-    // ignore
-  }
-
-  try {
-    const store = readCacheStore(localStorage, LOCAL_KEYS[report]) ?? {};
-    store[key] = entry;
-    writeCacheStore(localStorage, LOCAL_KEYS[report], store);
-  } catch {
-    // ignore
-  }
+  CACHES[report].write(key, data);
 }
 
 export function hasNonEmptyRows<T extends { totalSales?: number; netAmount?: number; total?: number }>(

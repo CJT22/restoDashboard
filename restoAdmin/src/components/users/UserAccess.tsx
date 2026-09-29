@@ -16,14 +16,7 @@ import {
   type CrudActionKey,
 } from '../../constants/crudMenuItems';
 import { cn } from '../../lib/utils';
-
-const authHeaders = (): HeadersInit => {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
+import { authHeaders } from '../../lib/authHeaders';
 
 interface BranchOption {
   id: number | string;
@@ -148,7 +141,7 @@ export const UserAccess: React.FC = () => {
   const fetchData = useCallback(async () => {
     setError(null);
     try {
-      const res = await fetch('/branch/sidebar-permissions/all', { headers: authHeaders() });
+      const res = await fetch('/branch/sidebar-permissions/all', { headers: authHeaders({ json: true }) });
       const json = await res.json();
       if (!res.ok) {
         throw new Error(json.message || json.error || `Failed to load (${res.status})`);
@@ -169,19 +162,11 @@ export const UserAccess: React.FC = () => {
     }
   }, [t]);
 
-  const authHeadersWithToken = () => {
-    const token = localStorage.getItem('token');
-    return {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    } as HeadersInit;
-  };
-
   const fetchRolePermissions = useCallback(
     async (roleId: string) => {
       try {
         const res = await fetch(`/api/user-management/roles/${roleId}/crud-permissions`, {
-          headers: authHeadersWithToken(),
+          headers: authHeaders({ json: true }),
         });
         const json = await res.json();
         if (!res.ok) {
@@ -213,7 +198,7 @@ export const UserAccess: React.FC = () => {
   const fetchRoles = useCallback(async () => {
     try {
       const res = await fetch('/api/user-management/roles', {
-        headers: authHeadersWithToken(),
+        headers: authHeaders({ json: true }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -297,7 +282,7 @@ export const UserAccess: React.FC = () => {
     try {
       const res = await fetch('/branch/sidebar-permissions', {
         method: 'PUT',
-        headers: authHeaders(),
+        headers: authHeaders({ json: true }),
         body: JSON.stringify({ permissions }),
       });
       const json = await res.json();
@@ -339,7 +324,7 @@ export const UserAccess: React.FC = () => {
         `/api/user-management/roles/${selectedRoleId}/crud-permissions`,
         {
           method: 'PUT',
-          headers: authHeadersWithToken(),
+          headers: authHeaders({ json: true }),
           body: JSON.stringify({ permissions: rolePermissions || {} }),
         },
       );

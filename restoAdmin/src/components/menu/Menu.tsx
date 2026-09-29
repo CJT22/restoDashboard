@@ -75,11 +75,6 @@ function isDrinkCategoryName(name: string | null | undefined): boolean {
     return /\bdrinks?\b/.test(normalized);
 }
 
-function isPrimeBbqBranchName(name: string | null | undefined): boolean {
-    const normalized = String(name || '').trim().toLowerCase();
-    return normalized === 'prime bbq' || (normalized.includes('prime') && normalized.includes('bbq'));
-}
-
 function normalizeId(value: unknown): string {
     return String(value ?? '').trim();
 }
@@ -166,14 +161,6 @@ export const Menu: React.FC<MenuProps> = ({ selectedBranch }) => {
     // ----- Data -----
     const [menus, setMenus] = useState<MenuRecord[]>([]);
     const [categories, setCategories] = useState<MenuCategory[]>([]);
-    const needsFlatCategoryMigration = useMemo(
-        () =>
-            isTwoLevelBranch &&
-            isSpecificBranch &&
-            categories.length > 0 &&
-            !categories.some((c) => c.parentId),
-        [isTwoLevelBranch, isSpecificBranch, categories],
-    );
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 

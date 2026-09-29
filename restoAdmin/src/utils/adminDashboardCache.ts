@@ -1,4 +1,5 @@
 import type { BranchPerformanceData } from '../components/dashboard/BranchPerformanceCard';
+import { createTwoTierCache } from './twoTierCache';
 
 export type AdminDashboardTrendPeriod = 'weekly' | 'monthly' | 'yearly';
 
@@ -31,8 +32,12 @@ export type AdminDashboardCachePayload = {
   branchChartsById?: Record<string, BranchChartsCacheEntry>;
 };
 
-const SESSION_STORAGE_KEY = 'resto_admin_dashboard_cache_v1';
-const LOCAL_STORAGE_KEY = 'resto_admin_dashboard_cache_v1_local';
+const cache = createTwoTierCache<AdminDashboardCachePayload>({
+  sessionKey: 'resto_admin_dashboard_cache_v1',
+  localKey: 'resto_admin_dashboard_cache_v1_local',
+  maxEntries: 10,
+});
+
 /** Short TTL — financial KPIs must not diverge across users for hours. */
 const LOCAL_CACHE_TTL_MS = 30 * 1000;
 /** Instant paint only; always revalidate on mount (see AdminDashboard). */
@@ -42,7 +47,6 @@ const STALE_LOCAL_CACHE_TTL_MS = 5 * 60 * 1000;
  * Tiny window only avoids duplicate fetch right after prefetch write.
  */
 export const ADMIN_DASHBOARD_BG_REFRESH_TTL_MS = 10 * 1000;
-const MAX_ENTRIES = 10;
 
 const EMPTY_PAYLOAD: AdminDashboardCachePayload = {
   branchCardsData: [],
@@ -51,32 +55,6 @@ const EMPTY_PAYLOAD: AdminDashboardCachePayload = {
   expenseCategoryByBranch: {},
   trendByPeriod: {},
 };
-
-type CacheStore = Record<string, { at: number; data: AdminDashboardCachePayload }>;
-
-function readCacheStore(storage: Storage, storageKey: string): CacheStore | null {
-  try {
-    const raw = storage.getItem(storageKey);
-    if (!raw) return null;
-    return JSON.parse(raw) as CacheStore;
-  } catch {
-    return null;
-  }
-}
-
-function pruneCacheStore(store: CacheStore): CacheStore {
-  const keys = Object.entries(store)
-    .sort(([, a], [, b]) => b.at - a.at)
-    .map(([k]) => k);
-  for (const k of keys.slice(MAX_ENTRIES)) {
-    delete store[k];
-  }
-  return store;
-}
-
-function writeCacheStore(storage: Storage, storageKey: string, store: CacheStore): void {
-  storage.setItem(storageKey, JSON.stringify(pruneCacheStore(store)));
-}
 
 export function buildAdminDashboardCacheKey(params: {
   start: string;
@@ -108,78 +86,21 @@ function payloadFromEntry(entry: AdminDashboardCachePayload): AdminDashboardCach
 }
 
 export function readAdminDashboardCache(key: string): AdminDashboardCachePayload | null {
-  const now = Date.now();
-
-  try {
-    const sessionStore = readCacheStore(sessionStorage, SESSION_STORAGE_KEY);
-    const sessionEntry = sessionStore?.[key];
-    if (sessionEntry?.data) {
-      return payloadFromEntry(sessionEntry.data);
-    }
-  } catch {
-    // sessionStorage unavailable — fall through to localStorage
-  }
-
-  try {
-    const localStore = readCacheStore(localStorage, LOCAL_STORAGE_KEY);
-    const localEntry = localStore?.[key];
-    if (!localEntry?.data) return null;
-    if (now - localEntry.at > LOCAL_CACHE_TTL_MS) return null;
-    return payloadFromEntry(localEntry.data);
-  } catch {
-    return null;
-  }
+  const entry = cache.read(key, LOCAL_CACHE_TTL_MS);
+  return entry ? payloadFromEntry(entry) : null;
 }
 
 /** Fresh session cache, or local cache up to STALE_LOCAL_CACHE_TTL_MS (stale-while-revalidate). */
 export function readAdminDashboardCacheIncludingStale(
   key: string,
 ): AdminDashboardCachePayload | null {
-  const now = Date.now();
-
-  try {
-    const sessionStore = readCacheStore(sessionStorage, SESSION_STORAGE_KEY);
-    const sessionEntry = sessionStore?.[key];
-    if (sessionEntry?.data) {
-      return payloadFromEntry(sessionEntry.data);
-    }
-  } catch {
-    // sessionStorage unavailable — fall through to localStorage
-  }
-
-  try {
-    const localStore = readCacheStore(localStorage, LOCAL_STORAGE_KEY);
-    const localEntry = localStore?.[key];
-    if (!localEntry?.data) return null;
-    if (now - localEntry.at > STALE_LOCAL_CACHE_TTL_MS) return null;
-    return payloadFromEntry(localEntry.data);
-  } catch {
-    return null;
-  }
+  const entry = cache.read(key, STALE_LOCAL_CACHE_TTL_MS);
+  return entry ? payloadFromEntry(entry) : null;
 }
 
 /** Age of cached entry in ms, or null if missing. Checks session then local. */
 export function getAdminDashboardCacheAgeMs(key: string): number | null {
-  const now = Date.now();
-  try {
-    const sessionStore = readCacheStore(sessionStorage, SESSION_STORAGE_KEY);
-    const sessionEntry = sessionStore?.[key];
-    if (sessionEntry?.data && typeof sessionEntry.at === 'number') {
-      return Math.max(0, now - sessionEntry.at);
-    }
-  } catch {
-    // ignore
-  }
-  try {
-    const localStore = readCacheStore(localStorage, LOCAL_STORAGE_KEY);
-    const localEntry = localStore?.[key];
-    if (localEntry?.data && typeof localEntry.at === 'number') {
-      return Math.max(0, now - localEntry.at);
-    }
-  } catch {
-    // ignore
-  }
-  return null;
+  return cache.ageMs(key);
 }
 
 /** True when cache is young enough to skip a background network refresh. */
@@ -192,23 +113,7 @@ export function isAdminDashboardCacheFresh(
 }
 
 export function writeAdminDashboardCache(key: string, data: AdminDashboardCachePayload): void {
-  const entry = { at: Date.now(), data };
-
-  try {
-    const store = readCacheStore(sessionStorage, SESSION_STORAGE_KEY) ?? {};
-    store[key] = entry;
-    writeCacheStore(sessionStorage, SESSION_STORAGE_KEY, store);
-  } catch {
-    // sessionStorage full or unavailable — ignore
-  }
-
-  try {
-    const store = readCacheStore(localStorage, LOCAL_STORAGE_KEY) ?? {};
-    store[key] = entry;
-    writeCacheStore(localStorage, LOCAL_STORAGE_KEY, store);
-  } catch {
-    // localStorage quota — ignore
-  }
+  cache.write(key, data);
 }
 
 /** Merge partial updates without dropping other cached sections (e.g. trend vs branch cards). */

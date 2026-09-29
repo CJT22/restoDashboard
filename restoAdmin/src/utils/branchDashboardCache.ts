@@ -1,4 +1,5 @@
 import type { OrderRecord } from '../services/orderService';
+import { createTwoTierCache } from './twoTierCache';
 
 export type BranchDashboardStats = {
   totalOrders: number;
@@ -35,8 +36,12 @@ export type BranchDashboardCachePayload = {
   recentOrderItemsMeta: Record<string, { lineCount: number; totalQty: number }>;
 };
 
-const SESSION_STORAGE_KEY = 'resto_branch_dashboard_cache_v1';
-const LOCAL_STORAGE_KEY = 'resto_branch_dashboard_cache_v1_local';
+const cache = createTwoTierCache<BranchDashboardCachePayload>({
+  sessionKey: 'resto_branch_dashboard_cache_v1',
+  localKey: 'resto_branch_dashboard_cache_v1_local',
+  maxEntries: 12,
+});
+
 const EMPTY_MARKER_KEY = 'resto_branch_dashboard_empty_v1';
 /** Short TTL — keep branch KPIs aligned across users. */
 const LOCAL_CACHE_TTL_MS = 30 * 1000;
@@ -44,7 +49,6 @@ const LOCAL_CACHE_TTL_MS = 30 * 1000;
 const STALE_LOCAL_CACHE_TTL_MS = 5 * 60 * 1000;
 /** Tiny dedupe window after prefetch; otherwise always refresh. */
 export const BRANCH_DASHBOARD_BG_REFRESH_TTL_MS = 10 * 1000;
-const MAX_ENTRIES = 12;
 
 const EMPTY_PAYLOAD: BranchDashboardCachePayload = {
   dashboardData: null,
@@ -53,32 +57,6 @@ const EMPTY_PAYLOAD: BranchDashboardCachePayload = {
   recentOrders: [],
   recentOrderItemsMeta: {},
 };
-
-type CacheStore = Record<string, { at: number; data: BranchDashboardCachePayload }>;
-
-function readCacheStore(storage: Storage, storageKey: string): CacheStore | null {
-  try {
-    const raw = storage.getItem(storageKey);
-    if (!raw) return null;
-    return JSON.parse(raw) as CacheStore;
-  } catch {
-    return null;
-  }
-}
-
-function pruneCacheStore(store: CacheStore): CacheStore {
-  const keys = Object.entries(store)
-    .sort(([, a], [, b]) => b.at - a.at)
-    .map(([k]) => k);
-  for (const k of keys.slice(MAX_ENTRIES)) {
-    delete store[k];
-  }
-  return store;
-}
-
-function writeCacheStore(storage: Storage, storageKey: string, store: CacheStore): void {
-  storage.setItem(storageKey, JSON.stringify(pruneCacheStore(store)));
-}
 
 function payloadFromEntry(entry: BranchDashboardCachePayload): BranchDashboardCachePayload {
   return {
@@ -189,84 +167,24 @@ export function clearKnownEmptyBranch(key: string): void {
   }
 }
 
+const isCompleteEntry = (entry: BranchDashboardCachePayload) =>
+  !isBranchDashboardPayloadIncomplete(payloadFromEntry(entry));
+
 export function readBranchDashboardCache(key: string): BranchDashboardCachePayload | null {
-  const now = Date.now();
-
-  try {
-    const sessionStore = readCacheStore(sessionStorage, SESSION_STORAGE_KEY);
-    const sessionEntry = sessionStore?.[key];
-    if (sessionEntry?.data) {
-      const payload = payloadFromEntry(sessionEntry.data);
-      if (payload && !isBranchDashboardPayloadIncomplete(payload)) return payload;
-    }
-  } catch {
-    // sessionStorage unavailable — fall through to localStorage
-  }
-
-  try {
-    const localStore = readCacheStore(localStorage, LOCAL_STORAGE_KEY);
-    const localEntry = localStore?.[key];
-    if (!localEntry?.data) return null;
-    if (now - localEntry.at > LOCAL_CACHE_TTL_MS) return null;
-    const payload = payloadFromEntry(localEntry.data);
-    if (!payload || isBranchDashboardPayloadIncomplete(payload)) return null;
-    return payload;
-  } catch {
-    return null;
-  }
+  const entry = cache.read(key, LOCAL_CACHE_TTL_MS, isCompleteEntry);
+  return entry ? payloadFromEntry(entry) : null;
 }
 
 /** Fresh session cache, or local cache up to STALE_LOCAL_CACHE_TTL_MS. */
 export function readBranchDashboardCacheIncludingStale(
   key: string,
 ): BranchDashboardCachePayload | null {
-  const now = Date.now();
-
-  try {
-    const sessionStore = readCacheStore(sessionStorage, SESSION_STORAGE_KEY);
-    const sessionEntry = sessionStore?.[key];
-    if (sessionEntry?.data) {
-      const payload = payloadFromEntry(sessionEntry.data);
-      if (payload && !isBranchDashboardPayloadIncomplete(payload)) return payload;
-    }
-  } catch {
-    // sessionStorage unavailable — fall through to localStorage
-  }
-
-  try {
-    const localStore = readCacheStore(localStorage, LOCAL_STORAGE_KEY);
-    const localEntry = localStore?.[key];
-    if (!localEntry?.data) return null;
-    if (now - localEntry.at > STALE_LOCAL_CACHE_TTL_MS) return null;
-    const payload = payloadFromEntry(localEntry.data);
-    if (!payload || isBranchDashboardPayloadIncomplete(payload)) return null;
-    return payload;
-  } catch {
-    return null;
-  }
+  const entry = cache.read(key, STALE_LOCAL_CACHE_TTL_MS, isCompleteEntry);
+  return entry ? payloadFromEntry(entry) : null;
 }
 
 export function getBranchDashboardCacheAgeMs(key: string): number | null {
-  const now = Date.now();
-  try {
-    const sessionStore = readCacheStore(sessionStorage, SESSION_STORAGE_KEY);
-    const sessionEntry = sessionStore?.[key];
-    if (sessionEntry?.data && typeof sessionEntry.at === 'number') {
-      return Math.max(0, now - sessionEntry.at);
-    }
-  } catch {
-    // ignore
-  }
-  try {
-    const localStore = readCacheStore(localStorage, LOCAL_STORAGE_KEY);
-    const localEntry = localStore?.[key];
-    if (localEntry?.data && typeof localEntry.at === 'number') {
-      return Math.max(0, now - localEntry.at);
-    }
-  } catch {
-    // ignore
-  }
-  return null;
+  return cache.ageMs(key);
 }
 
 export function isBranchDashboardCacheFresh(
@@ -278,23 +196,7 @@ export function isBranchDashboardCacheFresh(
 }
 
 export function writeBranchDashboardCache(key: string, data: BranchDashboardCachePayload): void {
-  const entry = { at: Date.now(), data };
-
-  try {
-    const store = readCacheStore(sessionStorage, SESSION_STORAGE_KEY) ?? {};
-    store[key] = entry;
-    writeCacheStore(sessionStorage, SESSION_STORAGE_KEY, store);
-  } catch {
-    // sessionStorage full or unavailable — ignore
-  }
-
-  try {
-    const store = readCacheStore(localStorage, LOCAL_STORAGE_KEY) ?? {};
-    store[key] = entry;
-    writeCacheStore(localStorage, LOCAL_STORAGE_KEY, store);
-  } catch {
-    // localStorage quota — ignore
-  }
+  cache.write(key, data);
 }
 
 export function patchBranchDashboardCache(

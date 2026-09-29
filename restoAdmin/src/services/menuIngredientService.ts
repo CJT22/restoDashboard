@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/authHeaders';
+
 type ApiResponse<T> = {
   success: boolean;
   data: T;
@@ -32,16 +34,6 @@ const buildUrl = (path: string) => {
   return url.toString();
 };
 
-const authHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('token');
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-};
-
 const handleResponse = async <T>(response: Response): Promise<T> => {
   const json = (await response.json()) as ApiResponse<T>;
   if (!response.ok || !json.success) {
@@ -63,7 +55,7 @@ const mapRecord = (row: MenuIngredientApiRecord): MenuIngredientRecord => ({
 export async function getMenuIngredients(menuId: string): Promise<MenuIngredientRecord[]> {
   const response = await fetch(buildUrl(`/menu/${menuId}/ingredients`), {
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
   const data = await handleResponse<MenuIngredientApiRecord[]>(response);
   return data.map(mapRecord);
@@ -78,7 +70,7 @@ export async function createMenuIngredient(payload: {
   const response = await fetch(buildUrl('/menu-ingredients'), {
     method: 'POST',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
     body: JSON.stringify({
       MENU_ID: payload.menuId,
       INGREDIENT_ID: payload.ingredientId,
@@ -100,7 +92,7 @@ export async function updateMenuIngredient(
   const response = await fetch(buildUrl(`/menu-ingredients/${id}`), {
     method: 'PUT',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
     body: JSON.stringify({
       QTY_PER_SERVE: payload.qtyPerServe ?? 1,
       UNIT: payload.unit ?? 'pcs',
@@ -116,7 +108,7 @@ export async function deleteMenuIngredient(id: string): Promise<void> {
   const response = await fetch(buildUrl(`/menu-ingredients/${id}`), {
     method: 'DELETE',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
   const json = (await response.json()) as ApiResponse<null>;
   if (!response.ok || !json.success) {

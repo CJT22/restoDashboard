@@ -1,14 +1,9 @@
+import { authHeaders } from '../lib/authHeaders';
+
 /** Receipt image prep + Gemini key (same source as ReceiptLens: DB or local env). */
 
 const MAX_IMAGE_DIM = 1536;
 const JPEG_QUALITY = 0.88;
-
-const authHeaders = (): Record<string, string> => {
-    const token = localStorage.getItem('token');
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return headers;
-};
 
 export function compressReceiptImage(dataUrl: string): Promise<string> {
     return new Promise((resolve, reject) => {
@@ -61,7 +56,7 @@ export async function fetchReceiptScannerGeminiKey(): Promise<string> {
 
         const res = await fetch(`${window.location.origin}/data-api/api/receiptscanner/gemini-key`, {
             credentials: 'include',
-            headers: authHeaders(),
+            headers: authHeaders({ accept: true }),
         });
         const json = (await res.json().catch(() => ({}))) as { success?: boolean; data?: { apiKey?: string }; error?: string };
         if (!res.ok || !json.success || !json.data?.apiKey) {
@@ -86,7 +81,7 @@ export async function stitchReceiptImages(images: string[], options?: { maxWidth
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(),
+            ...authHeaders({ accept: true }),
         },
         body: JSON.stringify({
             images,

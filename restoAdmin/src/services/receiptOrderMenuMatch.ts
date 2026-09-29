@@ -185,7 +185,6 @@ function scoreMatch(extracted: string, menuName: string, menuPrice: number, unit
 
     const wa = receiptTokens(extracted);
     const wbList = b.split(' ').filter((w) => w.length > 1);
-    const wb = new Set(wbList);
 
     const matchedExtracted = wa.filter((t) => wbList.some((mw) => tokenMatchesMenuWord(t, mw)));
     const hasAllExtractedWords = wa.length > 0 && matchedExtracted.length === wa.length;

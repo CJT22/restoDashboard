@@ -23,6 +23,7 @@ import {
 } from '../../utils/manilaDateTime';
 import { toast } from 'sonner';
 import type { Branch } from '../partials/Header';
+import { authHeaders } from '../../lib/authHeaders';
 
 type BillingStatus = 1 | 2 | 3;
 
@@ -59,14 +60,6 @@ interface BillingProps {
     end: string;
   };
 }
-
-const authHeaders = (): HeadersInit => {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-};
 
 export const Billing: React.FC<BillingProps> = ({ selectedBranch, dateRange }) => {
   const { t } = useTranslation();
@@ -128,7 +121,7 @@ export const Billing: React.FC<BillingProps> = ({ selectedBranch, dateRange }) =
       params.set('include_stats', '1');
       const qs = params.toString();
       const res = await fetch(`/data-api/billing/data${qs ? `?${qs}` : ''}`, {
-        headers: authHeaders(),
+        headers: authHeaders({ json: true }),
       });
       const json = await res.json();
       if (reqId !== loadBillingReqIdRef.current) return;
@@ -265,7 +258,7 @@ export const Billing: React.FC<BillingProps> = ({ selectedBranch, dateRange }) =
     setHistoryRows([]);
     try {
       const res = await fetch(`/data-api/billing/${record.ORDER_ID}/payments`, {
-        headers: authHeaders(),
+        headers: authHeaders({ json: true }),
       });
       const json = await res.json();
       if (!res.ok || json?.success === false) {
@@ -303,7 +296,7 @@ export const Billing: React.FC<BillingProps> = ({ selectedBranch, dateRange }) =
     setReceiptError(null);
     try {
       const res = await fetch(`/data-api/receipt-scan-history/order/${record.ORDER_ID}`, {
-        headers: authHeaders(),
+        headers: authHeaders({ json: true }),
       });
       const json = await res.json().catch(() => ({}));
       if (!res.ok || json?.success === false) {
@@ -359,7 +352,7 @@ export const Billing: React.FC<BillingProps> = ({ selectedBranch, dateRange }) =
     try {
       const res = await fetch(`/data-api/billing/${activeRecord.ORDER_ID}`, {
         method: 'PUT',
-        headers: authHeaders(),
+        headers: authHeaders({ json: true }),
         body: JSON.stringify({
           payment_method: paymentMethod,
           amount_paid: amount,

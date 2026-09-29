@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/authHeaders';
+
 type ApiResponse<T> = {
   success: boolean;
   data: T;
@@ -30,16 +32,6 @@ const buildUrl = (path: string, params?: Record<string, string>) => {
   return url.toString();
 };
 
-const authHeaders = (): Record<string, string> => {
-  const token = localStorage.getItem('token');
-  const headers: Record<string, string> = {
-    Accept: 'application/json',
-    'Content-Type': 'application/json',
-  };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-};
-
 const handleResponse = async <T,>(response: Response): Promise<T> => {
   const json = (await response.json()) as ApiResponse<T>;
   if (!response.ok || !json.success) {
@@ -69,7 +61,7 @@ export async function fetchCashReconciliationAggregates(params: {
   }
   const response = await fetch(buildUrl('/cash-reconciliation/aggregates', q), {
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
   const data = await handleResponse<CashReconciliationAggregates>(response);
   return {
@@ -88,7 +80,7 @@ export async function fetchCashReconciliation(
       start_date: dateRange.start,
       end_date: dateRange.end,
     }),
-    { credentials: 'include', headers: authHeaders() }
+    { credentials: 'include', headers: authHeaders({ accept: true, json: true }) }
   );
   return handleResponse<CashReconciliationRow[]>(response);
 }
@@ -101,7 +93,7 @@ export async function createCashReconciliation(payload: {
   const response = await fetch(buildUrl('/cash-reconciliation'), {
     method: 'POST',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
     body: JSON.stringify({
       BRANCH_ID: payload.branchId,
       BUSINESS_DATE: payload.businessDate,
@@ -124,7 +116,7 @@ export async function updateCashReconciliation(
     {
       method: 'PUT',
       credentials: 'include',
-      headers: authHeaders(),
+      headers: authHeaders({ accept: true, json: true }),
       body: JSON.stringify({
         BRANCH_ID: payload.branchId,
         BUSINESS_DATE: payload.businessDate,
@@ -142,7 +134,7 @@ export async function deleteCashReconciliation(id: number, branchId: string): Pr
   const response = await fetch(buildUrl(`/cash-reconciliation/${id}`, { branch_id: branchId }), {
     method: 'DELETE',
     credentials: 'include',
-    headers: authHeaders(),
+    headers: authHeaders({ accept: true, json: true }),
   });
   const json = (await response.json()) as ApiResponse<null>;
   if (!response.ok || !json.success) {

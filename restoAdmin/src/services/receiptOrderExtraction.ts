@@ -1,9 +1,4 @@
-const authHeaders = (): Record<string, string> => {
-    const token = localStorage.getItem('token');
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (token) headers.Authorization = `Bearer ${token}`;
-    return headers;
-};
+import { authHeaders } from '../lib/authHeaders';
 
 export type ReceiptOrderItemNormalized = {
     item_name: string;
@@ -183,7 +178,7 @@ Extract only from merchandise line rows (typically between ITEM/QTY/PRICE column
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(),
+            ...authHeaders({ accept: true }),
         },
         body: JSON.stringify({
             base64,

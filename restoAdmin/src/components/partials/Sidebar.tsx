@@ -11,7 +11,6 @@ import {
   Users,
   LogOut,
   ChevronDown,
-  ChevronRight,
   Circle,
   DollarSign,
   CreditCard,

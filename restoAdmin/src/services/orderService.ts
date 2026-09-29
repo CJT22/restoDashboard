@@ -1,3 +1,5 @@
+import { authHeaders } from '../lib/authHeaders';
+
 // ---- Types ----
 
 export type OrderRecord = {
@@ -97,13 +99,6 @@ const buildUrl = (path: string, params?: Record<string, string>) => {
     return url.toString();
 };
 
-const authHeaders = (): Record<string, string> => {
-    const token = localStorage.getItem('token');
-    const headers: Record<string, string> = { Accept: 'application/json' };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
-    return headers;
-};
-
 const handleResponse = async <T>(response: Response): Promise<T> => {
     const json = (await response.json()) as ApiResponse<T>;
     if (!response.ok || !json.success) {
@@ -173,7 +168,7 @@ export async function getOrdersWithMeta(
     if (options.includeStats !== false) params.include_stats = '1';
     const response = await fetch(buildUrl('/orders/data', params), {
         credentials: 'include',
-        headers: authHeaders(),
+        headers: authHeaders({ accept: true }),
     });
     const json = (await response.json()) as ApiResponse<OrderRecord[]> & {
         meta?: { stats?: OrderListStats };
@@ -190,7 +185,7 @@ export async function getOrdersWithMeta(
 export async function getOrderById(id: string): Promise<OrderRecord | null> {
     const response = await fetch(buildUrl(`/orders/${id}`), {
         credentials: 'include',
-        headers: authHeaders(),
+        headers: authHeaders({ accept: true }),
     });
     if (response.status === 404) return null;
     return handleResponse<OrderRecord>(response);
@@ -199,7 +194,7 @@ export async function getOrderById(id: string): Promise<OrderRecord | null> {
 export async function getOrderItems(orderId: string): Promise<OrderItemRecord[]> {
     const response = await fetch(buildUrl(`/orders/${orderId}/items`), {
         credentials: 'include',
-        headers: authHeaders(),
+        headers: authHeaders({ accept: true }),
     });
     return handleResponse<OrderItemRecord[]>(response);
 }
@@ -210,7 +205,7 @@ export async function updateOrderStatus(orderId: string, status: number): Promis
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(),
+            ...authHeaders({ accept: true }),
         },
         body: JSON.stringify({ status }),
     });
@@ -223,7 +218,7 @@ export async function updateOrderEncodedDt(orderId: string, encodedDt: string): 
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(),
+            ...authHeaders({ accept: true }),
         },
         body: JSON.stringify({ ENCODED_DT: encodedDt }),
     });
@@ -236,7 +231,7 @@ export async function softDeleteOrder(orderId: string): Promise<void> {
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(),
+            ...authHeaders({ accept: true }),
         },
         body: JSON.stringify({}),
     });
@@ -265,7 +260,7 @@ export async function createOrder(payload: CreateOrderPayload): Promise<{ id: nu
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(),
+            ...authHeaders({ accept: true }),
         },
         body: JSON.stringify(payload),
     });
@@ -285,7 +280,7 @@ export async function createManualSettledOrder(payload: CreateManualSettledOrder
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(),
+            ...authHeaders({ accept: true }),
         },
         body: JSON.stringify(payload),
     });
@@ -315,7 +310,7 @@ export async function updateOrder(orderId: string, payload: UpdateOrderPayload):
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(),
+            ...authHeaders({ accept: true }),
         },
         body: JSON.stringify(payload),
     });
@@ -326,7 +321,7 @@ export async function deleteOrderItem(orderItemId: string): Promise<void> {
     const response = await fetch(buildUrl(`/order_items/${orderItemId}`), {
         method: 'DELETE',
         credentials: 'include',
-        headers: authHeaders(),
+        headers: authHeaders({ accept: true }),
     });
     await handleResponse<null>(response);
 }
@@ -337,7 +332,7 @@ export async function updateOrderItemQuantity(orderItemId: string, qty: number):
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(),
+            ...authHeaders({ accept: true }),
         },
         body: JSON.stringify({ qty }),
     });
@@ -362,7 +357,7 @@ export async function addItemsToOrder(orderId: string, items: CreateOrderItemPay
         credentials: 'include',
         headers: {
             'Content-Type': 'application/json',
-            ...authHeaders(),
+            ...authHeaders({ accept: true }),
         },
         body: JSON.stringify({ items }),
     });

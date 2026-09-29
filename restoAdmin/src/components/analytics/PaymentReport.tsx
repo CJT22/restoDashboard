@@ -68,8 +68,6 @@ function buildPaymentRows(apiRows: ApiPaymentReportRow[]): PaymentReportRow[] {
   ];
 }
 
-const MOCK_PAYMENT_REPORT_BASE: Omit<PaymentReportRow, 'id'>[] = [];
-
 export const PaymentReport: React.FC<PaymentReportProps> = ({ selectedBranch, dateRange }) => {
   const { t } = useTranslation();
   const [searchTerm, setSearchTerm] = useState('');

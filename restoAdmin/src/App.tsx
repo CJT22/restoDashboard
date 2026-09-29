@@ -6,22 +6,7 @@
 import React, { Suspense, useCallback, useState, useEffect, useRef } from 'react';
 import { Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import {
-  LayoutDashboard,
-  ClipboardList,
-  MessageSquare,
-  Calendar,
-  UtensilsCrossed,
-  Package,
-  Star,
-  Search,
-  Bell,
-  Settings,
-  ChevronDown,
-  TrendingUp,
-  TrendingDown,
-  ArrowUpRight,
-  ArrowDownRight,
-  LogIn
+  UtensilsCrossed
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sidebar } from './components/partials/Sidebar';
@@ -54,7 +39,6 @@ import { CategoryReport } from './components/analytics/CategoryReport';
 import { PaymentReport } from './components/analytics/PaymentReport';
 import { ReceiptReport } from './components/analytics/ReceiptReport';
 import { AnalyticsAiAssistant } from './components/analytics/AnalyticsAiAssistant';
-import { cn } from './lib/utils';
 
 // Panels
 import { NotificationPanel } from './components/panels/NotificationPanel';
@@ -68,112 +52,6 @@ import { getManilaMonthToDateRange, getManilaTodayYmd } from './utils/manilaDate
 /** Default MTD in Asia/Manila so all users share the same end date (not PC clock/TZ). */
 const getDefaultDateRange = () => getManilaMonthToDateRange();
 
-
-// --- Mock Data ---
-
-const revenueData = [
-  { name: 'Mar', income: 8000, expense: 5000 },
-  { name: 'Apr', income: 10000, expense: 6000 },
-  { name: 'May', income: 9000, expense: 7000 },
-  { name: 'Jun', income: 12000, expense: 8000 },
-  { name: 'Jul', income: 16580, expense: 9000 },
-  { name: 'Aug', income: 11000, expense: 7000 },
-  { name: 'Sep', income: 14000, expense: 8500 },
-  { name: 'Oct', income: 13000, expense: 7500 },
-];
-
-// --- Components ---
-
-const StatCard = ({ icon: Icon, label, value, trend, trendType }: { icon: any, label: string, value: string, trend: string, trendType: 'up' | 'down' }) => (
-  <div className="bg-white p-5 rounded-2xl shadow-sm flex items-center gap-4 flex-1 min-w-[200px]">
-    <div className="w-12 h-12 rounded-xl bg-brand-primary flex items-center justify-center text-white">
-      <Icon size={24} />
-    </div>
-    <div>
-      <p className="text-brand-muted text-sm font-medium mb-1">{label}</p>
-      <div className="flex items-baseline gap-2">
-        <h3 className="text-2xl font-bold">{value}</h3>
-        <span className={cn(
-          "text-xs font-bold flex items-center gap-0.5",
-          trendType === 'up' ? "text-green-500" : "text-red-500"
-        )}>
-          {trendType === 'up' ? <ArrowUpRight size={12} /> : <ArrowDownRight size={12} />}
-          {trend}
-        </span>
-      </div>
-    </div>
-  </div>
-);
-
-const TrendingMenuItem = ({ menu }: { menu: any, key?: any }) => (
-  <div className="group cursor-pointer">
-    <div className="relative mb-3 overflow-hidden rounded-2xl">
-      <img
-        src={menu.image}
-        alt={menu.name}
-        className="w-full aspect-[4/3] object-cover group-hover:scale-105 transition-transform duration-500"
-        referrerPolicy="no-referrer"
-      />
-      <div className="absolute top-3 right-3 bg-white/90 backdrop-blur-sm px-2 py-1 rounded-lg flex items-center gap-1 shadow-sm">
-        <Star size={10} className="text-yellow-500 fill-yellow-500" />
-        <span className="text-xs font-bold">{menu.rating}</span>
-      </div>
-    </div>
-    <div className="flex items-start justify-between">
-      <div>
-        <h5 className="text-base font-bold group-hover:text-brand-primary transition-colors">{menu.name}</h5>
-        <p className="text-xs text-brand-muted font-medium mb-2">{menu.category}</p>
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5 text-brand-muted">
-            <Star size={12} />
-            <span className="text-xs font-bold">{menu.rating}</span>
-          </div>
-          <div className="flex items-center gap-1.5 text-brand-muted">
-            <ClipboardList size={12} />
-            <span className="text-xs font-bold">{menu.orders}</span>
-          </div>
-        </div>
-      </div>
-      <p className="text-xl font-bold text-brand-primary">${menu.price.toFixed(2)}</p>
-    </div>
-  </div>
-);
-
-const VerticalCarousel = ({ items }: { items: any[] }) => {
-  const [index, setIndex] = useState(0);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setIndex((prev) => (prev + 1) % items.length);
-    }, 4000);
-    return () => clearInterval(timer);
-  }, [items.length]);
-
-  return (
-    <div className="relative h-full overflow-hidden">
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.div
-          key={index}
-          initial={{ y: 100, opacity: 0 }}
-          animate={{ y: 0, opacity: 1 }}
-          exit={{ y: -100, opacity: 0 }}
-          transition={{
-            type: "spring",
-            stiffness: 300,
-            damping: 30,
-            opacity: { duration: 0.2 }
-          }}
-          className="space-y-6"
-        >
-          {/* Show 3 items starting from index, wrapping around */}
-          {[...items, ...items, ...items].slice(index, index + 3).map((menu, i) => (
-            <TrendingMenuItem key={`${menu.name}-${index}-${i}`} menu={menu} />
-          ))}
-        </motion.div>
-      </AnimatePresence>
-    </div>
-  );
-};
 
 import { useUser } from './context/UserContext';
 import { Toaster } from 'sonner';

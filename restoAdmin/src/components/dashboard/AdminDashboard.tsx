@@ -332,19 +332,6 @@ const EXPENSE_RATE_ELEVATED_PCT = 70;
 
 type ExpenseDiffKind = 'delta' | 'new' | 'significant' | 'na';
 
-type ExpenseAnalyticsRow = {
-  branchId: number;
-  branchName: string;
-  current: number;
-  previous: number;
-  diff: number;
-  sharePct: number;
-  rank: number;
-  /** Meaningful MoM % when previous ≥ threshold; otherwise null. */
-  pctChange: number | null;
-  diffKind: ExpenseDiffKind;
-};
-
 const resolveExpenseDiffKind = (current: number, previous: number): ExpenseDiffKind => {
   const cur = Number(current) || 0;
   const prev = Number(previous) || 0;
@@ -1354,11 +1341,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ selectedBranch, 
   const [compareSamePeriodPrev, setCompareSamePeriodPrev] =
     useState<CompareMetricMaps>(EMPTY_COMPARE_METRICS);
   /** Same-period (3일 전) expense maps for Main Expenses ÷ sales %. */
-  const [compareSamePeriodExpenseCategoryByBranch, setCompareSamePeriodExpenseCategoryByBranch] =
+  const [, setCompareSamePeriodExpenseCategoryByBranch] =
     useState<Record<number, Record<string, number>>>({});
-  const [compareSamePeriodExpenseRentByBranch, setCompareSamePeriodExpenseRentByBranch] =
+  const [, setCompareSamePeriodExpenseRentByBranch] =
     useState<Record<number, number>>({});
-  const [compareSamePeriodExpenseSalaryByBranch, setCompareSamePeriodExpenseSalaryByBranch] =
+  const [, setCompareSamePeriodExpenseSalaryByBranch] =
     useState<Record<number, number>>({});
   /** Month-to-date of selected end (전월 대비 current: 1st → present). */
   const [compareLastMonthCurrent, setCompareLastMonthCurrent] =
@@ -2925,38 +2912,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ selectedBranch, 
     ];
   };
 
-  const previousPeriodExpenses = pickMetric(compareLastMonthPrev, 'expenses');
   const companyExpenseTotal = currentPeriodExpenses.reduce((s, v) => s + (Number(v) || 0), 0);
-
-  const expenseAnalyticsRows: ExpenseAnalyticsRow[] = (() => {
-    const draft = selectedCompareBranches.map((branch, i) => {
-      const current = Number(currentPeriodExpenses[i]) || 0;
-      const previous = Number(previousPeriodExpenses[i]) || 0;
-      const diff = Math.trunc(current - previous);
-      const sharePct = companyExpenseTotal > 0 ? (current / companyExpenseTotal) * 100 : 0;
-      const diffKind = resolveExpenseDiffKind(current, previous);
-      const meaningfulPct =
-        previous >= EXPENSE_PCT_MIN_PREVIOUS ? pctChange(current, previous) : null;
-      return {
-        branchId: branch.id,
-        branchName: branch.name,
-        current,
-        previous,
-        diff,
-        sharePct,
-        rank: 0,
-        pctChange: meaningfulPct,
-        diffKind,
-      } satisfies ExpenseAnalyticsRow;
-    });
-
-    // Rank by current expense descending (1 = highest spender).
-    const bySpend = [...draft].sort((a, b) => b.current - a.current);
-    bySpend.forEach((row, idx) => {
-      row.rank = idx + 1;
-    });
-    return draft.sort((a, b) => a.rank - b.rank);
-  })();
 
   // Main Expenses: selected-period amounts ÷ that branch's total sales (매출액).
   const mainExpenseBreakdown = selectedCompareBranches.map((branch) => {
@@ -3013,25 +2969,6 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ selectedBranch, 
     format: 'currency_share',
     compareBases: currentPeriodSales,
   });
-
-  // Align BI rows to comparison column order (selectedCompareBranches).
-  const expenseByBranchId = new Map(
-    expenseAnalyticsRows.map((row) => [row.branchId, row] as const),
-  );
-  const expenseOrdered = selectedCompareBranches.map(
-    (branch) =>
-      expenseByBranchId.get(branch.id) ?? {
-        branchId: branch.id,
-        branchName: branch.name,
-        current: 0,
-        previous: 0,
-        diff: 0,
-        sharePct: 0,
-        rank: selectedCompareBranches.length,
-        pctChange: null,
-        diffKind: 'na' as const,
-      },
-  );
 
   const expenseRateValues = selectedCompareBranches.map((_, i) => {
     const sales = Number(currentPeriodSales[i]) || 0;

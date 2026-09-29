@@ -98,17 +98,6 @@ type InlineDropdownProps<T extends string> = {
 // API data types
 // API types now imported from analyticsService
 
-function getToken() {
-  return localStorage.getItem('token') || '';
-}
-
-function authHeaders(): HeadersInit {
-  return {
-    'Content-Type': 'application/json',
-    'Authorization': `Bearer ${getToken()}`,
-  };
-}
-
 function InlineDropdown<T extends string>({ value, options, onChange, formatOption }: InlineDropdownProps<T>) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement | null>(null);
@@ -1115,19 +1104,6 @@ export const SalesAnalytics: React.FC<SalesAnalyticsProps> = ({ selectedBranch, 
   const pagedTableRows = salesTableRows.slice(
     safeTablePage * TABLE_PAGE_SIZE,
     safeTablePage * TABLE_PAGE_SIZE + TABLE_PAGE_SIZE
-  );
-
-  const baseSales = useMemo(
-    () => trendData.reduce((sum, row) => sum + row.totalSales, 0),
-    [trendData]
-  );
-
-  const baseSalesPrevious = useMemo(
-    () =>
-      dailySalesPrevious.reduce((sum, item) => {
-        return sum + (Number(item.total_sales) || 0);
-      }, 0),
-    [dailySalesPrevious]
   );
 
 const metricConfig = {
