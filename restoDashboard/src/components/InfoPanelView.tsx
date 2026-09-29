@@ -1,6 +1,6 @@
-import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Timer, ClipboardList, Banknote, Gauge, ChevronRight } from 'lucide-react';
-import { InfoPanel, InfoPanelLayout, InfoWidgetType, TableRoom } from '../types';
+import { FloorScope, InfoPanel, InfoPanelLayout, InfoWidgetType, TableRoom } from '../types';
 import { INFO_WIDGET_META } from '../data/infoPanels';
 import { MAX_LISTED_ORDER_ITEMS, shortOrderNo } from '../services/orderSync';
 import { getSales, SALES_PERIODS, SalesPeriod, useLiveSales } from '../services/salesSync';
@@ -13,8 +13,7 @@ import { getRoomTiming, formatDuration, formatHours, formatWait, formatClockTime
 // TotalSalesWidget).
 //
 // Room Timers, Active Orders and Occupancy each have a 1F / 2F / All toggle.
-// Each one starts on the panel's own floor and remembers its choice per
-// panel (see useFloorScope).
+// Each one starts on the floor fixed in the layout (see useFloorScope).
 //
 // Every layout is a set of columns, each a vertical stack of widget cards:
 //   stack = 1 column, row = 1 column per widget, auto = as many columns as
@@ -63,8 +62,8 @@ interface InfoPanelViewProps {
   nowMs: number;
   widthPx: number;
   heightPx: number;
-  // Rows open that zone's detail modal; off in Edit Zones, where clicking
-  // the panel edits it instead.
+  // Rows open that zone's detail modal; off in the (dormant) layout editor,
+  // where clicking the panel edits it instead.
   interactive: boolean;
   onSelectTable: (table: TableRoom) => void;
 }
@@ -186,8 +185,6 @@ function SegmentedToggle<T extends string | number>({
   );
 }
 
-type FloorScope = 1 | 2 | 'all';
-
 const FLOOR_SCOPES: { value: FloorScope; label: string }[] = [
   { value: 1, label: '1F' },
   { value: 2, label: '2F' },
@@ -197,31 +194,23 @@ const FLOOR_SCOPES: { value: FloorScope; label: string }[] = [
 const FLOORS: (1 | 2)[] = [1, 2];
 const FLOOR_NAMES: Record<1 | 2, string> = { 1: '1st Floor', 2: '2nd Floor' };
 
-const STORAGE_KEY_FLOOR_SCOPE = 'restaurant_dashboard_widget_floor';
+// Staff's toggle choices, per panel + widget, for this page load only —
+// kept outside the widgets so they survive switching floors (which unmounts
+// the other floor's panels), but every reload starts back on the layout's
+// fixed floors, so all devices agree.
+const sessionFloorScopes = new Map<string, FloorScope>();
 
-// Which floor(s) a widget shows. Starts on the panel's own floor and is
-// remembered per panel + widget, so e.g. the 1st floor's Active Orders can
-// show All while its Occupancy stays on 1F.
+// Which floor(s) a widget shows: the layout's widgetFloors entry, else the
+// panel's own floor — unless staff flipped it this session.
 function useFloorScope(panel: InfoPanel, widget: InfoWidgetType): [FloorScope, (scope: FloorScope) => void] {
-  const key = `${STORAGE_KEY_FLOOR_SCOPE}:${panel.id}:${widget}`;
-  const [scope, setScope] = useState<FloorScope>(() => {
-    try {
-      const saved = localStorage.getItem(key);
-      const match = FLOOR_SCOPES.find((s) => String(s.value) === saved);
-      if (match) return match.value;
-    } catch {
-      // Storage blocked; fall through to the default.
-    }
-    return panel.floor;
-  });
+  const key = `${panel.id}:${widget}`;
+  const [scope, setScope] = useState<FloorScope>(
+    () => sessionFloorScopes.get(key) ?? panel.widgetFloors?.[widget] ?? panel.floor
+  );
 
   const update = (next: FloorScope) => {
+    sessionFloorScopes.set(key, next);
     setScope(next);
-    try {
-      localStorage.setItem(key, String(next));
-    } catch {
-      // Not remembered this time; harmless.
-    }
   };
   return [scope, update];
 }
@@ -414,17 +403,9 @@ const ActiveOrdersWidget: React.FC<WidgetProps> = ({ panel, allTables, nowMs, co
 const formatPeso = (amount: number) =>
   `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-const STORAGE_KEY_SALES_PERIOD = 'restaurant_dashboard_sales_period';
-
-function loadSalesPeriod(): SalesPeriod {
-  try {
-    const saved = localStorage.getItem(STORAGE_KEY_SALES_PERIOD);
-    if (SALES_PERIODS.some((p) => p.value === saved)) return saved as SalesPeriod;
-  } catch {
-    // Storage blocked; fall through to the default.
-  }
-  return 'today';
-}
+// Shared by every Total Sales widget, for this page load only (same reasoning
+// as sessionFloorScopes): each reload starts back on Today.
+let sessionSalesPeriod: SalesPeriod = 'today';
 
 // Branch-wide, so it shows the same figures on either floor's panel.
 // Headline = paid sales for the chosen period, from restoAdmin's billing
@@ -435,16 +416,12 @@ function loadSalesPeriod(): SalesPeriod {
 // settles. Hidden for Yesterday, since today's open tabs aren't
 // yesterday's money.
 const TotalSalesWidget: React.FC<WidgetProps> = ({ allTables, interactive }) => {
-  const [period, setPeriod] = useState<SalesPeriod>(loadSalesPeriod);
+  const [period, setPeriodState] = useState<SalesPeriod>(() => sessionSalesPeriod);
+  const setPeriod = (next: SalesPeriod) => {
+    sessionSalesPeriod = next;
+    setPeriodState(next);
+  };
   const { data: current, error } = useLiveSales(getSales, period);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_SALES_PERIOD, period);
-    } catch {
-      // Not remembered this time; harmless.
-    }
-  }, [period]);
 
   const openOrders = allTables.filter((t) => t.activeOrder != null);
   const openTotal = openOrders.reduce((sum, t) => sum + (t.activeOrder?.grandTotal ?? 0), 0);

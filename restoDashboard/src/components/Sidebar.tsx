@@ -6,11 +6,8 @@ import {
   Clock,
   Wifi,
   RotateCw,
-  RefreshCcw,
   Check,
-  Users,
-  Move,
-  PlusCircle
+  Users
 } from 'lucide-react';
 import { TableRoom } from '../types';
 
@@ -22,10 +19,7 @@ interface SidebarProps {
   onToggleAvailableFilter: () => void;
   showOccupiedFilter: boolean;
   onToggleOccupiedFilter: () => void;
-  isEditLayoutMode: boolean;
-  onToggleEditLayoutMode: () => void;
   tables: TableRoom[];
-  onResetData: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -36,10 +30,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleAvailableFilter,
   showOccupiedFilter,
   onToggleOccupiedFilter,
-  isEditLayoutMode,
-  onToggleEditLayoutMode,
   tables,
-  onResetData,
 }) => {
   // Live clock matching the screenshot "1:44:22 PM", "TUESDAY, SEPTEMBER 15"
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -283,28 +274,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </div>
       </div>
 
-      {/* Map Tools & Layout Placement Mode */}
-      <div className="px-6 py-2 space-y-2">
-        <button
-          id="btn-toggle-edit-mode-side"
-          onClick={onToggleEditLayoutMode}
-          className={`w-full flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl border text-xs font-semibold transition-all ${
-            isEditLayoutMode
-              ? 'bg-indigo-600 border-indigo-400 text-white shadow-lg shadow-indigo-600/25'
-              : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/10 text-slate-300 hover:text-white'
-          }`}
-        >
-          <Move className="w-4 h-4" />
-          <span>{isEditLayoutMode ? 'Done Editing Zones' : 'Edit or Reposition Zones'}</span>
-        </button>
-      </div>
-
-      {/* Floor Statistics & Reset Demo Footer */}
+      {/* Floor Statistics Footer */}
       <div className="mt-auto p-6 pt-3 border-t border-white/5 bg-[#0e0f1a]">
         <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">
           {currentFloor === 1 ? '1st Floor' : '2nd Floor'}
         </div>
-        <div className="grid grid-cols-2 gap-2 mb-3">
+        <div className="grid grid-cols-2 gap-2">
           <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/5">
             <div className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Available</div>
             <div className="text-base font-bold text-emerald-400 font-mono mt-0.5">
@@ -318,15 +293,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
           </div>
         </div>
-
-        <button
-          id="btn-reset-demo-data"
-          onClick={onResetData}
-          className="w-full flex items-center justify-center gap-2 py-2 text-xs text-slate-500 hover:text-slate-300 transition-colors"
-        >
-          <RefreshCcw className="w-3 h-3" />
-          <span>Reset Sample Orders & Tables</span>
-        </button>
       </div>
     </aside>
   );

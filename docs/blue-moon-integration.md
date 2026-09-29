@@ -91,7 +91,11 @@ The mapping lives in one place: [`src/services/adminSync.ts`](../restoDashboard/
 
 ## How linking works
 
-1. In restoDashboard, editing an existing zone (`EditTableModal`) shows a "Link to Blue Moon Table"
+> **Linking is now a developer task.** Every zone's link is fixed in
+> [floorLayout.json](../restoDashboard/src/data/floorLayout.json), and the linking UI below is part of
+> the dormant layout editor. See [docs/layout-editor.md](layout-editor.md) to turn it back on.
+
+1. In restoDashboard's layout editor, editing an existing zone (`EditTableModal`) shows a "Link to Blue Moon Table"
    picker, populated from `GET /api/admin/tables` (only currently-unlinked admin tables, plus the
    zone's own current link).
 2. Saving calls `POST /api/admin/link { zoneId, adminTableId }` on restoDashboard's backend, which:
@@ -160,7 +164,7 @@ any browser.
 | Schema + link endpoint (restoAdmin) | [ensureSchema.js](../restoAdmin/server/utils/ensureSchema.js), [tableModel.js](../restoAdmin/server/models/tableModel.js), [tableController.js](../restoAdmin/server/controllers/tableController.js), [tableRoutes.js](../restoAdmin/server/routes/tableRoutes.js) |
 | "Linked" badge + live updates (restoAdmin) | [Tables.tsx](../restoAdmin/src/components/users/Tables.tsx) |
 | Sync backend (restoDashboard) | [server/index.ts](../restoDashboard/server/index.ts), [server/adminClient.ts](../restoDashboard/server/adminClient.ts), [server/socketBridge.ts](../restoDashboard/server/socketBridge.ts) |
-| Frontend sync + linking UI (restoDashboard) | [src/services/adminSync.ts](../restoDashboard/src/services/adminSync.ts), [EditTableModal.tsx](../restoDashboard/src/components/EditTableModal.tsx), [TableDetailModal.tsx](../restoDashboard/src/components/TableDetailModal.tsx), [App.tsx](../restoDashboard/src/App.tsx) |
+| Frontend sync + linking UI (restoDashboard) | [src/services/adminSync.ts](../restoDashboard/src/services/adminSync.ts), [EditTableModal.tsx](../restoDashboard/src/layoutEditor/EditTableModal.tsx), [floorLayout.json](../restoDashboard/src/data/floorLayout.json), [TableDetailModal.tsx](../restoDashboard/src/components/TableDetailModal.tsx), [App.tsx](../restoDashboard/src/App.tsx) |
 
 See [CHANGELOG.md](../CHANGELOG.md) `[1.5.0]` for the full list of changes that built this, with the
 reasoning behind each.

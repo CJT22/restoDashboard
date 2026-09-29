@@ -120,13 +120,16 @@ In the project directory, you can run:
 │   ├── App.tsx                     # Main layout, state persistence & modals
 │   ├── index.css                   # Tailwind styles and custom scrollbars
 │   ├── types.ts                    # Core TypeScript models (TableRoom, OrderItem, Status)
+│   ├── config/
+│   │   └── layoutEditor.ts         # VITE_ENABLE_LAYOUT_EDITOR flag (editor is off by default)
 │   ├── data/
-│   │   └── mockRestaurantData.ts   # Initial default mock tables & dishes
+│   │   ├── floorLayout.json        # The fixed zone + info panel layout (source of truth)
+│   │   └── floorLayout.ts          # Typed access to floorLayout.json
+│   ├── layoutEditor/               # Dormant Edit Zones editor — see docs/layout-editor.md
 │   └── components/
 │       ├── Sidebar.tsx             # Clock, navigation, 2 quick filters, floor switch
 │       ├── FloorPlanMap.tsx        # 1774×887 2:1 interactive canvas, drag & zoom
 │       ├── TableDetailModal.tsx    # Modal to view table status, guests, & orders
-│       ├── EditTableModal.tsx      # Modal to add/rename tables & set capacities
 │       ├── ConfirmModal.tsx        # Custom in-app confirmation dialog
 │       ├── TableDirectoryView.tsx  # Searchable directory of all tables/rooms
 │       ├── OrderQueueView.tsx      # Kitchen expediter view for pending dishes
@@ -139,5 +142,6 @@ In the project directory, you can run:
 
 - **Port already in use?**
   If port 3000 is occupied, you can change the port in `vite.config.ts` or run `npx vite --port 3001`.
-- **Resetting Data:**
-  If you want to restore the initial sample layout and orders at any time, click **"Reset Sample Orders & Tables"** at the bottom of the sidebar.
+- **Changing the floor layout:**
+  Zones and info panels are fixed in `src/data/floorLayout.json`, and the Edit Zones editor is turned off.
+  To re-lay out the floor, see [docs/layout-editor.md](../docs/layout-editor.md).

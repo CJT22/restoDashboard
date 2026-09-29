@@ -229,7 +229,7 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
               <label className="text-xs font-semibold text-slate-300 block mb-1">Order Type</label>
               {/* appearance-none + the custom ChevronDown replace the native
                   select arrow, which browsers render flush against the edge
-                  regardless of padding (see EditTableModal.tsx). */}
+                  regardless of padding (see src/layoutEditor/EditTableModal.tsx). */}
               <div className="relative">
                 <select
                   value={orderType}

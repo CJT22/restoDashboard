@@ -47,14 +47,12 @@ interface TableDetailModalProps {
   // state rather than a snapshot — see App.tsx's handleOrderChanged for why
   // a full-object replace isn't safe for these.
   onOrderChanged: (tableId: string, order: AdminOrderSummary | undefined) => void;
-  onOpenLinkModal: (table: TableRoom) => void;
 }
 
 export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   table,
   onClose,
   onOrderChanged,
-  onOpenLinkModal,
 }) => {
   if (!table) return null;
 
@@ -374,13 +372,11 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
               <div className="p-4 rounded-2xl bg-amber-950/20 border border-amber-500/30 flex items-start gap-3">
                 <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                 <div className="text-xs text-amber-200">
-                  This zone isn't linked to a restoAdmin table yet, so orders can't be placed from here.
-                  <button
-                    onClick={() => onOpenLinkModal(table)}
-                    className="block mt-1.5 text-indigo-300 hover:text-indigo-200 font-semibold underline"
-                  >
-                    Link this zone to a Blue Moon table
-                  </button>
+                  {/* Shouldn't happen: every zone in src/data/floorLayout.json is
+                      linked. Linking needs the dormant layout editor (see
+                      docs/layout-editor.md), so there's no action here. */}
+                  This zone isn't linked to a restoAdmin table, so orders can't be placed from here.
+                  Please let a developer know.
                 </div>
               </div>
             )}

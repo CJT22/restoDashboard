@@ -152,8 +152,7 @@ export interface ActiveOrderEntry {
 // Batched equivalent of calling getActiveOrderForTable once per linked
 // table — used for the once-on-load reconciliation in App.tsx so every
 // table's order details (not just its Available/Occupied status) are
-// already populated on a fresh load or after "Reset Sample Orders & Tables",
-// without a round trip per table.
+// already populated on a fresh load, without a round trip per table.
 export async function getActiveOrders(): Promise<ActiveOrderEntry[]> {
   const res = await fetch('/api/admin/orders/active');
   const json = await parseJsonOrThrow(res, 'Failed to load active orders from restoAdmin');

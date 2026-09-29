@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { X, Check, Trash2, LayoutDashboard, ArrowUp, ArrowDown, Plus, Minus } from 'lucide-react';
 import { InfoPanel, InfoPanelLayout, InfoWidgetType } from '../types';
 import { INFO_WIDGET_META, INFO_WIDGET_ORDER } from '../data/infoPanels';
-import { isCompactPanel, maxPanelColumns } from './InfoPanelView';
+import { isCompactPanel, maxPanelColumns } from '../components/InfoPanelView';
 
 interface InfoPanelModalProps {
   panel: InfoPanel | null;

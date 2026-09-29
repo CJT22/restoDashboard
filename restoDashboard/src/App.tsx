@@ -1,44 +1,71 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { TableRoom, TableStatus, AdminOrderSummary, InfoPanel } from './types';
-import { INITIAL_TABLES } from './data/mockRestaurantData';
-import { INITIAL_INFO_PANELS, migrateInfoPanels } from './data/infoPanels';
-import { InfoPanelModal } from './components/InfoPanelModal';
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { TableRoom, AdminOrderSummary, InfoPanel } from './types';
+import { FLOOR_LAYOUT, FloorLayout, toFloorLayout, zonesFromLayout } from './data/floorLayout';
 import { Sidebar } from './components/Sidebar';
 import { FloorPlanMap } from './components/FloorPlanMap';
 import { TableDetailModal } from './components/TableDetailModal';
 import { TableDirectoryView } from './components/TableDirectoryView';
 import { OrderQueueView } from './components/OrderQueueView';
-import { EditTableModal } from './components/EditTableModal';
-import { ConfirmModal } from './components/ConfirmModal';
-import { getAdminTables, getAdminTableStatus, setLink, statusFromAdmin, subscribeToAdminUpdates } from './services/adminSync';
+import { getAdminTables, getAdminTableStatus, statusFromAdmin, subscribeToAdminUpdates, warnOnLayoutLinkDrift } from './services/adminSync';
 import { subscribeToOrderUpdates, getActiveOrders, getActiveOrderForTable } from './services/orderSync';
+import { LAYOUT_EDITOR_ENABLED } from './config/layoutEditor';
 
-// Bumped again from _v2: TableStatus narrowed from 4 states to 2
-// (available/occupied only — see types.ts), and AdminOrderLineItem dropped
-// its pending/served field. Old saves are simply ignored rather than
-// migrated, same precedent as the _v1 -> _v2 bump.
-const STORAGE_KEY_TABLES = 'restaurant_dashboard_tables_v3';
-const STORAGE_KEY_INFO_PANELS = 'restaurant_dashboard_info_panels_v1';
+// The dormant layout editor (see src/config/layoutEditor.ts). With the flag
+// off this is a constant null, so the editor is neither loaded nor bundled.
+const LayoutEditor = LAYOUT_EDITOR_ENABLED ? lazy(() => import('./layoutEditor/LayoutEditor')) : null;
+
+// The layout editor's work in progress, in floorLayout.json's exact shape so
+// it can be copied straight over it (docs/layout-editor.md). Only read or
+// written while the editor is enabled.
+const STORAGE_KEY_LAYOUT_DRAFT = 'restaurant_dashboard_layout_draft';
 const STORAGE_KEY_SHOW_INFO_PANELS = 'restaurant_dashboard_show_info_panels';
-const VALID_STATUSES: TableStatus[] = ['available', 'occupied'];
+
+// Per-device copies of the zone layout, info panels and widget choices from
+// before the layout was fixed in src/data/floorLayout.json. Nothing reads
+// them anymore; cleared once on load so old devices don't keep carrying them.
+const LEGACY_STORAGE_KEYS = [
+  'restaurant_dashboard_tables_v1',
+  'restaurant_dashboard_tables_v2',
+  'restaurant_dashboard_tables_v3',
+  'restaurant_dashboard_info_panels_v1',
+  'restaurant_dashboard_sales_period',
+];
+const LEGACY_STORAGE_PREFIXES = ['restaurant_dashboard_widget_floor:'];
+
+function clearLegacyStorage() {
+  try {
+    const stale = Object.keys(localStorage).filter(
+      (key) => LEGACY_STORAGE_KEYS.includes(key) || LEGACY_STORAGE_PREFIXES.some((prefix) => key.startsWith(prefix))
+    );
+    stale.forEach((key) => localStorage.removeItem(key));
+  } catch {
+    // Storage blocked: nothing to clear.
+  }
+}
+
+// Only needed to compare against the editor's draft.
+const FIXED_LAYOUT_JSON = LAYOUT_EDITOR_ENABLED ? JSON.stringify(FLOOR_LAYOUT, null, 2) : '';
+
+// The fixed layout — or, while the layout editor is enabled, its draft.
+function loadLayout(): FloorLayout {
+  if (LAYOUT_EDITOR_ENABLED) {
+    try {
+      const draft = localStorage.getItem(STORAGE_KEY_LAYOUT_DRAFT);
+      if (draft) return JSON.parse(draft);
+    } catch (e) {
+      console.error('Failed to read the layout editor draft; using floorLayout.json:', e);
+    }
+  }
+  return FLOOR_LAYOUT;
+}
+
+const initialLayout = loadLayout();
 
 export default function App() {
-  // Load persisted tables or fall back to default mock dataset.
-  // Older saves may carry a status from a retired scheme (e.g. legacy 'cleaning'); map those to 'available'.
-  const [tables, setTables] = useState<TableRoom[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY_TABLES);
-      if (saved) {
-        const parsed: TableRoom[] = JSON.parse(saved);
-        return parsed.map((t) =>
-          !VALID_STATUSES.includes(t.status) ? { ...t, status: 'available' as const } : t
-        );
-      }
-    } catch (e) {
-      console.error('Failed to parse saved tables:', e);
-    }
-    return INITIAL_TABLES;
-  });
+  // Zones and info panels come from the fixed layout on every device; each
+  // zone's status and order are filled in live from restoAdmin below.
+  const [tables, setTables] = useState<TableRoom[]>(() => zonesFromLayout(initialLayout.zones));
+  const [infoPanels, setInfoPanels] = useState<InfoPanel[]>(() => initialLayout.panels);
 
   // Active Floor: 1 (Main Dining) or 2 (KTV Rooms)
   const [currentFloor, setCurrentFloor] = useState<1 | 2>(1);
@@ -53,38 +80,28 @@ export default function App() {
   const [showAvailableFilter, setShowAvailableFilter] = useState(false);
   const [showOccupiedFilter, setShowOccupiedFilter] = useState(false);
 
-  // Layout Placement / Drag Mode
+  // Layout editor (Edit Zones) — can only turn on when LAYOUT_EDITOR_ENABLED.
   const [isEditLayoutMode, setIsEditLayoutMode] = useState(false);
-  const [editingTable, setEditingTable] = useState<TableRoom | null>(null);
-  const [newTableRect, setNewTableRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
-  const [isEditTableModalOpen, setIsEditTableModalOpen] = useState(false);
 
-  // In-App Confirmation Modal state (avoids window.confirm in iframe)
-  const [confirmState, setConfirmState] = useState<{
-    isOpen: boolean;
-    title: string;
-    description: string;
-    confirmText?: string;
-    confirmVariant?: 'danger' | 'warning' | 'primary';
-    onConfirm: () => void;
-  }>({
-    isOpen: false,
-    title: '',
-    description: '',
-    onConfirm: () => {},
-  });
+  useEffect(() => {
+    clearLegacyStorage();
+  }, []);
 
-  // Info panels (floor plan widgets) and whether this device shows them —
-  // both local to this browser, like the zone layout itself.
-  const [infoPanels, setInfoPanels] = useState<InfoPanel[]>(() => {
+  // Keep the editor's draft whenever it differs from floorLayout.json, and
+  // drop it once it matches again (e.g. after pasting it in, or Discard
+  // Changes), so a stale draft never shadows a newer fixed layout.
+  useEffect(() => {
+    if (!LAYOUT_EDITOR_ENABLED) return;
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_INFO_PANELS);
-      if (saved) return migrateInfoPanels(JSON.parse(saved));
+      const draft = JSON.stringify(toFloorLayout(tables, infoPanels), null, 2);
+      if (draft === FIXED_LAYOUT_JSON) localStorage.removeItem(STORAGE_KEY_LAYOUT_DRAFT);
+      else localStorage.setItem(STORAGE_KEY_LAYOUT_DRAFT, draft);
     } catch (e) {
-      console.error('Failed to parse saved info panels:', e);
+      console.error('Failed to save the layout editor draft:', e);
     }
-    return INITIAL_INFO_PANELS;
-  });
+  }, [tables, infoPanels]);
+
+  // Whether this device shows the info panels (a per-device view choice).
   const [showInfoPanels, setShowInfoPanels] = useState<boolean>(() => {
     try {
       return localStorage.getItem(STORAGE_KEY_SHOW_INFO_PANELS) !== 'false';
@@ -92,18 +109,6 @@ export default function App() {
       return true;
     }
   });
-  // The panel whose settings modal is open, with its on-screen size at the
-  // time (the modal greys out "Side by side" when it wouldn't fit).
-  const [editingPanel, setEditingPanel] = useState<{ id: string; widthPx: number; heightPx: number } | null>(null);
-
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_INFO_PANELS, JSON.stringify(infoPanels));
-    } catch (e) {
-      console.error('Failed to save info panels:', e);
-    }
-  }, [infoPanels]);
-
   useEffect(() => {
     try {
       localStorage.setItem(STORAGE_KEY_SHOW_INFO_PANELS, String(showInfoPanels));
@@ -112,34 +117,10 @@ export default function App() {
     }
   }, [showInfoPanels]);
 
-  const handleUpdateInfoPanelGeometry = (panelId: string, geometry: { x: number; y: number; width: number; height: number }) => {
-    setInfoPanels((prev) => prev.map((p) => (p.id === panelId ? { ...p, ...geometry } : p)));
-  };
-
-  // A freshly drawn panel starts with Room Timers and opens its widget picker.
-  const handleCreateInfoPanel = (
-    floor: 1 | 2,
-    rect: { x: number; y: number; width: number; height: number },
-    size: { widthPx: number; heightPx: number }
-  ) => {
-    const panel: InfoPanel = { id: `panel-${Date.now()}`, floor, widgets: ['roomTimers'], layout: 'auto', ...rect };
-    setInfoPanels((prev) => [...prev, panel]);
-    setEditingPanel({ id: panel.id, ...size });
-  };
-
   // Latest tables for the mount-once SSE subscriber below, whose closure
   // would otherwise only ever see the initial state.
   const tablesRef = useRef(tables);
   tablesRef.current = tables;
-
-  // Persist tables changes
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_TABLES, JSON.stringify(tables));
-    } catch (e) {
-      console.error('Failed to save tables:', e);
-    }
-  }, [tables]);
 
   // Apply a status change that originated in restoAdmin (order create/confirm
   // /settle/cancel, or a direct Table Settings edit) — the only way a linked
@@ -202,6 +183,7 @@ export default function App() {
   useEffect(() => {
     getAdminTables()
       .then((adminTables) => {
+        warnOnLayoutLinkDrift(initialLayout.zones, adminTables);
         const byId = new Map(adminTables.map((t) => [t.id, t]));
         setTables((prev) =>
           prev.map((t) => {
@@ -290,115 +272,6 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Update a zone's position when dragged
-  const handleUpdateTablePosition = (tableId: string, x: number, y: number) => {
-    setTables((prev) =>
-      prev.map((t) => (t.id === tableId ? { ...t, x, y } : t))
-    );
-  };
-
-  // Update a zone's full geometry when resized via its border handles
-  const handleUpdateTableGeometry = (
-    tableId: string,
-    geometry: { x: number; y: number; width: number; height: number }
-  ) => {
-    setTables((prev) =>
-      prev.map((t) => (t.id === tableId ? { ...t, ...geometry } : t))
-    );
-  };
-
-  // Add new table or update existing from EditTableModal
-  const handleSaveTable = (tableToSave: TableRoom) => {
-    setTables((prev) => {
-      const exists = prev.some((t) => t.id === tableToSave.id);
-      if (exists) {
-        return prev.map((t) => (t.id === tableToSave.id ? tableToSave : t));
-      }
-      return [...prev, tableToSave];
-    });
-  };
-
-  // Delete single table. Best-effort: also clears the restoAdmin link (if
-  // any) so restoAdmin doesn't keep pointing at a zone that no longer exists.
-  const handleDeleteTable = (tableId: string) => {
-    const table = tables.find((t) => t.id === tableId);
-    if (table?.adminTableId != null) {
-      setLink(tableId, null).catch((err) =>
-        console.error('Failed to clear restoAdmin link on delete:', err)
-      );
-    }
-    setTables((prev) => prev.filter((t) => t.id !== tableId));
-    if (selectedTable?.id === tableId) setSelectedTable(null);
-  };
-
-  // Safe prompt to delete a single table
-  const handlePromptDeleteSingleTable = (table: TableRoom) => {
-    setConfirmState({
-      isOpen: true,
-      title: `Delete ${table.name}?`,
-      description: `Are you sure you want to remove "${table.name}" (${table.code}) from Floor ${table.floor}? Any current order tickets or guest details will be cleared.`,
-      confirmText: 'Delete Table',
-      confirmVariant: 'danger',
-      onConfirm: () => {
-        handleDeleteTable(table.id);
-      },
-    });
-  };
-
-  // Safe prompt to delete all zones on current floor
-  const handlePromptDeleteAll = () => {
-    const floorCount = tables.filter((t) => t.floor === currentFloor).length;
-    setConfirmState({
-      isOpen: true,
-      title: `Delete all zones on Floor ${currentFloor}?`,
-      description: `This will permanently delete all ${floorCount} table and room zones on Floor ${currentFloor}. You can immediately start drawing new zones on the floor plan from scratch.`,
-      confirmText: `Delete All ${floorCount} Zones`,
-      confirmVariant: 'danger',
-      onConfirm: () => {
-        tables
-          .filter((t) => t.floor === currentFloor && t.adminTableId != null)
-          .forEach((t) => {
-            setLink(t.id, null).catch((err) =>
-              console.error('Failed to clear restoAdmin link on delete:', err)
-            );
-          });
-        setTables((prev) => prev.filter((t) => t.floor !== currentFloor));
-        setSelectedTable(null);
-      },
-    });
-  };
-
-  // Open modal to add a new table/room from a freshly drawn zone rectangle
-  const handleOpenNewTableModal = (rect: { x: number; y: number; width: number; height: number }) => {
-    setEditingTable(null);
-    setNewTableRect(rect);
-    setIsEditTableModalOpen(true);
-  };
-
-  // Open modal to edit existing table info
-  const handleOpenEditTableModal = (table: TableRoom) => {
-    setEditingTable(table);
-    setNewTableRect({ x: table.x, y: table.y, width: table.width, height: table.height });
-    setIsEditTableModalOpen(true);
-  };
-
-  // Reset to initial sample state with confirmation modal
-  const handleResetData = () => {
-    setConfirmState({
-      isOpen: true,
-      title: 'Reset All Tables & Sample Orders?',
-      description: 'This will restore the floor plan to the default set of tables, rooms, info panels, and sample guest orders.',
-      confirmText: 'Reset Demo Data',
-      confirmVariant: 'warning',
-      onConfirm: () => {
-        setTables(INITIAL_TABLES);
-        setInfoPanels(INITIAL_INFO_PANELS);
-        setSelectedTable(null);
-        localStorage.removeItem(STORAGE_KEY_TABLES);
-      },
-    });
-  };
-
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[#0b0c16] text-slate-100 font-sans">
       {/* Left Navigation Sidebar matching Sample_UI.png with user's 2 quick control filters */}
@@ -410,10 +283,7 @@ export default function App() {
         onToggleAvailableFilter={() => setShowAvailableFilter(!showAvailableFilter)}
         showOccupiedFilter={showOccupiedFilter}
         onToggleOccupiedFilter={() => setShowOccupiedFilter(!showOccupiedFilter)}
-        isEditLayoutMode={isEditLayoutMode}
-        onToggleEditLayoutMode={() => setIsEditLayoutMode(!isEditLayoutMode)}
         tables={tables}
-        onResetData={handleResetData}
       />
 
       {/* Main View Area */}
@@ -428,19 +298,23 @@ export default function App() {
             showAvailableFilter={showAvailableFilter}
             showOccupiedFilter={showOccupiedFilter}
             isEditMode={isEditLayoutMode}
-            onToggleEditMode={() => setIsEditLayoutMode(!isEditLayoutMode)}
-            onUpdateTablePosition={handleUpdateTablePosition}
-            onUpdateTableGeometry={handleUpdateTableGeometry}
-            onOpenNewTableModal={handleOpenNewTableModal}
-            onOpenEditTableModal={handleOpenEditTableModal}
-            onPromptDeleteSingleTable={handlePromptDeleteSingleTable}
-            onPromptDeleteAll={handlePromptDeleteAll}
+            onToggleEditMode={() => setIsEditLayoutMode((prev) => !prev)}
+            editor={
+              LayoutEditor && isEditLayoutMode ? (
+                <Suspense fallback={null}>
+                  <LayoutEditor
+                    floor={currentFloor}
+                    tables={tables}
+                    setTables={setTables}
+                    infoPanels={infoPanels}
+                    setInfoPanels={setInfoPanels}
+                  />
+                </Suspense>
+              ) : null
+            }
             infoPanels={infoPanels}
             showInfoPanels={showInfoPanels}
             onToggleInfoPanels={() => setShowInfoPanels((prev) => !prev)}
-            onUpdateInfoPanelGeometry={handleUpdateInfoPanelGeometry}
-            onCreateInfoPanel={handleCreateInfoPanel}
-            onOpenInfoPanel={(panel, size) => setEditingPanel({ id: panel.id, ...size })}
           />
         )}
 
@@ -473,45 +347,8 @@ export default function App() {
           table={selectedTable}
           onClose={() => setSelectedTable(null)}
           onOrderChanged={handleOrderChanged}
-          onOpenLinkModal={handleOpenEditTableModal}
         />
       )}
-
-      {/* Edit Table / Draw New Zone Modal */}
-      <EditTableModal
-        isOpen={isEditTableModalOpen}
-        onClose={() => setIsEditTableModalOpen(false)}
-        table={editingTable}
-        newRect={newTableRect}
-        currentFloor={currentFloor}
-        onSave={handleSaveTable}
-        onDelete={handleDeleteTable}
-      />
-
-      {/* Safe In-App Confirmation Modal (Replaces window.confirm) */}
-      <InfoPanelModal
-        panel={infoPanels.find((p) => p.id === editingPanel?.id) ?? null}
-        panelSize={editingPanel}
-        onClose={() => setEditingPanel(null)}
-        onSave={(id, changes) => {
-          setInfoPanels((prev) => prev.map((p) => (p.id === id ? { ...p, ...changes } : p)));
-          setEditingPanel(null);
-        }}
-        onDelete={(id) => {
-          setInfoPanels((prev) => prev.filter((p) => p.id !== id));
-          setEditingPanel(null);
-        }}
-      />
-
-      <ConfirmModal
-        isOpen={confirmState.isOpen}
-        onClose={() => setConfirmState((prev) => ({ ...prev, isOpen: false }))}
-        onConfirm={confirmState.onConfirm}
-        title={confirmState.title}
-        description={confirmState.description}
-        confirmText={confirmState.confirmText}
-        confirmVariant={confirmState.confirmVariant}
-      />
     </div>
   );
 }

@@ -94,7 +94,8 @@ that same `table_updated` channel. The now-pointless "push status to admin" plum
 the "Resync Linked Tables to Admin" button) was removed along with the manual status picker in
 `TableDetailModal` — a linked zone's status badge is read-only.
 
-An unlinked zone (no `adminTableId` yet) still has a locally-editable status in `EditTableModal`, since
+An unlinked zone (no `adminTableId` yet — only possible while re-laying out the floor with the dormant
+[layout editor](layout-editor.md)) still has a locally-editable status in `EditTableModal`, since
 it has no real table to reflect. The moment a zone is linked, that picker disappears and the zone
 immediately adopts whatever status restoAdmin currently shows for the table it was linked to.
 

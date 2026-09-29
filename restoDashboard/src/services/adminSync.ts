@@ -137,3 +137,51 @@ export function subscribeToAdminUpdates(onUpdate: (event: RemoteTableUpdate) => 
     releaseAdminEventSource();
   };
 }
+
+// Startup sanity check for the fixed layout (src/data/floorLayout.json):
+// warns in the browser console — never to staff — when a zone's restoAdmin
+// link has drifted, e.g. a table was deleted or renamed in restoAdmin's Table
+// Settings, or a Blue Moon table was added that has no zone. Fixing any of
+// these means re-enabling the layout editor (docs/layout-editor.md).
+export function warnOnLayoutLinkDrift(
+  zones: { id: string; name: string; adminTableId?: number; adminTableName?: string }[],
+  adminTables: AdminTable[]
+): void {
+  const byId = new Map(adminTables.map((t) => [t.id, t]));
+  const problems: string[] = [];
+
+  for (const zone of zones) {
+    if (zone.adminTableId == null) {
+      problems.push(`Zone "${zone.name}" (${zone.id}) isn't linked to any restoAdmin table.`);
+      continue;
+    }
+    const table = byId.get(zone.adminTableId);
+    if (!table) {
+      problems.push(`Zone "${zone.name}" is linked to restoAdmin table #${zone.adminTableId}, which no longer exists.`);
+      continue;
+    }
+    if (zone.adminTableName != null && table.tableNumber !== zone.adminTableName) {
+      problems.push(
+        `restoAdmin table #${table.id} was renamed from "${zone.adminTableName}" to "${table.tableNumber}" (zone "${zone.name}").`
+      );
+    }
+    if (table.dashboardZoneId !== zone.id) {
+      problems.push(
+        `restoAdmin table #${table.id} ("${table.tableNumber}") points at zone ${table.dashboardZoneId ?? 'none'}, not "${zone.name}" (${zone.id}).`
+      );
+    }
+  }
+
+  const linkedIds = new Set(zones.map((z) => z.adminTableId));
+  for (const table of adminTables) {
+    if (!linkedIds.has(table.id)) {
+      problems.push(`restoAdmin table #${table.id} ("${table.tableNumber}") has no zone on the floor plan.`);
+    }
+  }
+
+  if (problems.length > 0) {
+    console.warn(
+      `[layout] Floor plan and restoAdmin tables are out of step (see docs/layout-editor.md):\n- ${problems.join('\n- ')}`
+    );
+  }
+}

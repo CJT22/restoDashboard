@@ -9,15 +9,13 @@ import {
   Minimize2,
   RotateCcw,
   Move,
-  Plus,
-  Edit2,
-  Trash2,
   Info,
   ChevronRight,
   LayoutDashboard
 } from 'lucide-react';
 import { InfoPanelView } from './InfoPanelView';
 import { MAX_LISTED_ORDER_ITEMS } from '../services/orderSync';
+import { LAYOUT_EDITOR_ENABLED } from '../config/layoutEditor';
 
 // Every floor plan image must share this exact 16:9 frame - zone geometry is
 // stored as percentages of it, so the canvas below is locked to this ratio.
@@ -34,8 +32,6 @@ const FLOOR_OPTIONS: { value: 1 | 2; label: string }[] = [
 const FLOOR_PLAN_ASPECT_W = 16;
 const FLOOR_PLAN_ASPECT_H = 9;
 
-const MIN_ZONE_SIZE_PCT = 3;
-
 const MIN_ZOOM = 0.7;
 const MAX_ZOOM = 1.6;
 const ZOOM_STEP = 0.15;
@@ -43,39 +39,6 @@ const ZOOM_STEP = 0.15;
 // Shared by zoom in / out / reset; greys out when the action can't go further.
 const ZOOM_BUTTON_CLASSES =
   'w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all disabled:opacity-40 disabled:hover:bg-white/5 disabled:hover:text-slate-300 disabled:cursor-default';
-
-type ResizeHandle = 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw';
-
-const RESIZE_HANDLES: ResizeHandle[] = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'];
-
-const HANDLE_POSITION_CLASSES: Record<ResizeHandle, string> = {
-  nw: '-top-1 -left-1',
-  n: '-top-1 left-1/2 -translate-x-1/2',
-  ne: '-top-1 -right-1',
-  e: 'top-1/2 -right-1 -translate-y-1/2',
-  se: '-bottom-1 -right-1',
-  s: '-bottom-1 left-1/2 -translate-x-1/2',
-  sw: '-bottom-1 -left-1',
-  w: 'top-1/2 -left-1 -translate-y-1/2',
-};
-
-const HANDLE_CURSOR_CLASSES: Record<ResizeHandle, string> = {
-  nw: 'cursor-nwse-resize',
-  se: 'cursor-nwse-resize',
-  ne: 'cursor-nesw-resize',
-  sw: 'cursor-nesw-resize',
-  n: 'cursor-ns-resize',
-  s: 'cursor-ns-resize',
-  e: 'cursor-ew-resize',
-  w: 'cursor-ew-resize',
-};
-
-interface ZoneRect {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
 
 // Zone info panel: one dark panel pinned to the zone's top-left, stacking
 // lines in priority order — name, room timer, item count, order total, then
@@ -205,32 +168,6 @@ const exitFullscreen = () => {
 
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
-// Standard 8-point resize math: handles on the west/north side move x/y and
-// shrink from that edge; handles on the east/south side only grow width/height.
-function applyResize(orig: ZoneRect, handle: ResizeHandle, dxPct: number, dyPct: number): ZoneRect {
-  let { x, y, width, height } = orig;
-
-  if (handle.includes('w')) {
-    const right = orig.x + orig.width;
-    const newX = clamp(orig.x + dxPct, 0, right - MIN_ZONE_SIZE_PCT);
-    x = newX;
-    width = right - newX;
-  } else if (handle.includes('e')) {
-    width = clamp(orig.width + dxPct, MIN_ZONE_SIZE_PCT, 100 - orig.x);
-  }
-
-  if (handle.includes('n')) {
-    const bottom = orig.y + orig.height;
-    const newY = clamp(orig.y + dyPct, 0, bottom - MIN_ZONE_SIZE_PCT);
-    y = newY;
-    height = bottom - newY;
-  } else if (handle.includes('s')) {
-    height = clamp(orig.height + dyPct, MIN_ZONE_SIZE_PCT, 100 - orig.y);
-  }
-
-  return { x, y, width, height };
-}
-
 interface FloorPlanMapProps {
   floor: 1 | 2;
   onSelectFloor: (floor: 1 | 2) => void;
@@ -239,26 +176,16 @@ interface FloorPlanMapProps {
   onSelectTable: (table: TableRoom) => void;
   showAvailableFilter: boolean;
   showOccupiedFilter: boolean;
+  // Layout editor (dormant unless VITE_ENABLE_LAYOUT_EDITOR=true — see
+  // src/config/layoutEditor.ts). isEditMode only ever turns true then.
   isEditMode: boolean;
   onToggleEditMode: () => void;
-  onUpdateTablePosition: (tableId: string, x: number, y: number) => void;
-  onUpdateTableGeometry: (tableId: string, geometry: ZoneRect) => void;
-  onOpenNewTableModal: (rect: ZoneRect) => void;
-  onOpenEditTableModal: (table: TableRoom) => void;
-  onPromptDeleteSingleTable: (table: TableRoom) => void;
-  onPromptDeleteAll: () => void;
+  // The editor's overlay, rendered inside the canvas while editing.
+  editor?: React.ReactNode;
   infoPanels: InfoPanel[];
   showInfoPanels: boolean;
   onToggleInfoPanels: () => void;
-  onUpdateInfoPanelGeometry: (panelId: string, geometry: ZoneRect) => void;
-  onCreateInfoPanel: (floor: 1 | 2, rect: ZoneRect, size: { widthPx: number; heightPx: number }) => void;
-  onOpenInfoPanel: (panel: InfoPanel, size: { widthPx: number; heightPx: number }) => void;
 }
-
-// What a drag on the canvas draws in Edit Zones.
-type DrawKind = 'zone' | 'panel';
-// What a move/resize drag is acting on.
-type EditTarget = { kind: DrawKind; id: string };
 
 export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   floor,
@@ -270,56 +197,15 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   showOccupiedFilter,
   isEditMode,
   onToggleEditMode,
-  onUpdateTablePosition,
-  onUpdateTableGeometry,
-  onOpenNewTableModal,
-  onOpenEditTableModal,
-  onPromptDeleteSingleTable,
-  onPromptDeleteAll,
+  editor,
   infoPanels,
   showInfoPanels,
   onToggleInfoPanels,
-  onUpdateInfoPanelGeometry,
-  onCreateInfoPanel,
-  onOpenInfoPanel,
 }) => {
   // The canvas already fills the whole workspace at 1x, so no default zoom-in.
   const DEFAULT_ZOOM = 1;
   const [zoomLevel, setZoomLevel] = useState<number>(DEFAULT_ZOOM);
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null);
-
-  // Move (drag zone/panel body) state
-  const [dragging, setDragging] = useState<EditTarget | null>(null);
-  const draggingTableId = dragging?.kind === 'zone' ? dragging.id : null;
-  const dragStartPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const dragOriginRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-
-  // Resize (drag a border handle) state
-  const [resizingState, setResizingState] = useState<(EditTarget & { handle: ResizeHandle }) | null>(null);
-  const resizeStartRef = useRef<{ mouseX: number; mouseY: number; orig: ZoneRect } | null>(null);
-
-  // Draw-a-new-zone state (click and hold on blank canvas, then drag)
-  const [drawingRect, setDrawingRect] = useState<{ startX: number; startY: number; curX: number; curY: number } | null>(null);
-  const [drawKind, setDrawKind] = useState<DrawKind>('zone');
-  useEffect(() => {
-    if (!isEditMode) setDrawKind('zone');
-  }, [isEditMode]);
-
-  // Let Escape back out of an in-progress zone draw
-  const isDrawingNewZone = drawingRect !== null;
-  useEffect(() => {
-    if (!isDrawingNewZone) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setDrawingRect(null);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isDrawingNewZone]);
-
-  // Shared click-vs-drag disambiguation: suppress the click-to-open-modal
-  // handler for a short window right after a real move/resize drag ends.
-  const hasDraggedRef = useRef<boolean>(false);
-  const dragTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const mapCanvasRef = useRef<HTMLDivElement>(null);
 
@@ -423,136 +309,10 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
     return true;
   };
 
-  const suppressClickAfterInteraction = () => {
-    if (hasDraggedRef.current) {
-      if (dragTimeoutRef.current) clearTimeout(dragTimeoutRef.current);
-      dragTimeoutRef.current = setTimeout(() => {
-        hasDraggedRef.current = false;
-      }, 120);
-    }
-  };
-
-  // Start moving an existing zone or info panel (mousedown on its body, not a handle)
-  const handleBodyMouseDown = (e: React.MouseEvent, kind: DrawKind, item: ZoneRect & { id: string }) => {
-    if (!isEditMode) return;
-    e.stopPropagation();
-    dragStartPos.current = { x: e.clientX, y: e.clientY };
-    dragOriginRef.current = { x: item.x, y: item.y };
-    hasDraggedRef.current = false;
-    setDragging({ kind, id: item.id });
-  };
-
-  // Start resizing an existing zone or info panel (mousedown on one of its border handles)
-  const handleResizeMouseDown = (
-    e: React.MouseEvent,
-    kind: DrawKind,
-    item: ZoneRect & { id: string },
-    handle: ResizeHandle
-  ) => {
-    if (!isEditMode) return;
-    e.stopPropagation();
-    resizeStartRef.current = {
-      mouseX: e.clientX,
-      mouseY: e.clientY,
-      orig: { x: item.x, y: item.y, width: item.width, height: item.height },
-    };
-    hasDraggedRef.current = false;
-    setResizingState({ kind, id: item.id, handle });
-  };
-
-  const applyGeometry = (target: EditTarget, geometry: ZoneRect) => {
-    if (target.kind === 'panel') onUpdateInfoPanelGeometry(target.id, geometry);
-    else onUpdateTableGeometry(target.id, geometry);
-  };
-
-  // Start drawing a brand-new zone (mousedown on blank canvas)
-  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isEditMode || !mapCanvasRef.current) return;
-    const rect = mapCanvasRef.current.getBoundingClientRect();
-    const x = clamp(((e.clientX - rect.left) / rect.width) * 100, 0, 100);
-    const y = clamp(((e.clientY - rect.top) / rect.height) * 100, 0, 100);
-    setDrawingRect({ startX: x, startY: y, curX: x, curY: y });
-  };
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isEditMode || !mapCanvasRef.current) return;
-    const rect = mapCanvasRef.current.getBoundingClientRect();
-
-    if (resizingState && resizeStartRef.current) {
-      const dist = Math.hypot(e.clientX - resizeStartRef.current.mouseX, e.clientY - resizeStartRef.current.mouseY);
-      if (dist > 5) hasDraggedRef.current = true;
-      const dxPct = ((e.clientX - resizeStartRef.current.mouseX) / rect.width) * 100;
-      const dyPct = ((e.clientY - resizeStartRef.current.mouseY) / rect.height) * 100;
-      const next = applyResize(resizeStartRef.current.orig, resizingState.handle, dxPct, dyPct);
-      applyGeometry(resizingState, next);
-      return;
-    }
-
-    if (dragging) {
-      const item =
-        dragging.kind === 'panel'
-          ? floorPanels.find((p) => p.id === dragging.id)
-          : floorTables.find((t) => t.id === dragging.id);
-      if (!item) return;
-      const dist = Math.hypot(e.clientX - dragStartPos.current.x, e.clientY - dragStartPos.current.y);
-      if (dist > 5) hasDraggedRef.current = true;
-      const dxPct = ((e.clientX - dragStartPos.current.x) / rect.width) * 100;
-      const dyPct = ((e.clientY - dragStartPos.current.y) / rect.height) * 100;
-      const newX = clamp(dragOriginRef.current.x + dxPct, 0, 100 - item.width);
-      const newY = clamp(dragOriginRef.current.y + dyPct, 0, 100 - item.height);
-      if (dragging.kind === 'panel') {
-        onUpdateInfoPanelGeometry(dragging.id, { x: newX, y: newY, width: item.width, height: item.height });
-      } else {
-        onUpdateTablePosition(dragging.id, newX, newY);
-      }
-      return;
-    }
-
-    if (drawingRect) {
-      const x = clamp(((e.clientX - rect.left) / rect.width) * 100, 0, 100);
-      const y = clamp(((e.clientY - rect.top) / rect.height) * 100, 0, 100);
-      setDrawingRect((prev) => (prev ? { ...prev, curX: x, curY: y } : prev));
-    }
-  };
-
-  const handleMouseUp = () => {
-    if (resizingState) {
-      setResizingState(null);
-      resizeStartRef.current = null;
-      suppressClickAfterInteraction();
-      return;
-    }
-
-    if (dragging) {
-      setDragging(null);
-      suppressClickAfterInteraction();
-      return;
-    }
-
-    if (drawingRect) {
-      const x = Math.min(drawingRect.startX, drawingRect.curX);
-      const y = Math.min(drawingRect.startY, drawingRect.curY);
-      const width = Math.abs(drawingRect.curX - drawingRect.startX);
-      const height = Math.abs(drawingRect.curY - drawingRect.startY);
-      setDrawingRect(null);
-      // Too small to be an intentional zone (e.g. a stray click) - ignore it.
-      if (width < MIN_ZONE_SIZE_PCT || height < MIN_ZONE_SIZE_PCT) return;
-      if (drawKind === 'panel') {
-        onCreateInfoPanel(
-          floor,
-          { x, y, width, height },
-          { widthPx: (width / 100) * canvasPx.width, heightPx: (height / 100) * canvasPx.height }
-        );
-      } else onOpenNewTableModal({ x, y, width, height });
-    }
-  };
-
   return (
     <div
       id="interactive-map-container"
       className="relative flex-1 h-screen overflow-hidden bg-gradient-to-br from-[#0c0d1c] via-[#14122d] to-[#1e1542] flex flex-col select-none"
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
     >
       {/* Background ambient lighting */}
       <div
@@ -604,53 +364,27 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
           )}
         </div>
 
-        {/* Edit Mode, Delete All, & Zoom Controls */}
+        {/* Edit Zones (only when the layout editor is enabled) & Zoom Controls */}
         <div className="pointer-events-auto flex items-center gap-2 bg-[#141628]/90 backdrop-blur-md border border-white/10 rounded-2xl p-1.5 shadow-xl">
-          {isEditMode && floorTables.length > 0 && (
-            <button
-              id="btn-delete-all-tables"
-              onClick={onPromptDeleteAll}
-              className="px-3 py-1.5 rounded-xl text-xs font-bold bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 flex items-center gap-1.5 transition-all shadow-sm"
-              title="Delete all zones to start over"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete All Zones</span>
-            </button>
+          {LAYOUT_EDITOR_ENABLED && (
+            <>
+              <button
+                id="btn-toggle-edit-mode"
+                onClick={onToggleEditMode}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
+                  isEditMode
+                    ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 ring-2 ring-indigo-400'
+                    : 'bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white'
+                }`}
+                title="Toggle Edit Layout / Move Zones Mode"
+              >
+                <Move className="w-3.5 h-3.5" />
+                <span>{isEditMode ? 'Done Editing' : 'Edit Zones'}</span>
+              </button>
+
+              <div className="h-4 w-px bg-white/10 mx-1" />
+            </>
           )}
-
-          {isEditMode && (
-            <div className="flex items-center gap-0.5 p-0.5 rounded-xl bg-white/5 text-xs font-bold" role="group" aria-label="What to draw">
-              <span className="px-2 text-slate-400 font-semibold">Draw:</span>
-              {(['zone', 'panel'] as const).map((kind) => (
-                <button
-                  key={kind}
-                  onClick={() => setDrawKind(kind)}
-                  aria-pressed={drawKind === kind}
-                  className={`px-2.5 py-1 rounded-lg transition-all ${
-                    drawKind === kind ? 'bg-indigo-600 text-white' : 'text-slate-300 hover:text-white hover:bg-white/10'
-                  }`}
-                >
-                  {kind === 'zone' ? 'Zone' : 'Info panel'}
-                </button>
-              ))}
-            </div>
-          )}
-
-          <button
-            id="btn-toggle-edit-mode"
-            onClick={onToggleEditMode}
-            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all ${
-              isEditMode
-                ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 ring-2 ring-indigo-400'
-                : 'bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white'
-            }`}
-            title="Toggle Edit Layout / Move Zones Mode"
-          >
-            <Move className="w-3.5 h-3.5" />
-            <span>{isEditMode ? 'Done Editing' : 'Edit Zones'}</span>
-          </button>
-
-          <div className="h-4 w-px bg-white/10 mx-1" />
 
           <button
             id="btn-zoom-in"
@@ -710,18 +444,6 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
         </div>
       </div>
 
-      {/* Edit Mode Instruction Banner */}
-      {isEditMode && (
-        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 pointer-events-none animate-in fade-in slide-in-from-top-2 duration-200">
-          <div className="px-4 py-2 rounded-2xl bg-indigo-950/90 border border-indigo-400/40 text-indigo-200 text-xs font-medium shadow-2xl backdrop-blur-md flex items-center gap-2.5">
-            <span className="w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
-            <span>
-              <strong>Edit Mode:</strong> Drag a zone or info panel to move it • Click it to edit • Drag a corner or edge handle to resize • Click and hold, then drag to draw a new {drawKind === 'panel' ? 'info panel' : 'zone'}
-            </span>
-          </div>
-        </div>
-      )}
-
       {/* Main Floor Plan Workspace Canvas */}
       {/* Full-bleed workspace (everything above the bottom bar, sitting under the
           floating control bar). It's a size container so the canvas can be the
@@ -738,10 +460,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
       >
         <div
           ref={mapCanvasRef}
-          onMouseDown={isEditMode ? handleCanvasMouseDown : undefined}
-          className={`relative shrink-0 m-auto overflow-hidden select-none ${
-            isEditMode ? 'cursor-crosshair ring-2 ring-indigo-500/30' : ''
-          }`}
+          className="relative shrink-0 m-auto overflow-hidden select-none"
           style={{
             aspectRatio: `${FLOOR_PLAN_ASPECT_W} / ${FLOOR_PLAN_ASPECT_H}`,
             width: `calc(min(100cqw, 100cqh * ${FLOOR_PLAN_ASPECT_W} / ${FLOOR_PLAN_ASPECT_H}) * ${zoomLevel})`,
@@ -759,9 +478,9 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
           {floorTables.length === 0 && (
             <div className="absolute inset-x-0 bottom-6 z-10 flex justify-center pointer-events-none px-6">
               <div className="px-4 py-2 rounded-2xl bg-indigo-950/90 border border-indigo-400/40 text-indigo-200 text-xs font-medium shadow-2xl backdrop-blur-md flex items-center gap-2.5">
-                <Plus className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                <Info className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                 <span>
-                  <strong>No zones on Floor {floor}:</strong> Click and hold, then drag to draw your first zone
+                  <strong>No zones on Floor {floor}</strong>
                 </span>
               </div>
             </div>
@@ -779,19 +498,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
               <div
                 key={panel.id}
                 id={`map-panel-${panel.id}`}
-                onMouseDown={(e) => handleBodyMouseDown(e, 'panel', panel)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (hasDraggedRef.current) return;
-                  if (isEditMode) onOpenInfoPanel(panel, panelPx);
-                }}
-                className={`absolute group rounded-xl shadow-xl ${
-                  isEditMode
-                    ? 'cursor-grab active:cursor-grabbing border-2 border-dashed border-indigo-400/70'
-                    : 'border border-white/10'
-                } ${isDrawingNewZone ? 'pointer-events-none' : ''} ${
-                  dragging?.id === panel.id || resizingState?.id === panel.id ? 'z-40' : ''
-                }`}
+                className="absolute rounded-xl shadow-xl border border-white/10"
                 style={{
                   left: `${panel.x}%`,
                   top: `${panel.y}%`,
@@ -812,15 +519,6 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                     onSelectTable={onSelectTable}
                   />
                 </div>
-
-                {isEditMode && RESIZE_HANDLES.map((handle) => (
-                  <div
-                    key={handle}
-                    onMouseDown={(e) => handleResizeMouseDown(e, 'panel', panel, handle)}
-                    onClick={(e) => e.stopPropagation()}
-                    className={`absolute w-2.5 h-2.5 bg-white border border-indigo-500 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity z-50 ${HANDLE_POSITION_CLASSES[handle]} ${HANDLE_CURSOR_CLASSES[handle]}`}
-                  />
-                ))}
               </div>
             );
           })}
@@ -831,8 +529,6 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
             const activeOrder = table.activeOrder;
             const isHovered = !isEditMode && hoveredTableId === table.id;
             const isHighlighted = isTableHighlighted(table);
-            const isDraggingThis = draggingTableId === table.id;
-            const isResizingThis = resizingState?.kind === 'zone' && resizingState.id === table.id;
 
             const colors = getStatusColors(table.status);
 
@@ -858,26 +554,15 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
               <div
                 key={table.id}
                 id={`map-zone-${table.id}`}
-                onMouseDown={(e) => handleBodyMouseDown(e, 'zone', table)}
                 onClick={(e) => {
                   e.stopPropagation();
-                  // If the user just dragged/resized the zone, don't also open a modal
-                  if (hasDraggedRef.current) return;
-                  if (isEditMode) {
-                    onOpenEditTableModal(table);
-                  } else {
-                    onSelectTable(table);
-                  }
+                  onSelectTable(table);
                 }}
                 onMouseEnter={() => setHoveredTableId(table.id)}
                 onMouseLeave={() => setHoveredTableId(null)}
-                className={`absolute rounded-lg group ${
-                  isEditMode ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'
-                } ${!isHighlighted ? 'opacity-20 filter grayscale pointer-events-none' : 'opacity-100'} ${
-                  isDrawingNewZone ? 'pointer-events-none' : ''
-                } ${
-                  isSelected ? 'ring-2 ring-indigo-400 z-30' : ''
-                } ${isDraggingThis || isResizingThis ? 'z-40' : ''} ${isHovered ? 'z-50' : ''}`}
+                className={`absolute rounded-lg cursor-pointer ${
+                  !isHighlighted ? 'opacity-20 filter grayscale pointer-events-none' : 'opacity-100'
+                } ${isSelected ? 'ring-2 ring-indigo-400 z-30' : ''} ${isHovered ? 'z-50' : ''}`}
                 style={{
                   left: `${table.x}%`,
                   top: `${table.y}%`,
@@ -944,45 +629,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                   )}
                 </div>
 
-                {/* Edit mode: 8-point resize handles, shown on hover */}
-                {isEditMode && RESIZE_HANDLES.map((handle) => (
-                  <div
-                    key={handle}
-                    onMouseDown={(e) => handleResizeMouseDown(e, 'zone', table, handle)}
-                    onClick={(e) => e.stopPropagation()}
-                    className={`absolute w-2.5 h-2.5 bg-white border border-indigo-500 rounded-sm opacity-0 group-hover:opacity-100 transition-opacity z-50 ${HANDLE_POSITION_CLASSES[handle]} ${HANDLE_CURSOR_CLASSES[handle]}`}
-                  />
-                ))}
-
-                {/* Edit mode quick action toolbar: rename / delete */}
-                {isEditMode && (
-                  <div className="absolute -top-7 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-[#16182c] p-1 rounded-lg border border-white/20 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-50">
-                    <button
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenEditTableModal(table);
-                      }}
-                      className="p-1 hover:bg-white/10 rounded text-slate-300 hover:text-white"
-                      title="Rename / Edit"
-                    >
-                      <Edit2 className="w-3 h-3" />
-                    </button>
-                    <button
-                      onMouseDown={(e) => e.stopPropagation()}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onPromptDeleteSingleTable(table);
-                      }}
-                      className="p-1 hover:bg-rose-500/20 rounded text-rose-400 hover:text-rose-300"
-                      title="Delete Zone"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                )}
-
-                {/* Non-edit mode quick preview hover card - never resizes the zone itself */}
+                {/* Quick preview hover card - never resizes the zone itself */}
                 {isHovered && !isSelected && (
                   <div
                     className={`absolute w-56 p-3 rounded-2xl bg-[#16182c]/95 backdrop-blur-xl border border-white/20 shadow-2xl z-40 pointer-events-none text-left animate-in fade-in zoom-in-95 duration-150 ${
@@ -1048,29 +695,12 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
             );
           })}
 
-          {/* Live preview rectangle while drawing a new zone - blue while valid, red once it's too small to create */}
-          {drawingRect && (() => {
-            const width = Math.abs(drawingRect.curX - drawingRect.startX);
-            const height = Math.abs(drawingRect.curY - drawingRect.startY);
-            const isValidSize = width >= MIN_ZONE_SIZE_PCT && height >= MIN_ZONE_SIZE_PCT;
-            return (
-              <div
-                className={`absolute rounded-lg border-2 border-dashed pointer-events-none z-40 ${
-                  isValidSize ? 'border-sky-400 bg-sky-400/15' : 'border-rose-500 bg-rose-500/15'
-                }`}
-                style={{
-                  left: `${Math.min(drawingRect.startX, drawingRect.curX)}%`,
-                  top: `${Math.min(drawingRect.startY, drawingRect.curY)}%`,
-                  width: `${width}%`,
-                  height: `${height}%`,
-                }}
-              />
-            );
-          })()}
+          {/* Layout editor overlay (dormant; see src/config/layoutEditor.ts) */}
+          {editor}
         </div>
       </div>
 
-      {/* Bottom Bar: Quick summary and uploader trigger */}
+      {/* Bottom Bar: status legend */}
       <div className="p-3.5 px-8 border-t border-white/5 bg-[#0e0f1c]/90 backdrop-blur-md flex flex-wrap items-center justify-between text-xs text-slate-300">
         <div className="flex items-center gap-6">
           <span className="text-slate-400 uppercase tracking-wider text-[10px] font-bold">Status:</span>
@@ -1084,20 +714,6 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
             <span className={`w-2.5 h-2.5 rounded-full shadow-[0_0_8px_rgba(245,158,11,0.8)] ${getStatusColors('occupied').legendDotClass}`} />
             <span className="text-amber-300 font-medium">{getStatusColors('occupied').label}</span>
           </div>
-        </div>
-
-        <div className="flex items-center gap-3">
-          <button
-            onClick={onToggleEditMode}
-            className={`px-3 py-1 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
-              isEditMode
-                ? 'bg-indigo-600 text-white shadow-md'
-                : 'bg-white/10 hover:bg-white/15 text-slate-200'
-            }`}
-          >
-            <Move className="w-3 h-3" />
-            {isEditMode ? 'Done Editing' : 'Edit or Reposition Zones'}
-          </button>
         </div>
       </div>
     </div>

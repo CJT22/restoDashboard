@@ -72,8 +72,8 @@ export interface TableRoom {
   height: number;
 }
 
-// Info panels: read-only widgets drawn into a floor plan's free space (Edit
-// Zones → Draw: Info panel). Deliberately NOT a TableRoom — they aren't
+// Info panels: read-only widgets placed in a floor plan's free space (fixed in
+// src/data/floorLayout.json). Deliberately NOT a TableRoom — they aren't
 // seats, so they never count toward zone totals, filters, the directory or
 // restoAdmin linking. Widgets start on the panel's own floor (Room Timers,
 // Active Orders and Occupancy can be toggled to 1F / 2F / All), except Total
@@ -85,6 +85,9 @@ export type InfoWidgetType = 'roomTimers' | 'activeOrders' | 'totalSales' | 'occ
 // widget, falling back to stack when the panel is too narrow on screen.
 export type InfoPanelLayout = 'auto' | 'stack' | 'row';
 
+// Which floor(s) a widget lists: one floor, or both.
+export type FloorScope = 1 | 2 | 'all';
+
 export interface InfoPanel {
   id: string;
   floor: 1 | 2;
@@ -92,6 +95,9 @@ export interface InfoPanel {
   widgets: InfoWidgetType[];
   // Optional so panels saved before layouts existed read as 'auto'.
   layout?: InfoPanelLayout;
+  // Floor each widget starts on, when not the panel's own floor. Staff can
+  // still flip it; that choice lasts until the page reloads.
+  widgetFloors?: Partial<Record<InfoWidgetType, FloorScope>>;
   // Same percentage geometry as TableRoom zones.
   x: number;
   y: number;

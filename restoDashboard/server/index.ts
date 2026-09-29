@@ -33,7 +33,8 @@ app.use(express.json());
 const PORT = Number(process.env.PORT || 3510);
 
 // GET all Blue Moon admin tables + their current dashboard link, for the
-// "Link to Blue Moon Table" picker in EditTableModal.
+// startup link check in App.tsx and the (dormant) layout editor's "Link to
+// Blue Moon Table" picker in src/layoutEditor/EditTableModal.tsx.
 app.get('/api/admin/tables', async (_req, res) => {
   try {
     const tables = await getBlueMoonTables();
