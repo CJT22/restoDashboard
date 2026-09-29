@@ -121,14 +121,15 @@ In the project directory, you can run:
 │   ├── index.css                   # Tailwind styles and custom scrollbars
 │   ├── types.ts                    # Core TypeScript models (TableRoom, OrderItem, Status)
 │   ├── config/
-│   │   └── layoutEditor.ts         # VITE_ENABLE_LAYOUT_EDITOR flag (editor is off by default)
+│   │   ├── layoutEditor.ts         # VITE_ENABLE_LAYOUT_EDITOR flag (editor is off by default)
+│   │   └── zoomControls.ts         # VITE_ENABLE_ZOOM_CONTROLS flag (zoom buttons are off by default)
 │   ├── data/
 │   │   ├── floorLayout.json        # The fixed zone + info panel layout (source of truth)
 │   │   └── floorLayout.ts          # Typed access to floorLayout.json
 │   ├── layoutEditor/               # Dormant Edit Zones editor — see docs/layout-editor.md
 │   └── components/
 │       ├── Sidebar.tsx             # Clock, navigation, 2 quick filters, floor switch
-│       ├── FloorPlanMap.tsx        # 1774×887 2:1 interactive canvas, drag & zoom
+│       ├── FloorPlanMap.tsx        # 16:9 interactive floor plan canvas
 │       ├── TableDetailModal.tsx    # Modal to view table status, guests, & orders
 │       ├── ConfirmModal.tsx        # Custom in-app confirmation dialog
 │       ├── TableDirectoryView.tsx  # Searchable directory of all tables/rooms
@@ -145,3 +146,6 @@ In the project directory, you can run:
 - **Changing the floor layout:**
   Zones and info panels are fixed in `src/data/floorLayout.json`, and the Edit Zones editor is turned off.
   To re-lay out the floor, see [docs/layout-editor.md](../docs/layout-editor.md).
+- **Zoom buttons:**
+  The floor plan is fixed at its default size; the zoom in/out/reset buttons are turned off.
+  To bring them back, see [docs/zoom-controls.md](../docs/zoom-controls.md).

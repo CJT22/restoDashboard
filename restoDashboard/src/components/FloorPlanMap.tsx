@@ -16,6 +16,7 @@ import {
 import { InfoPanelView } from './InfoPanelView';
 import { MAX_LISTED_ORDER_ITEMS } from '../services/orderSync';
 import { LAYOUT_EDITOR_ENABLED } from '../config/layoutEditor';
+import { ZOOM_CONTROLS_ENABLED } from '../config/zoomControls';
 
 // Every floor plan image must share this exact 16:9 frame - zone geometry is
 // stored as percentages of it, so the canvas below is locked to this ratio.
@@ -32,6 +33,8 @@ const FLOOR_OPTIONS: { value: 1 | 2; label: string }[] = [
 const FLOOR_PLAN_ASPECT_W = 16;
 const FLOOR_PLAN_ASPECT_H = 9;
 
+// Zoom buttons are dormant unless VITE_ENABLE_ZOOM_CONTROLS=true (see
+// src/config/zoomControls.ts); otherwise zoomLevel stays at DEFAULT_ZOOM.
 const MIN_ZOOM = 0.7;
 const MAX_ZOOM = 1.6;
 const ZOOM_STEP = 0.15;
@@ -40,12 +43,19 @@ const ZOOM_STEP = 0.15;
 const ZOOM_BUTTON_CLASSES =
   'w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all disabled:opacity-40 disabled:hover:bg-white/5 disabled:hover:text-slate-300 disabled:cursor-default';
 
+// Labeled view buttons (Info Panels, Fullscreen): same height and type as the
+// floor tabs so the two top bars mirror each other. Labels collapse to
+// icon-only below xl, where the bar would crowd the floor switcher.
+const VIEW_BUTTON_CLASSES =
+  'h-8 px-3 flex items-center gap-2 rounded-xl text-sm font-bold tracking-wide transition-all';
+const VIEW_BUTTON_IDLE = 'text-slate-400 hover:text-white hover:bg-white/5';
+
 // Zone info panel: one dark panel pinned to the zone's top-left, stacking
 // lines in priority order — name, room timer, item count, order total, then
 // the order's items ("2× Sisig"), with "+N more" when not all of them fit.
 // The total is drawn last (at the bottom) but claims its line before the
-// items do. Laid out in JS from the zone's rendered size in px (so zooming
-// in reveals more): text scales with the zone, and lines drop off the bottom
+// items do. Laid out in JS from the zone's rendered size in px (so a bigger
+// screen reveals more): text scales with the zone, and lines drop off the bottom
 // once they no longer fit. The name and an hourly room's timer are never
 // dropped. Anything cut here is still in the hover card and detail modal.
 const PANEL_PAD_X = 3;
@@ -332,7 +342,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
         {/* Floor & Status Information */}
         <div className="pointer-events-auto flex items-center gap-3">
           {/* Floor switcher: segmented control so changing floors is a single tap
-              and both options are always visible. Styled like the zoom bar on the right. */}
+              and both options are always visible. Styled like the view bar on the right. */}
           <div
             role="tablist"
             aria-label="Floor"
@@ -364,8 +374,9 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
           )}
         </div>
 
-        {/* Edit Zones (only when the layout editor is enabled) & Zoom Controls */}
-        <div className="pointer-events-auto flex items-center gap-2 bg-[#141628]/90 backdrop-blur-md border border-white/10 rounded-2xl p-1.5 shadow-xl">
+        {/* View bar: Info Panels & Fullscreen, plus Edit Zones and zoom when
+            their dormant build flags are on */}
+        <div className="pointer-events-auto flex items-center gap-1 bg-[#141628]/90 backdrop-blur-md border border-white/10 rounded-2xl p-1.5 shadow-xl">
           {LAYOUT_EDITOR_ENABLED && (
             <>
               <button
@@ -386,60 +397,78 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
             </>
           )}
 
-          <button
-            id="btn-zoom-in"
-            onClick={() => handleZoom(ZOOM_STEP)}
-            disabled={zoomLevel >= MAX_ZOOM}
-            className={ZOOM_BUTTON_CLASSES}
-            title="Zoom In"
-            aria-label="Zoom in"
-          >
-            <ZoomIn className="w-4 h-4" />
-          </button>
-          <button
-            id="btn-zoom-out"
-            onClick={() => handleZoom(-ZOOM_STEP)}
-            disabled={zoomLevel <= MIN_ZOOM}
-            className={ZOOM_BUTTON_CLASSES}
-            title="Zoom Out"
-            aria-label="Zoom out"
-          >
-            <ZoomOut className="w-4 h-4" />
-          </button>
-          <button
-            id="btn-zoom-reset"
-            onClick={resetZoom}
-            disabled={zoomLevel === DEFAULT_ZOOM}
-            className={ZOOM_BUTTON_CLASSES}
-            title="Reset Zoom"
-            aria-label="Reset zoom"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
+          {ZOOM_CONTROLS_ENABLED && (
+            <>
+              <button
+                id="btn-zoom-in"
+                onClick={() => handleZoom(ZOOM_STEP)}
+                disabled={zoomLevel >= MAX_ZOOM}
+                className={ZOOM_BUTTON_CLASSES}
+                title="Zoom In"
+                aria-label="Zoom in"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <button
+                id="btn-zoom-out"
+                onClick={() => handleZoom(-ZOOM_STEP)}
+                disabled={zoomLevel <= MIN_ZOOM}
+                className={ZOOM_BUTTON_CLASSES}
+                title="Zoom Out"
+                aria-label="Zoom out"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <button
+                id="btn-zoom-reset"
+                onClick={resetZoom}
+                disabled={zoomLevel === DEFAULT_ZOOM}
+                className={ZOOM_BUTTON_CLASSES}
+                title="Reset Zoom"
+                aria-label="Reset zoom"
+              >
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+
+              <div className="h-4 w-px bg-white/10 mx-1" />
+            </>
+          )}
+
+          {/* Toggle: indigo with a lit dot while panels are shown, like the
+              active floor tab; grey with an unlit dot while hidden. */}
           <button
             id="btn-toggle-info-panels"
             onClick={onToggleInfoPanels}
             aria-pressed={showInfoPanels}
-            className={`w-8 h-8 rounded-xl flex items-center justify-center transition-all ${
-              showInfoPanels
-                ? 'bg-indigo-500/20 text-indigo-300 hover:bg-indigo-500/30'
-                : 'bg-white/5 hover:bg-white/10 text-slate-300 hover:text-white'
+            className={`${VIEW_BUTTON_CLASSES} ${
+              showInfoPanels ? 'bg-indigo-500/20 text-indigo-200 hover:bg-indigo-500/30' : VIEW_BUTTON_IDLE
             }`}
-            title={showInfoPanels ? 'Hide Info Panels' : 'Show Info Panels'}
-            aria-label={showInfoPanels ? 'Hide info panels' : 'Show info panels'}
+            title={showInfoPanels ? 'Hide info panels' : 'Show info panels'}
+            aria-label="Info panels"
           >
-            <LayoutDashboard className="w-3.5 h-3.5" />
+            <LayoutDashboard className="w-4 h-4" />
+            <span className="hidden xl:inline">Info Panels</span>
+            <span
+              aria-hidden="true"
+              className={`w-1.5 h-1.5 rounded-full transition-colors ${
+                showInfoPanels ? 'bg-indigo-400 shadow-[0_0_6px] shadow-indigo-400' : 'bg-slate-600'
+              }`}
+            />
           </button>
           {canFullscreen && (
-            <button
-              id="btn-fullscreen"
-              onClick={toggleFullscreen}
-              className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all"
-              title={isFullscreen ? 'Exit Fullscreen' : 'Enter Fullscreen'}
-              aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-            >
-              {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-            </button>
+            <>
+              <div className="h-4 w-px bg-white/10 mx-0.5" />
+              <button
+                id="btn-fullscreen"
+                onClick={toggleFullscreen}
+                className={`${VIEW_BUTTON_CLASSES} ${VIEW_BUTTON_IDLE}`}
+                title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+              >
+                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                <span className="hidden xl:inline">{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
+              </button>
+            </>
           )}
         </div>
       </div>

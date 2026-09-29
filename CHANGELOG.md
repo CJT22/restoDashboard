@@ -8,6 +8,14 @@ entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links t
 to be relative to this new root location. Going forward, each bullet is tagged with which app it
 touches (see [CLAUDE.md](CLAUDE.md) for the convention).
 
+## [1.17.0]
+
+### Removed
+- **[restoDashboard]** **Zoom in, zoom out and reset zoom are off. The code stays, dormant, and one setting brings them back.** Removed on request: every screen now shows the floor plan at its default size, the largest 16:9 box that fits the workspace. That was already the starting view, so nothing on screen moves. Staff can no longer leave a screen zoomed in or out by accident. As with Edit Zones, the zoom code is behind a build setting, `VITE_ENABLE_ZOOM_CONTROLS`, off by default ([zoomControls.ts](restoDashboard/src/config/zoomControls.ts)). With it off, the three buttons are left out of the build and the zoom level stays at 1×. With it on, they come back exactly as before. It's separate from the layout editor's setting, so either can be on without the other. **How to bring it back:** [docs/zoom-controls.md](docs/zoom-controls.md) ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx), [vite-env.d.ts](restoDashboard/src/vite-env.d.ts), [README.md](restoDashboard/README.md), [layout-editor.md](docs/layout-editor.md)).
+
+### Changed
+- **[restoDashboard]** **The top-right Info Panels and Fullscreen buttons now have text labels.** Without zoom, two small icon-only buttons were left, and staff had to guess what they did or hover for a tooltip. Hovering isn't possible on a tablet. They now read **Info Panels** and **Fullscreen** (**Exit Fullscreen** while it's on). They use the same height and bold text as the 1st/2nd Floor tabs, so the left and right bars match. Info Panels is a clear on/off switch: it turns indigo with a glowing dot while the panels are shown, like the selected floor tab, and goes grey with an unlit dot when they're hidden. On screens narrower than 1280 px the labels drop and only the icons show, so the bar doesn't crowd the floor tabs ([FloorPlanMap.tsx](restoDashboard/src/components/FloorPlanMap.tsx)).
+
 ## [1.16.0]
 
 ### Added

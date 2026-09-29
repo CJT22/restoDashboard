@@ -68,8 +68,8 @@ export const LAYOUT_EDITOR_ENABLED = import.meta.env.VITE_ENABLE_LAYOUT_EDITOR =
   ([`src/layoutEditor/`](../restoDashboard/src/layoutEditor/)) is **left out of the production
   bundle entirely**. It isn't hidden, it's absent, so the dormant code costs nothing in size or speed.
   With the editor off, `npm run build` produces no `LayoutEditor-*.js` file.
-- **On:** the only change is an **Edit Zones** button in the floor plan's top bar, next to the zoom
-  controls. The editor is its own chunk (~27 kB), downloaded only when someone clicks that button.
+- **On:** the only change is an **Edit Zones** button in the floor plan's top bar, next to the Info
+  Panels and Fullscreen buttons. The editor is its own chunk (~27 kB), downloaded only when someone clicks that button.
 
 Nothing else in the code needs to change to turn it on or off.
 
