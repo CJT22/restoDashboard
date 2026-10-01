@@ -33,6 +33,33 @@ const FLOOR_OPTIONS: { value: 1 | 2; label: string }[] = [
 const FLOOR_PLAN_ASPECT_W = 16;
 const FLOOR_PLAN_ASPECT_H = 9;
 
+// A box on the plan, in % of the 16:9 frame.
+interface Bounds {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+}
+
+// Where each building sits inside its frame, measured from the image's
+// opaque pixels. The rest of the frame is transparent margin, so the canvas
+// is sized to fit this box rather than the whole frame, and the empty
+// margins are allowed to run off-screen. Re-measure if an image changes.
+const FLOOR_PLAN_CONTENT: Record<1 | 2, Bounds> = {
+  1: { x0: 4.4, y0: 14.0, x1: 95.4, y1: 84.1 },
+  2: { x0: 14.4, y0: 10.6, x1: 85.4, y1: 89.2 },
+};
+const FULL_FRAME: Bounds = { x0: 0, y0: 0, x1: 100, y1: 100 };
+
+// Space (px) kept clear around the building inside the workspace. The top
+// clears the floating floor tabs and view bar (top-6, 46px tall).
+const FIT_PADDING = { top: 84, right: 16, bottom: 16, left: 16 };
+
+// Hover cards are w-56 and up to ~210px tall; a zone closer than this to the
+// visible workspace's edge gets its card flipped/aligned to stay on-screen.
+const HOVER_CARD_SIDE_ROOM_PX = 130;
+const HOVER_CARD_TOP_ROOM_PX = 220;
+
 // Zoom buttons are dormant unless VITE_ENABLE_ZOOM_CONTROLS=true (see
 // src/config/zoomControls.ts); otherwise zoomLevel stays at DEFAULT_ZOOM.
 const MIN_ZOOM = 0.7;
@@ -217,19 +244,21 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   const [zoomLevel, setZoomLevel] = useState<number>(DEFAULT_ZOOM);
   const [hoveredTableId, setHoveredTableId] = useState<string | null>(null);
 
-  const mapCanvasRef = useRef<HTMLDivElement>(null);
-
-  // Rendered canvas size in px, so each zone's label can pick how much to
-  // show from its real on-screen size (zone geometry is in % of the canvas).
-  // Tracks zoom and window resizes alike.
-  const [canvasPx, setCanvasPx] = useState({ width: 0, height: 0 });
+  // Workspace size in px (the area the plan is fitted into). Tracks window
+  // resizes and the sidebar collapsing or expanding. Measured synchronously
+  // on mount so the first paint already has the plan at its size.
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const [workspacePx, setWorkspacePx] = useState({ width: 0, height: 0 });
   useLayoutEffect(() => {
-    const el = mapCanvasRef.current;
+    const el = workspaceRef.current;
     if (!el) return;
-    const observer = new ResizeObserver(([entry]) => {
-      const { width, height } = entry.contentRect;
-      setCanvasPx((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
-    });
+    const measure = () => {
+      const width = el.clientWidth;
+      const height = el.clientHeight;
+      setWorkspacePx((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
     observer.observe(el);
     return () => observer.disconnect();
   }, []);
@@ -241,6 +270,21 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   const floorPanels = infoPanels.filter((p) => p.floor === floor);
   const panelsVisible = showInfoPanels || isEditMode;
 
+  // The part of the frame that must stay on-screen: the building, widened to
+  // take in any zone or panel placed outside it. The layout editor gets the
+  // whole frame, so the plan doesn't rescale while a zone is being dragged.
+  const fitBounds: Bounds = isEditMode
+    ? FULL_FRAME
+    : [...floorTables, ...floorPanels].reduce<Bounds>(
+        (b, r) => ({
+          x0: Math.min(b.x0, r.x),
+          y0: Math.min(b.y0, r.y),
+          x1: Math.max(b.x1, r.x + r.width),
+          y1: Math.max(b.y1, r.y + r.height),
+        }),
+        FLOOR_PLAN_CONTENT[floor]
+      );
+
   // One shared 1s tick drives every hourly room's countdown and the info
   // panels' timers/waiting times; only runs while there's one to show.
   // Panels check both floors, since a widget can be set to 2F or All.
@@ -248,12 +292,68 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   const panelsNeedTick = panelsVisible && floorPanels.length > 0 && tables.some((t) => t.activeOrder);
   const nowMs = useNow(hasRoomTimer || panelsNeedTick);
 
+  // Canvas geometry lives in CSS so the browser re-solves it on every frame
+  // of a resize (e.g. the sidebar sliding). Sizing it from a JS measurement
+  // lagged a frame behind, and that stale, too-big canvas overflowed the
+  // workspace and flashed scrollbars mid-animation. The canvas (--plan-w
+  // wide) is the largest whose fitBounds box fits the workspace inside
+  // FIT_PADDING, times the zoom level; cqw/cqh are the workspace's size.
+  const boundsW = (fitBounds.x1 - fitBounds.x0) / 100;
+  const boundsH = ((fitBounds.y1 - fitBounds.y0) / 100) * (FLOOR_PLAN_ASPECT_H / FLOOR_PLAN_ASPECT_W);
+  const padX = FIT_PADDING.left + FIT_PADDING.right;
+  const padY = FIT_PADDING.top + FIT_PADDING.bottom;
+  // The bounds box's center, as a fraction of the canvas's width / height.
+  const boundsCenterX = (fitBounds.x0 + fitBounds.x1) / 200;
+  const boundsCenterY = (fitBounds.y0 + fitBounds.y1) / 200;
+  const aspect = FLOOR_PLAN_ASPECT_H / FLOOR_PLAN_ASPECT_W;
+
+  // The stage is the scrollable area: the workspace at 1x, or the zoomed
+  // bounds box plus padding when that's bigger. It clips whatever frame
+  // margin falls outside it.
+  const stageStyle = {
+    '--plan-w': `calc(max(0px, min((100cqw - ${padX}px) / ${boundsW}, (100cqh - ${padY}px) / ${boundsH})) * ${zoomLevel})`,
+    width: `calc(${boundsW} * var(--plan-w) + ${padX}px)`,
+    height: `calc(${boundsH} * var(--plan-w) + ${padY}px)`,
+    minWidth: '100cqw',
+    minHeight: '100cqh',
+  } as React.CSSProperties;
+  // Centers the bounds box within the stage's padding.
+  const canvasStyle: React.CSSProperties = {
+    width: 'var(--plan-w)',
+    aspectRatio: `${FLOOR_PLAN_ASPECT_W} / ${FLOOR_PLAN_ASPECT_H}`,
+    left: `calc(50% + ${(FIT_PADDING.left - FIT_PADDING.right) / 2}px - ${boundsCenterX} * var(--plan-w))`,
+    top: `calc(50% + ${(FIT_PADDING.top - FIT_PADDING.bottom) / 2}px - ${boundsCenterY * aspect} * var(--plan-w))`,
+  };
+
+  // The canvas's rendered size, read back for what CSS can't do: zone labels
+  // and info panels pick how much to show from it (zone geometry is in % of
+  // the canvas). Only text layout follows it, so it trailing a frame behind
+  // during a resize is invisible.
+  const mapCanvasRef = useRef<HTMLDivElement>(null);
+  const [canvasPx, setCanvasPx] = useState({ width: 0, height: 0 });
+  useLayoutEffect(() => {
+    const el = mapCanvasRef.current;
+    if (!el) return;
+    const measure = () => {
+      const width = el.offsetWidth;
+      const height = el.offsetHeight;
+      setCanvasPx((prev) => (prev.width === width && prev.height === height ? prev : { width, height }));
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+  // Where the canvas sits in the workspace at 1x (mirrors canvasStyle), for
+  // placing hover cards.
+  const canvasLeft = workspacePx.width / 2 + (FIT_PADDING.left - FIT_PADDING.right) / 2 - boundsCenterX * canvasPx.width;
+  const canvasTop = workspacePx.height / 2 + (FIT_PADDING.top - FIT_PADDING.bottom) / 2 - boundsCenterY * canvasPx.height;
+
   // Zoom helpers
   // Zoom resizes the canvas in layout (not a CSS transform) so the workspace's
   // scrollbars track it immediately. Before each change we remember which point
   // of the scroll area sits at the viewport center, and restore it after the
   // resize so zooming stays anchored on what the user was looking at.
-  const workspaceRef = useRef<HTMLDivElement>(null);
   const zoomAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const setZoomKeepingCenter = (next: (prev: number) => number) => {
     const el = workspaceRef.current;
@@ -489,260 +589,262 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
       {/* Main Floor Plan Workspace Canvas */}
       {/* Full-bleed workspace (everything above the bottom bar, sitting under the
-          floating control bar). It's a size container so the canvas can be the
-          largest 16:9 box that fits it: full width on wide viewports, full
-          height on taller ones, centered with the leftover as thin bands.
-          Zoom multiplies that width in layout, and the canvas is centered with
-          m-auto rather than justify-center so overflow on every side stays
-          scrollable (flex centering pushes half of it off the unscrollable
-          left/top edges). */}
+          floating control bar). The stage inside it fits the building (see
+          fitBounds) rather than the whole 16:9 frame, so the plan grows into
+          the room freed by collapsing the sidebar; the frame's transparent
+          margins are clipped. It's a size container for the stage's cqw/cqh
+          math. At 1x it never scrolls, so a sub-pixel rounding overflow can't
+          show scrollbars; zoom grows the stage past it, which then scrolls. */}
       <div
         ref={workspaceRef}
-        className="flex-1 min-h-0 flex overflow-auto"
+        className={`flex-1 min-h-0 ${zoomLevel === DEFAULT_ZOOM ? 'overflow-hidden' : 'overflow-auto'}`}
         style={{ containerType: 'size' }}
       >
-        <div
-          ref={mapCanvasRef}
-          className="relative shrink-0 m-auto overflow-hidden select-none"
-          style={{
-            aspectRatio: `${FLOOR_PLAN_ASPECT_W} / ${FLOOR_PLAN_ASPECT_H}`,
-            width: `calc(min(100cqw, 100cqh * ${FLOOR_PLAN_ASPECT_W} / ${FLOOR_PLAN_ASPECT_H}) * ${zoomLevel})`,
-          }}
-        >
-          {/* Floor plan image - no backdrop, so transparent-background exports
-              sit directly on the workspace gradient */}
-          <img
-            src={FLOOR_PLAN_IMAGES[floor]}
-            alt={`Floor ${floor} plan`}
-            className="absolute inset-0 w-full h-full object-fill pointer-events-none"
-          />
+        <div className="relative overflow-hidden" style={stageStyle}>
+          <div
+            ref={mapCanvasRef}
+            className="absolute overflow-hidden select-none"
+            style={canvasStyle}
+          >
+            {/* Floor plan image - no backdrop, so transparent-background exports
+                sit directly on the workspace gradient */}
+            <img
+              src={FLOOR_PLAN_IMAGES[floor]}
+              alt={`Floor ${floor} plan`}
+              className="absolute inset-0 w-full h-full object-fill pointer-events-none"
+            />
 
-          {/* Empty state notice if no zones, anchored near the bottom edge so it doesn't cover the room layout */}
-          {floorTables.length === 0 && (
-            <div className="absolute inset-x-0 bottom-6 z-10 flex justify-center pointer-events-none px-6">
-              <div className="px-4 py-2 rounded-2xl bg-indigo-950/90 border border-indigo-400/40 text-indigo-200 text-xs font-medium shadow-2xl backdrop-blur-md flex items-center gap-2.5">
-                <Info className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                <span>
-                  <strong>No zones on Floor {floor}</strong>
-                </span>
-              </div>
-            </div>
-          )}
-
-          {/* Info panels - read-only widgets in the plan's free space. Styled as dark
-              cards (no status fill) so they never read as a table or room. */}
-          {panelsVisible && floorPanels.map((panel) => {
-            // On-screen size decides how many columns fit (see InfoPanelView).
-            const panelPx = {
-              widthPx: (panel.width / 100) * canvasPx.width,
-              heightPx: (panel.height / 100) * canvasPx.height,
-            };
-            return (
+            {/* Empty state notice if no zones, anchored near the building's bottom edge so it doesn't cover the room layout */}
+            {floorTables.length === 0 && (
               <div
-                key={panel.id}
-                id={`map-panel-${panel.id}`}
-                className="absolute rounded-xl shadow-xl border border-white/10"
-                style={{
-                  left: `${panel.x}%`,
-                  top: `${panel.y}%`,
-                  width: `${panel.width}%`,
-                  height: `${panel.height}%`,
-                  backgroundColor: 'rgba(15, 17, 32, 0.9)',
-                }}
+                className="absolute inset-x-0 z-10 flex justify-center pointer-events-none px-6"
+                style={{ bottom: `calc(${100 - fitBounds.y1}% + 24px)` }}
               >
-                {/* Scrolls only as a fallback when a panel is too short for its widgets' minimum sizes */}
-                <div className="absolute inset-0 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
-                  <InfoPanelView
-                    panel={panel}
-                    allTables={tables}
-                    nowMs={nowMs}
-                    widthPx={panelPx.widthPx}
-                    heightPx={panelPx.heightPx}
-                    interactive={!isEditMode}
-                    onSelectTable={onSelectTable}
-                  />
+                <div className="px-4 py-2 rounded-2xl bg-indigo-950/90 border border-indigo-400/40 text-indigo-200 text-xs font-medium shadow-2xl backdrop-blur-md flex items-center gap-2.5">
+                  <Info className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span>
+                    <strong>No zones on Floor {floor}</strong>
+                  </span>
                 </div>
               </div>
-            );
-          })}
+            )}
 
-          {/* Interactive Table / Room Zones */}
-          {floorTables.map((table) => {
-            const isSelected = selectedTableId === table.id;
-            const activeOrder = table.activeOrder;
-            const isHovered = !isEditMode && hoveredTableId === table.id;
-            const isHighlighted = isTableHighlighted(table);
-
-            const colors = getStatusColors(table.status);
-
-            const timing = getRoomTiming(activeOrder, nowMs);
-            const itemCount = activeOrder?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
-            const label = getZoneLabelLayout(
-              (table.width / 100) * canvasPx.width,
-              (table.height / 100) * canvasPx.height,
-              timing,
-              activeOrder != null,
-              activeOrder?.items.length ?? 0
-            );
-            const orderItems = activeOrder?.items ?? [];
-
-            // Keep the hover preview card from clipping at the map's edges -
-            // based on the zone's actual edges now that it has real width/height.
-            const zoneRight = table.x + table.width;
-            const nearTopEdge = table.y < 20;
-            const nearLeftEdge = table.x < 12;
-            const nearRightEdge = zoneRight > 88;
-
-            return (
-              <div
-                key={table.id}
-                id={`map-zone-${table.id}`}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelectTable(table);
-                }}
-                onMouseEnter={() => setHoveredTableId(table.id)}
-                onMouseLeave={() => setHoveredTableId(null)}
-                // Fades between full and dimmed when a sidebar filter flips.
-                // grayscale-0 keeps the same filter function on both ends so
-                // the grayscale eases in rather than snapping.
-                className={`absolute rounded-lg cursor-pointer transition-[opacity,filter] duration-300 ease-out ${
-                  !isHighlighted ? 'opacity-20 grayscale pointer-events-none' : 'opacity-100 grayscale-0'
-                } ${isSelected ? 'ring-2 ring-indigo-400 z-30' : ''} ${isHovered ? 'z-50' : ''}`}
-                style={{
-                  left: `${table.x}%`,
-                  top: `${table.y}%`,
-                  width: `${table.width}%`,
-                  height: `${table.height}%`,
-                }}
-              >
-                {/* Translucent zone fill - color communicates status, floor plan shows through */}
+            {/* Info panels - read-only widgets in the plan's free space. Styled as dark
+                cards (no status fill) so they never read as a table or room. */}
+            {panelsVisible && floorPanels.map((panel) => {
+              // On-screen size decides how many columns fit (see InfoPanelView).
+              const panelPx = {
+                widthPx: (panel.width / 100) * canvasPx.width,
+                heightPx: (panel.height / 100) * canvasPx.height,
+              };
+              return (
                 <div
-                  className={`absolute inset-0 rounded-lg border-2 transition-colors ${colors.borderClass}`}
+                  key={panel.id}
+                  id={`map-panel-${panel.id}`}
+                  className="absolute rounded-xl shadow-xl border border-white/10"
                   style={{
-                    backgroundColor: colors.fillRgba,
-                    boxShadow: isHovered || isSelected ? `0 0 16px ${colors.glowRgba}` : undefined,
-                  }}
-                />
-
-                {/* Info panel - one dark panel pinned to the top-left, inset from the zone's border.
-                    Lines, size and wording follow the zone's on-screen size (see getZoneLabelLayout). */}
-                <div
-                  className="absolute flex flex-col items-start rounded-md pointer-events-none"
-                  style={{
-                    top: label.insetPx,
-                    left: label.insetPx,
-                    padding: `${PANEL_PAD_Y}px ${PANEL_PAD_X}px`,
-                    fontSize: label.fontPx,
-                    lineHeight: `${label.lineHeightPx}px`,
-                    color: 'rgba(255, 255, 255, 0.95)',
-                    backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                    left: `${panel.x}%`,
+                    top: `${panel.y}%`,
+                    width: `${panel.width}%`,
+                    height: `${panel.height}%`,
+                    backgroundColor: 'rgba(15, 17, 32, 0.9)',
                   }}
                 >
-                  <span
-                    className="flex items-center gap-1 font-bold tracking-tight whitespace-nowrap"
-                    style={{ maxWidth: label.nameMaxWidthPx }}
+                  {/* Scrolls only as a fallback when a panel is too short for its widgets' minimum sizes */}
+                  <div className="absolute inset-0 overflow-y-auto overscroll-contain [scrollbar-width:thin]">
+                    <InfoPanelView
+                      panel={panel}
+                      allTables={tables}
+                      nowMs={nowMs}
+                      widthPx={panelPx.widthPx}
+                      heightPx={panelPx.heightPx}
+                      interactive={!isEditMode}
+                      onSelectTable={onSelectTable}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Interactive Table / Room Zones */}
+            {floorTables.map((table) => {
+              const isSelected = selectedTableId === table.id;
+              const activeOrder = table.activeOrder;
+              const isHovered = !isEditMode && hoveredTableId === table.id;
+              const isHighlighted = isTableHighlighted(table);
+
+              const colors = getStatusColors(table.status);
+
+              const timing = getRoomTiming(activeOrder, nowMs);
+              const itemCount = activeOrder?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
+              const label = getZoneLabelLayout(
+                (table.width / 100) * canvasPx.width,
+                (table.height / 100) * canvasPx.height,
+                timing,
+                activeOrder != null,
+                activeOrder?.items.length ?? 0
+              );
+              const orderItems = activeOrder?.items ?? [];
+
+              // Keep the hover preview card from clipping at the workspace's
+              // edges, from where the zone lands on screen (at 1x; the frame's
+              // margins can sit off-screen).
+              const zoneCenterPx = canvasLeft + ((table.x + table.width / 2) / 100) * canvasPx.width;
+              const nearTopEdge = canvasTop + (table.y / 100) * canvasPx.height < HOVER_CARD_TOP_ROOM_PX;
+              const nearLeftEdge = zoneCenterPx < HOVER_CARD_SIDE_ROOM_PX;
+              const nearRightEdge = workspacePx.width - zoneCenterPx < HOVER_CARD_SIDE_ROOM_PX;
+
+              return (
+                <div
+                  key={table.id}
+                  id={`map-zone-${table.id}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onSelectTable(table);
+                  }}
+                  onMouseEnter={() => setHoveredTableId(table.id)}
+                  onMouseLeave={() => setHoveredTableId(null)}
+                  // Fades between full and dimmed when a sidebar filter flips.
+                  // grayscale-0 keeps the same filter function on both ends so
+                  // the grayscale eases in rather than snapping.
+                  className={`absolute rounded-lg cursor-pointer transition-[opacity,filter] duration-300 ease-out ${
+                    !isHighlighted ? 'opacity-20 grayscale pointer-events-none' : 'opacity-100 grayscale-0'
+                  } ${isSelected ? 'ring-2 ring-indigo-400 z-30' : ''} ${isHovered ? 'z-50' : ''}`}
+                  style={{
+                    left: `${table.x}%`,
+                    top: `${table.y}%`,
+                    width: `${table.width}%`,
+                    height: `${table.height}%`,
+                  }}
+                >
+                  {/* Translucent zone fill - color communicates status, floor plan shows through */}
+                  <div
+                    className={`absolute inset-0 rounded-lg border-2 transition-colors ${colors.borderClass}`}
+                    style={{
+                      backgroundColor: colors.fillRgba,
+                      boxShadow: isHovered || isSelected ? `0 0 16px ${colors.glowRgba}` : undefined,
+                    }}
+                  />
+
+                  {/* Info panel - one dark panel pinned to the top-left, inset from the zone's border.
+                      Lines, size and wording follow the zone's on-screen size (see getZoneLabelLayout). */}
+                  <div
+                    className="absolute flex flex-col items-start rounded-md pointer-events-none"
+                    style={{
+                      top: label.insetPx,
+                      left: label.insetPx,
+                      padding: `${PANEL_PAD_Y}px ${PANEL_PAD_X}px`,
+                      fontSize: label.fontPx,
+                      lineHeight: `${label.lineHeightPx}px`,
+                      color: 'rgba(255, 255, 255, 0.95)',
+                      backgroundColor: 'rgba(0, 0, 0, 0.65)',
+                    }}
                   >
-                    <span className="truncate">{table.name}</span>
-                  </span>
-                  {label.timerLines.map((line) => (
                     <span
-                      key={line}
-                      className={`font-bold tabular-nums whitespace-nowrap ${timing ? TIMER_TEXT_CLASS[getTimerTone(timing)] : ''}`}
+                      className="flex items-center gap-1 font-bold tracking-tight whitespace-nowrap"
+                      style={{ maxWidth: label.nameMaxWidthPx }}
                     >
-                      {line}
+                      <span className="truncate">{table.name}</span>
                     </span>
-                  ))}
-                  {label.showItemCount && (
-                    <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
-                      {itemCount} {itemCount === 1 ? 'item' : 'items'}
-                    </span>
-                  )}
-                  {orderItems.slice(0, label.itemLinesShown).map((item) => (
-                    <span key={item.id} className="truncate" style={{ maxWidth: label.nameMaxWidthPx }}>
-                      <span className="tabular-nums text-slate-300">{item.quantity}×</span> {item.name}
-                    </span>
-                  ))}
-                  {label.itemLinesShown > 0 && orderItems.length > label.itemLinesShown && (
-                    <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
-                      +{orderItems.length - label.itemLinesShown} more
-                    </span>
-                  )}
-                  {activeOrder && label.showTotal && (
-                    <span className="truncate font-bold tabular-nums" style={{ maxWidth: label.nameMaxWidthPx }}>
-                      {formatPeso(activeOrder.grandTotal)}
-                    </span>
+                    {label.timerLines.map((line) => (
+                      <span
+                        key={line}
+                        className={`font-bold tabular-nums whitespace-nowrap ${timing ? TIMER_TEXT_CLASS[getTimerTone(timing)] : ''}`}
+                      >
+                        {line}
+                      </span>
+                    ))}
+                    {label.showItemCount && (
+                      <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
+                        {itemCount} {itemCount === 1 ? 'item' : 'items'}
+                      </span>
+                    )}
+                    {orderItems.slice(0, label.itemLinesShown).map((item) => (
+                      <span key={item.id} className="truncate" style={{ maxWidth: label.nameMaxWidthPx }}>
+                        <span className="tabular-nums text-slate-300">{item.quantity}×</span> {item.name}
+                      </span>
+                    ))}
+                    {label.itemLinesShown > 0 && orderItems.length > label.itemLinesShown && (
+                      <span className="truncate text-slate-400" style={{ maxWidth: label.nameMaxWidthPx }}>
+                        +{orderItems.length - label.itemLinesShown} more
+                      </span>
+                    )}
+                    {activeOrder && label.showTotal && (
+                      <span className="truncate font-bold tabular-nums" style={{ maxWidth: label.nameMaxWidthPx }}>
+                        {formatPeso(activeOrder.grandTotal)}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Quick preview hover card - never resizes the zone itself */}
+                  {isHovered && !isSelected && (
+                    <div
+                      className={`absolute w-56 p-3 rounded-2xl bg-[#16182c]/95 backdrop-blur-xl border border-white/20 shadow-2xl z-40 pointer-events-none text-left animate-in fade-in zoom-in-95 duration-150 ${
+                        nearTopEdge ? 'top-full mt-3' : 'bottom-full mb-3'
+                      } ${
+                        nearLeftEdge ? 'left-0' : nearRightEdge ? 'right-0' : 'left-1/2 -translate-x-1/2'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-bold text-white text-xs">{table.name}</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full uppercase font-mono font-bold bg-white/10 text-slate-300">
+                          Cap: {table.capacity}
+                        </span>
+                      </div>
+
+                      {timing && (
+                        <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px]">
+                          <div className="text-white">
+                            {formatHours(timing.hours)} booked · {formatClockTime(timing.startMs)} – {formatClockTime(timing.endMs)}
+                          </div>
+                          <div className={`font-mono font-bold tabular-nums ${TIMER_TEXT_CLASS[getTimerTone(timing)]}`}>
+                            {timing.expired
+                              ? `Expired · ${formatDuration(timing.remainingMs)} over`
+                              : `${formatDuration(timing.remainingMs)} left`}
+                          </div>
+                        </div>
+                      )}
+
+                      {orderItems.length > 0 && (
+                        <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px] text-slate-200 space-y-0.5">
+                          {orderItems.slice(0, MAX_LISTED_ORDER_ITEMS).map((item) => (
+                            <div key={item.id} className="flex items-center gap-1.5">
+                              <span className="shrink-0 tabular-nums text-slate-400">{item.quantity}×</span>
+                              <span className="truncate">{item.name}</span>
+                            </div>
+                          ))}
+                          {orderItems.length > MAX_LISTED_ORDER_ITEMS && (
+                            <div className="text-slate-400">+{orderItems.length - MAX_LISTED_ORDER_ITEMS} more</div>
+                          )}
+                        </div>
+                      )}
+
+                      {activeOrder && (
+                        <div className="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between text-[11px]">
+                          <span className="text-slate-400">Total</span>
+                          <span className="font-bold text-white tabular-nums">{formatPeso(activeOrder.grandTotal)}</span>
+                        </div>
+                      )}
+
+                      {!activeOrder && (
+                        <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px] text-slate-400">
+                          No order yet for this {(table.adminRoomCharge ?? 0) > 0 ? 'room' : 'table'}.
+                        </div>
+                      )}
+
+                      <div className="mt-2 text-[10px] text-indigo-400 flex items-center gap-1 font-semibold">
+                        {activeOrder ? 'Click to view details & update' : 'Click to create a new order'}
+                        <ChevronRight className="w-3 h-3" />
+                      </div>
+                    </div>
                   )}
                 </div>
+              );
+            })}
 
-                {/* Quick preview hover card - never resizes the zone itself */}
-                {isHovered && !isSelected && (
-                  <div
-                    className={`absolute w-56 p-3 rounded-2xl bg-[#16182c]/95 backdrop-blur-xl border border-white/20 shadow-2xl z-40 pointer-events-none text-left animate-in fade-in zoom-in-95 duration-150 ${
-                      nearTopEdge ? 'top-full mt-3' : 'bottom-full mb-3'
-                    } ${
-                      nearLeftEdge ? 'left-0' : nearRightEdge ? 'right-0' : 'left-1/2 -translate-x-1/2'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="font-bold text-white text-xs">{table.name}</span>
-                      <span className="text-[10px] px-2 py-0.5 rounded-full uppercase font-mono font-bold bg-white/10 text-slate-300">
-                        Cap: {table.capacity}
-                      </span>
-                    </div>
-
-                    {timing && (
-                      <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px]">
-                        <div className="text-white">
-                          {formatHours(timing.hours)} booked · {formatClockTime(timing.startMs)} – {formatClockTime(timing.endMs)}
-                        </div>
-                        <div className={`font-mono font-bold tabular-nums ${TIMER_TEXT_CLASS[getTimerTone(timing)]}`}>
-                          {timing.expired
-                            ? `Expired · ${formatDuration(timing.remainingMs)} over`
-                            : `${formatDuration(timing.remainingMs)} left`}
-                        </div>
-                      </div>
-                    )}
-
-                    {orderItems.length > 0 && (
-                      <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px] text-slate-200 space-y-0.5">
-                        {orderItems.slice(0, MAX_LISTED_ORDER_ITEMS).map((item) => (
-                          <div key={item.id} className="flex items-center gap-1.5">
-                            <span className="shrink-0 tabular-nums text-slate-400">{item.quantity}×</span>
-                            <span className="truncate">{item.name}</span>
-                          </div>
-                        ))}
-                        {orderItems.length > MAX_LISTED_ORDER_ITEMS && (
-                          <div className="text-slate-400">+{orderItems.length - MAX_LISTED_ORDER_ITEMS} more</div>
-                        )}
-                      </div>
-                    )}
-
-                    {activeOrder && (
-                      <div className="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between text-[11px]">
-                        <span className="text-slate-400">Total</span>
-                        <span className="font-bold text-white tabular-nums">{formatPeso(activeOrder.grandTotal)}</span>
-                      </div>
-                    )}
-
-                    {!activeOrder && (
-                      <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px] text-slate-400">
-                        No order yet for this {(table.adminRoomCharge ?? 0) > 0 ? 'room' : 'table'}.
-                      </div>
-                    )}
-
-                    <div className="mt-2 text-[10px] text-indigo-400 flex items-center gap-1 font-semibold">
-                      {activeOrder ? 'Click to view details & update' : 'Click to create a new order'}
-                      <ChevronRight className="w-3 h-3" />
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
-          {/* Layout editor overlay (dormant; see src/config/layoutEditor.ts) */}
-          {editor}
+            {/* Layout editor overlay (dormant; see src/config/layoutEditor.ts) */}
+            {editor}
+          </div>
         </div>
       </div>
 

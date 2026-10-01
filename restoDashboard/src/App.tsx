@@ -27,6 +27,7 @@ const LayoutEditor = LAYOUT_EDITOR_ENABLED ? lazy(() => import('./layoutEditor/L
 // written while the editor is enabled.
 const STORAGE_KEY_LAYOUT_DRAFT = 'restaurant_dashboard_layout_draft';
 const STORAGE_KEY_SHOW_INFO_PANELS = 'restaurant_dashboard_show_info_panels';
+const STORAGE_KEY_SIDEBAR_COLLAPSED = 'restaurant_dashboard_sidebar_collapsed';
 
 // Per-device copies of the zone layout, info panels and widget choices from
 // before the layout was fixed in src/data/floorLayout.json. Nothing reads
@@ -124,6 +125,23 @@ export default function App() {
       // Private mode / blocked storage: the toggle still works for this session.
     }
   }, [showInfoPanels]);
+
+  // Whether this device keeps the sidebar collapsed to its icon rail, giving
+  // the floor plan more room (a per-device view choice, like the info panels).
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(STORAGE_KEY_SIDEBAR_COLLAPSED) === 'true';
+    } catch {
+      return false;
+    }
+  });
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY_SIDEBAR_COLLAPSED, String(sidebarCollapsed));
+    } catch {
+      // Private mode / blocked storage: the toggle still works for this session.
+    }
+  }, [sidebarCollapsed]);
 
   // Latest tables for the mount-once SSE subscriber below, whose closure
   // would otherwise only ever see the initial state.
@@ -318,6 +336,8 @@ export default function App() {
     <div className="flex h-screen w-screen overflow-hidden bg-[#0b0c16] text-slate-100 font-sans">
       {/* Left Navigation Sidebar matching Sample_UI.png with user's 2 quick control filters */}
       <Sidebar
+        collapsed={sidebarCollapsed}
+        onToggleCollapsed={() => setSidebarCollapsed((prev) => !prev)}
         currentFloor={currentFloor}
         activeNav={activeNav}
         onSelectNav={(nav) => setActiveNav(nav)}

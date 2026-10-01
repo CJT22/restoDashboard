@@ -1,8 +1,9 @@
 # Zoom controls (dormant)
 
 The floor plan used to have **zoom in**, **zoom out** and **reset zoom** buttons in its top-right
-bar. They were turned off on request: the default view (the floor plan filling the workspace as
-the largest 16:9 box that fits) is the fixed view for every screen. The top-right bar now holds only
+bar. They were turned off on request: the default view (the floor plan sized so the building
+itself fills the workspace, with the image's empty margins clipped) is the fixed view for every
+screen. The top-right bar now holds only
 **Info Panels** and **Fullscreen**.
 
 The zoom code is still in the repo, in
