@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TableRoom, AdminOrderSummary } from '../types';
-import { confirmOrder, cancelOrder } from '../services/orderSync';
+import { confirmOrder, cancelOrder, formatOrderType, formatItemCount } from '../services/orderSync';
 import { SettlePaymentModal } from './SettlePaymentModal';
 import {
   UtensilsCrossed,
@@ -163,7 +163,7 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
                         <span className="text-[10px] text-slate-400">Floor {table.floor}</span>
                       </div>
                       <div className="text-xs text-slate-300 mt-1">
-                        Order #{order.orderNo} • {order.items.length} item(s)
+                        {formatOrderType(order.orderType)} • {formatItemCount(order.items.length)}
                       </div>
                     </div>
                   </div>
@@ -238,7 +238,7 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
       {settlingTable && settlingTable.activeOrder && (
         <SettlePaymentModal
           orderId={settlingTable.activeOrder.id}
-          orderNo={settlingTable.activeOrder.orderNo}
+          table={settlingTable}
           onClose={() => setSettlingTable(null)}
           onSettled={() => onOrderChanged(settlingTable.id, undefined)}
         />

@@ -80,12 +80,24 @@ export function getOrderStatusLabel(status: number): string {
 // widget), so an order reads the same in both.
 export const MAX_LISTED_ORDER_ITEMS = 5;
 
-// Compact order number for tight spots on the map: restoAdmin's generated
-// numbers look like "ORD-20260924-144956", whose last segment is enough to
-// tell today's orders apart. Anything without dashes is kept as-is.
-export function shortOrderNo(orderNo: string): string {
-  const parts = orderNo.split('-').filter(Boolean);
-  return parts.length > 1 ? parts[parts.length - 1] : orderNo;
+// restoAdmin's ORDER_TYPE enum values, as staff read them. Orders still carry
+// an order number behind the scenes, but the dashboard never displays it —
+// the table name, order type and item count identify an order instead.
+export const ORDER_TYPES: { value: string; label: string }[] = [
+  { value: 'DINE_IN', label: 'Dine In' },
+  { value: 'TAKE_OUT', label: 'Take Out' },
+  { value: 'DELIVERY', label: 'Delivery' },
+];
+
+// Falls back to Dine In for an order whose type isn't known yet (socket
+// events don't carry it), same default the order detail view always used.
+export function formatOrderType(orderType: string | null | undefined): string {
+  const value = orderType || 'DINE_IN';
+  return ORDER_TYPES.find((t) => t.value === value)?.label ?? value;
+}
+
+export function formatItemCount(count: number): string {
+  return `${count} item${count === 1 ? '' : 's'}`;
 }
 
 export function getOrderStatusColorClass(status: number): string {
@@ -165,14 +177,14 @@ export async function getActiveOrders(): Promise<ActiveOrderEntry[]> {
 export async function createOrder(
   adminTableId: number,
   orderType: string,
-  orderNo: string,
   items: NewOrderItemInput[],
   roomChargeQty?: number
 ): Promise<CreateOrderResult> {
+  // No order number: the backend generates it (server/adminClient.ts).
   const res = await fetch('/api/admin/orders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tableId: adminTableId, orderType, orderNo, items, roomChargeQty }),
+    body: JSON.stringify({ tableId: adminTableId, orderType, items, roomChargeQty }),
   });
   return res.json();
 }

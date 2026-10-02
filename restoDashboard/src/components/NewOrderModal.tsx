@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { TableRoom, AdminOrderSummary } from '../types';
-import { getMenu, createOrder, addItemsToOrder, getActiveOrderForTable, AdminMenuItem } from '../services/orderSync';
+import { getMenu, createOrder, addItemsToOrder, getActiveOrderForTable, AdminMenuItem, ORDER_TYPES } from '../services/orderSync';
 import { getAdminTables } from '../services/adminSync';
 import { X, Plus, AlertTriangle, ClipboardList, ChevronDown } from 'lucide-react';
 import { QtyStepper } from './QtyStepper';
@@ -17,27 +17,12 @@ interface NewOrderModalProps {
 
 type LineItem = { menuId: number; name: string; unitPrice: number; qty: number };
 
-const ORDER_TYPES: { value: string; label: string }[] = [
-  { value: 'DINE_IN', label: 'Dine In' },
-  { value: 'TAKE_OUT', label: 'Take Out' },
-  { value: 'DELIVERY', label: 'Delivery' },
-];
-
-function generateOrderNo(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const date = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`;
-  const time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-  return `ORD-${date}-${time}`;
-}
-
 export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, onOrderChanged }) => {
   const [menu, setMenu] = useState<AdminMenuItem[]>([]);
   const [loadingMenu, setLoadingMenu] = useState(true);
   const [menuError, setMenuError] = useState<string | null>(null);
 
   const [orderType, setOrderType] = useState('DINE_IN');
-  const [orderNo, setOrderNo] = useState(generateOrderNo);
   const [selectedMenuId, setSelectedMenuId] = useState('');
   const [qty, setQty] = useState(1);
   const [items, setItems] = useState<LineItem[]>([]);
@@ -52,7 +37,7 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [insufficient, setInsufficient] = useState<any[] | null>(null);
-  const [conflict, setConflict] = useState<{ orderId: number; orderNo: string } | null>(null);
+  const [conflict, setConflict] = useState<{ orderId: number } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -126,7 +111,7 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
   };
 
   const handleSubmit = async () => {
-    if (!orderNo.trim() || (items.length === 0 && !hasRoomCharge)) return;
+    if (items.length === 0 && !hasRoomCharge) return;
     resetAlerts();
     setSubmitting(true);
     try {
@@ -134,7 +119,6 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
       const result = await createOrder(
         table.adminTableId as number,
         orderType,
-        orderNo.trim(),
         payloadItems,
         hasRoomCharge ? roomChargeQty : undefined
       );
@@ -147,7 +131,7 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
         return;
       }
       if (result.kind === 'conflict') {
-        setConflict({ orderId: result.existingOrderId ?? 0, orderNo: result.existingOrderNo ?? '' });
+        setConflict({ orderId: result.existingOrderId ?? 0 });
         setError(result.message ?? null);
       } else if (result.kind === 'insufficient') {
         setInsufficient(result.insufficient ?? []);
@@ -215,35 +199,27 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
         </div>
 
         <div className="flex-1 overflow-y-auto p-5 space-y-4 custom-scrollbar">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">Order No</label>
-              <input
-                type="text"
-                value={orderNo}
-                onChange={(e) => setOrderNo(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white font-mono focus:outline-none focus:border-indigo-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">Order Type</label>
-              {/* appearance-none + the custom ChevronDown replace the native
-                  select arrow, which browsers render flush against the edge
-                  regardless of padding (see src/layoutEditor/EditTableModal.tsx). */}
-              <div className="relative">
-                <select
-                  value={orderType}
-                  onChange={(e) => setOrderType(e.target.value)}
-                  className="w-full appearance-none px-3 py-2 pr-9 rounded-xl bg-white/5 border border-white/10 text-sm text-white focus:outline-none focus:border-indigo-500"
-                >
-                  {ORDER_TYPES.map((t) => (
-                    <option key={t.value} value={t.value} className="bg-[#1a1c30]">
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-                <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-              </div>
+          {/* No Order No field: restoAdmin still gets a unique order number,
+              but the backend generates it (server/adminClient.ts) and the
+              dashboard never shows it. */}
+          <div>
+            <label className="text-xs font-semibold text-slate-300 block mb-1">Order Type</label>
+            {/* appearance-none + the custom ChevronDown replace the native
+                select arrow, which browsers render flush against the edge
+                regardless of padding (see src/layoutEditor/EditTableModal.tsx). */}
+            <div className="relative">
+              <select
+                value={orderType}
+                onChange={(e) => setOrderType(e.target.value)}
+                className="w-full appearance-none px-3 py-2 pr-9 rounded-xl bg-white/5 border border-white/10 text-sm text-white focus:outline-none focus:border-indigo-500"
+              >
+                {ORDER_TYPES.map((t) => (
+                  <option key={t.value} value={t.value} className="bg-[#1a1c30]">
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
 
@@ -360,15 +336,14 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
           {conflict && (
             <div className="p-3 rounded-2xl bg-amber-950/30 border border-amber-500/30 text-xs text-amber-200 space-y-2">
               <div>
-                This table already has an active order (#{conflict.orderNo}). Add these items to that order
-                instead?
+                This table already has an active order. Add these items to it instead?
               </div>
               <button
                 onClick={handleAddToExisting}
                 disabled={submitting || items.length === 0}
                 className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-xs font-semibold"
               >
-                Add Items to Order #{conflict.orderNo}
+                Add Items to Existing Order
               </button>
             </div>
           )}
@@ -381,7 +356,7 @@ export const NewOrderModal: React.FC<NewOrderModalProps> = ({ table, onClose, on
           {!conflict && (
             <button
               onClick={handleSubmit}
-              disabled={submitting || !orderNo.trim() || (items.length === 0 && !hasRoomCharge)}
+              disabled={submitting || (items.length === 0 && !hasRoomCharge)}
               className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-xs font-bold shadow-lg shadow-indigo-600/20"
             >
               {submitting ? 'Creating…' : 'Create Order'}

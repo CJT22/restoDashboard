@@ -341,10 +341,25 @@ export async function getOrderById(orderId: number): Promise<AdminOrder | null> 
   return mapAdminOrder(orderJson.data, itemRows.map(mapAdminOrderItem));
 }
 
+// restoAdmin requires a unique ORDER_NO per branch, but the dashboard never
+// shows it to staff — so it's generated here rather than in the browser, in
+// the same ORD-YYYYMMDD-HHMMSS format restoAdmin's own order flows use (see
+// formatOrderNoWithDate in restoAdmin/server/services/orderReceiptHelpers.js).
+function formatOrderNo(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const ymd = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
+  const hms = `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+  return `ORD-${ymd}-${hms}`;
+}
+
+// How many later seconds to try when the generated number is already taken
+// (two orders created in the same second). Staff can't edit the number, so a
+// collision has to be resolved here instead of surfacing as an error.
+const ORDER_NO_ATTEMPTS = 5;
+
 export async function createOrder(params: {
   tableId: number;
   orderType: string;
-  orderNo: string;
   items: CreateOrderItemInput[];
   // Hours the room is booked for (1 = the base hour restoAdmin always adds
   // automatically for a table with a ROOM_CHARGE — see resolveServiceChargeWithRoomCharge).
@@ -374,23 +389,36 @@ export async function createOrder(params: {
   // req.session/req.user, then req.query.branch_id as a last resort. Our
   // service account's JWT doesn't carry a branch_id claim, so — same as
   // every GET here — the query param is what actually gets it through.
-  const res = await authedFetch(`/orders?branch_id=${ADMIN_BRANCH_ID}`, {
-    method: 'POST',
-    body: JSON.stringify({
-      ORDER_NO: params.orderNo,
-      BRANCH_ID: ADMIN_BRANCH_ID,
-      TABLE_ID: params.tableId,
-      ORDER_TYPE: params.orderType,
-      STATUS: 3,
-      SUBTOTAL: subtotal,
-      TAX_AMOUNT: 0,
-      SERVICE_CHARGE: serviceCharge,
-      DISCOUNT_AMOUNT: 0,
-      GRAND_TOTAL: subtotal + serviceCharge,
-      ORDER_ITEMS: orderItems,
-    }),
-  });
-  const json: any = await res.json().catch(() => ({}));
+  const postOrder = (orderNo: string) =>
+    authedFetch(`/orders?branch_id=${ADMIN_BRANCH_ID}`, {
+      method: 'POST',
+      body: JSON.stringify({
+        ORDER_NO: orderNo,
+        BRANCH_ID: ADMIN_BRANCH_ID,
+        TABLE_ID: params.tableId,
+        ORDER_TYPE: params.orderType,
+        STATUS: 3,
+        SUBTOTAL: subtotal,
+        TAX_AMOUNT: 0,
+        SERVICE_CHARGE: serviceCharge,
+        DISCOUNT_AMOUNT: 0,
+        GRAND_TOTAL: subtotal + serviceCharge,
+        ORDER_ITEMS: orderItems,
+      }),
+    });
+
+  // restoAdmin checks for a duplicate ORDER_NO before anything else and
+  // answers 400 "Order #… already exists", so on that exact response step
+  // the timestamp forward a second and try again.
+  const base = new Date();
+  let res!: Response;
+  let json: any;
+  for (let attempt = 0; attempt < ORDER_NO_ATTEMPTS; attempt++) {
+    res = await postOrder(formatOrderNo(new Date(base.getTime() + attempt * 1000)));
+    json = await res.json().catch(() => ({}));
+    const duplicate = res.status === 400 && /already exists/i.test(String(json?.error ?? ''));
+    if (!duplicate) break;
+  }
 
   if (res.ok && json?.success !== false) {
     const id = Number(json.data.id);
@@ -413,11 +441,16 @@ export async function createOrder(params: {
       kind: 'conflict',
       existingOrderId: Number(json.existing_order_id),
       existingOrderNo: String(json.existing_order_no),
-      message: json.error || 'This table already has an active order.',
+      // Not restoAdmin's own wording — that embeds the order number, which
+      // the dashboard keeps out of sight.
+      message: 'This table already has an active order.',
     };
   }
   if (Array.isArray(json?.insufficient) && json.insufficient.length) {
     return { ok: false, kind: 'insufficient', insufficient: json.insufficient, message: json.error || 'Insufficient inventory' };
+  }
+  if (res.status === 400 && /already exists/i.test(String(json?.error ?? ''))) {
+    return { ok: false, kind: 'error', message: 'Could not create the order right now. Please try again in a moment.' };
   }
   return { ok: false, kind: 'error', message: json?.error || json?.message || `Failed to create order (${res.status})` };
 }

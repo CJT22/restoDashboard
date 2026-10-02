@@ -10,6 +10,8 @@ import {
   confirmOrder,
   cancelOrder,
   updateOrderRoomCharge,
+  formatOrderType,
+  formatItemCount,
 } from '../services/orderSync';
 import { getAdminTables } from '../services/adminSync';
 import { getStatusColors } from '../utils/statusColors';
@@ -363,7 +365,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
               </div>
               {activeOrder && (
                 <div className="text-xs text-slate-400">
-                  #{activeOrder.orderNo} • {activeOrder.orderType ?? 'DINE_IN'} • {orderItems.length} item(s)
+                  {formatOrderType(activeOrder.orderType)} • {formatItemCount(orderItems.length)}
                 </div>
               )}
             </div>
@@ -573,7 +575,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
       {showSettleModal && activeOrder && (
         <SettlePaymentModal
           orderId={activeOrder.id}
-          orderNo={activeOrder.orderNo}
+          table={table}
           onClose={() => setShowSettleModal(false)}
           onSettled={() => onOrderChanged(tableId, undefined)}
         />

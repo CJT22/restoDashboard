@@ -2,7 +2,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Timer, ClipboardList, Banknote, Gauge, ChevronRight } from 'lucide-react';
 import { FloorScope, InfoPanel, InfoPanelLayout, InfoWidgetType, TableRoom } from '../types';
 import { INFO_WIDGET_META } from '../data/infoPanels';
-import { MAX_LISTED_ORDER_ITEMS, shortOrderNo } from '../services/orderSync';
+import { MAX_LISTED_ORDER_ITEMS } from '../services/orderSync';
 import { getSales, SALES_PERIODS, SalesPeriod, useLiveSales } from '../services/salesSync';
 import { getRoomTiming, formatDuration, formatHours, formatWait, formatClockTime, getTimerTone, TIMER_TEXT_CLASS } from '../utils/roomTimer';
 
@@ -351,7 +351,6 @@ const ActiveOrdersWidget: React.FC<WidgetProps> = ({ panel, allTables, nowMs, co
                     <div className="flex items-center gap-1 px-1" style={{ height: rowPx }}>
                       <button onClick={() => onSelectTable(table)} className={`flex-1 ${rowButtonClass(interactive)}`}>
                         <span className="truncate font-semibold text-white">{table.name}</span>
-                        <span className="truncate text-slate-500">#{shortOrderNo(order.orderNo)}</span>
                         <span className="ml-auto shrink-0 tabular-nums text-slate-300">
                           {Number.isFinite(startMs) ? formatWait(nowMs - startMs) : ''}
                         </span>

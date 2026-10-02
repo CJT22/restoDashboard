@@ -1,17 +1,19 @@
 import React, { useEffect, useState } from 'react';
+import { TableRoom } from '../types';
 import { getBilling, settleOrder } from '../services/orderSync';
 import { X, Wallet } from 'lucide-react';
 
 interface SettlePaymentModalProps {
   orderId: number;
-  orderNo: string;
+  // Identifies the order in the header — the order number itself is never shown.
+  table: TableRoom;
   onClose: () => void;
   onSettled: () => void;
 }
 
 const PAYMENT_METHODS = ['CASH', 'CARD', 'GCASH', 'BANK'];
 
-export const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({ orderId, orderNo, onClose, onSettled }) => {
+export const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({ orderId, table, onClose, onSettled }) => {
   const [loading, setLoading] = useState(true);
   const [remaining, setRemaining] = useState(0);
   const [paymentMethod, setPaymentMethod] = useState('CASH');
@@ -79,7 +81,9 @@ export const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({ orderId,
             </div>
             <div>
               <h3 className="font-bold text-white text-base">Settle Order</h3>
-              <p className="text-xs text-slate-400">Order #{orderNo}</p>
+              <p className="text-xs text-slate-400">
+                {table.name} • {table.adminTableName || `Table #${table.adminTableId}`}
+              </p>
             </div>
           </div>
           <button
