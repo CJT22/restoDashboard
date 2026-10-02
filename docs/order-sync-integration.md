@@ -47,7 +47,7 @@ restoDashboard React (:3500)         restoDashboard server/ (:3510)         rest
                                                   └─────────────────────────────────────┘
 ```
 
-Endpoints reused, all pre-existing and unchanged:
+restoAdmin endpoints used, all pre-existing and unchanged:
 
 - `POST /orders` — creates an order, validates inventory, rejects duplicate order numbers, and
   returns **409 `ACTIVE_ORDER_EXISTS`** if the table already has a Pending/Confirmed order, with the
@@ -64,9 +64,11 @@ Endpoints reused, all pre-existing and unchanged:
 - All of the above already emit `order_created`/`order_updated` (and, via `TableModel.updateStatus`,
   `table_updated`) on the same Socket.IO server/rooms the table sync already uses.
 
-**No restoAdmin schema changes were made for any order/billing endpoint.** The one restoAdmin change
-in this whole feature is unrelated to orders: collapsing `restaurant_tables.STATUS` from 4 values to 2
-(see below).
+**This works against restoAdmin exactly as it ships — no restoAdmin changes at all.** (An earlier
+version, from when both apps lived in one repo, patched restoAdmin to add room-timer fields to its
+order events and to collapse table statuses to two. Those patches were dropped when restoAdmin moved
+back to its own upstream repo; the dashboard now covers both on its own side — see "Room-timer
+fields" and "Table status enum" below.)
 
 ### The shared SSE connection
 
@@ -107,19 +109,30 @@ An unlinked zone (no `adminTableId` yet — only possible while re-laying out th
 it has no real table to reflect. The moment a zone is linked, that picker disappears and the zone
 immediately adopts whatever status restoAdmin currently shows for the table it was linked to.
 
-### Table status enum: Available/Occupied only
+### Table status enum: all four, Reserved/Not Available display-only
 
-`restaurant_tables.STATUS` (restoAdmin) and `TableRoom.status` (restoDashboard) both dropped
-Reserved(3)/Not Available(0) — Table Settings' filter, badge, and edit-form dropdown now only offer
-Available/Occupied (`restoAdmin/src/components/users/Tables.tsx`), and any table still at 0/3 from
-before this change was migrated to Available via an idempotent boot-time step
-(`ensureTwoStateTableStatus` in `restoAdmin/server/utils/ensureSchema.js`). This was confirmed narrow
-before doing it: no reservations feature exists anywhere in restoAdmin, and the order-creation table
-picker already only ever showed `STATUS === 1` tables.
+restoAdmin's `restaurant_tables.STATUS` has four values — 0=Not Available, 1=Available, 2=Occupied,
+3=Reserved — and `TableRoom.status` mirrors all four (`unavailable`/`available`/`occupied`/
+`reserved`). Available/Occupied follow the order lifecycle above. Reserved and Not Available can
+only be set from restoAdmin's Table Settings; the dashboard just shows them (map color, legend,
+status badge) and offers no way to set them. They don't change what the dashboard lets staff do
+with a table.
+
+### Room-timer fields
+
+The room countdown needs an order's `SERVICE_CHARGE` (booked hours = service charge ÷ hourly rate),
+the table's `ROOM_CHARGE` and the order's `ENCODED_DT`. restoAdmin's `order_created`/`order_updated`
+events carry none of these, so `socketBridge.ts` looks up the first two per event (`GET /orders/:id`
+and the branch's table list) before forwarding it, one event at a time so they stay in order.
+`ENCODED_DT` never changes after creation; the browser keeps the value it has, and for an order it
+hasn't seen yet it refetches it once via `GET /api/admin/orders/by-table/:id`, which reads
+restoAdmin's `GET /orders/data` rows (they include `ENCODED_DT` and `ROOM_CHARGE`; `GET /orders/:id`
+doesn't). If restoAdmin ever adds these fields to its events, `socketBridge.ts` uses them directly
+and skips the lookups.
 
 ## Data model
 
-`TableRoom.activeOrder?: AdminOrderSummary` ([types.ts](../restoDashboard/src/types.ts)) is the real,
+`TableRoom.activeOrder?: AdminOrderSummary` ([types.ts](../src/types.ts)) is the real,
 restoAdmin-sourced order for a linked zone:
 
 | Field | Source |
@@ -134,10 +147,6 @@ A zone has at most one `activeOrder`, matching restoAdmin's one-order-per-table 
 clears it. Manual Order and receipt-scan orders (both create the order already-Settled and set the
 table Available directly, never Occupied — see "Known limitations") are naturally excluded by this
 same rule; nothing had to be added to filter them out specifically.
-
-Saved local state shape changed (status enum narrowed, item status field dropped), so the
-`localStorage` key was bumped again (`restaurant_dashboard_tables_v2` → `_v3`) — same "old saves
-simply ignored" precedent as the original `_v1` → `_v2` bump.
 
 ## How ordering works
 
@@ -209,12 +218,11 @@ here) only requires being authenticated, not an admin permission level.
 
 | Concern | Files |
 |---|---|
-| Order/billing endpoints (restoAdmin, unchanged — reference only) | [orderController.js](../restoAdmin/server/controllers/orderController.js), [billingController.js](../restoAdmin/server/controllers/billingController.js) |
-| Table status enum trim (restoAdmin) | [Tables.tsx](../restoAdmin/src/components/users/Tables.tsx), [ensureSchema.js](../restoAdmin/server/utils/ensureSchema.js) |
-| Sync backend (restoDashboard) | [server/adminClient.ts](../restoDashboard/server/adminClient.ts), [server/socketBridge.ts](../restoDashboard/server/socketBridge.ts), [server/index.ts](../restoDashboard/server/index.ts) |
-| Frontend order sync (restoDashboard) | [src/services/orderSync.ts](../restoDashboard/src/services/orderSync.ts), [src/services/adminSync.ts](../restoDashboard/src/services/adminSync.ts) |
-| Order UI (restoDashboard) | [NewOrderModal.tsx](../restoDashboard/src/components/NewOrderModal.tsx), [SettlePaymentModal.tsx](../restoDashboard/src/components/SettlePaymentModal.tsx), [TableDetailModal.tsx](../restoDashboard/src/components/TableDetailModal.tsx), [OrderQueueView.tsx](../restoDashboard/src/components/OrderQueueView.tsx) |
-| Types | [types.ts](../restoDashboard/src/types.ts) |
+| Order/billing endpoints (restoAdmin, unchanged — reference only; in the separate restoAdmin repo) | `server/controllers/orderController.js`, `server/controllers/billingController.js` |
+| Sync backend (restoDashboard) | [server/adminClient.ts](../server/adminClient.ts), [server/socketBridge.ts](../server/socketBridge.ts), [server/index.ts](../server/index.ts) |
+| Frontend order sync (restoDashboard) | [src/services/orderSync.ts](../src/services/orderSync.ts), [src/services/adminSync.ts](../src/services/adminSync.ts) |
+| Order UI (restoDashboard) | [NewOrderModal.tsx](../src/components/NewOrderModal.tsx), [SettlePaymentModal.tsx](../src/components/SettlePaymentModal.tsx), [TableDetailModal.tsx](../src/components/TableDetailModal.tsx), [OrderQueueView.tsx](../src/components/OrderQueueView.tsx) |
+| Types | [types.ts](../src/types.ts) |
 
 See [CHANGELOG.md](../CHANGELOG.md) `[1.6.0]` for the full list of changes that built this, with the
 reasoning behind each.

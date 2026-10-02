@@ -1,33 +1,33 @@
-# The restoAdmin ↔ restoDashboard integration (Blue Moon)
+# How restoDashboard connects to restoAdmin (Blue Moon)
 
-This explains **how and why** restoDashboard's floor-plan zones can be linked to restoAdmin's Table
-Settings for the Blue Moon branch, for anyone picking this up later. For install/run steps, see the
-[root README](../README.md).
+This explains **how and why** restoDashboard's floor-plan zones are tied to restoAdmin's tables
+and orders for the Blue Moon branch, and how to point it at a different restoAdmin server. For
+install/run steps, see the [README](../README.md). For the ordering side specifically, see
+[order-sync-integration.md](order-sync-integration.md).
 
-## Why this exists
+## The two projects
 
-restoDashboard is a floor-plan status board for front-of-house staff — a visual map of
-tables/rooms with Available/Occupied/etc. status, guest info, and live order tracking. restoAdmin's
-Table Settings is the system of record for actual restaurant tables (per branch, with capacity, room
-charge, and status), and its order pipeline automatically flips a table's status as orders are
-created/settled.
+- **restoAdmin** is the restaurant back office (tables, menu, orders, billing, inventory). It's its
+  own repo, maintained upstream; locally it's cloned next to this one, at `../restoAdmin`.
+- **restoDashboard** (this repo) is the front-of-house floor-plan board. It reads restoAdmin's
+  tables and orders and sends orders to it.
 
-Before this integration, the two had no relationship: restoDashboard's data lived only in the
-browser's `localStorage`, and a status change in one app had no effect on the other. This links them
-**per zone, opt-in**, so a host/waiter working from either app sees the same status for a given
-table, without restoDashboard staff needing to touch restoAdmin (or vice versa).
+**restoDashboard works against restoAdmin exactly as it ships — it needs no restoAdmin changes.**
+All the adapting happens on this side. Keep it that way: if a feature seems to need a restoAdmin
+change, raise it with whoever maintains restoAdmin rather than patching your local clone, since
+that clone gets replaced by every upstream pull.
 
-Scope: **Blue Moon only** (`BRANCH_ID = 3`), and **only status syncs** — guest name, party size,
-notes, and dish orders stay restoDashboard-local, since restoAdmin's `restaurant_tables` has no
-equivalent fields for those.
+> History: before v2.0.0 both apps lived in one repo (`restoMerge`), and restoAdmin carried a few
+> dashboard-specific patches (a `DASHBOARD_ZONE_ID` column and link endpoint, extra fields on order
+> events, a two-state table status). Those were dropped when restoAdmin went back to its own repo;
+> see CHANGELOG `[2.0.0]`. An existing local database may still have the
+> `DASHBOARD_ZONE_ID`/`DASHBOARD_LINKED_AT` columns from back then — nothing uses them, and they're
+> harmless.
 
 ## Architecture
 
-restoDashboard was (and still is, for everything except this feature) a purely client-side app with
-no backend of its own. Rather than have the browser hold restoAdmin credentials directly — which
-would expose them to anyone with devtools open on whatever device runs the dashboard — restoDashboard
-gained a small backend of its own that holds those credentials and proxies/bridges everything the
-browser needs.
+The browser never holds restoAdmin credentials. restoDashboard has a small backend of its own that
+holds them and relays everything the browser needs:
 
 ```
 ┌─────────────────┐        ┌──────────────────────┐        ┌───────────────────────┐
@@ -35,136 +35,147 @@ browser needs.
 │   React (:3500)  │ origin │   server/ (:3510)     │  +     │   Node API (:2000)     │
 │                  │◄──────►│                       │◄──────►│   + Socket.IO          │
 │  (browser, no    │  /api  │  adminClient.ts:      │  JWT   │                        │
-│   admin creds)   │        │   holds creds, calls   │        │  restaurant_tables     │
-│                  │        │   restoAdmin's REST    │        │  (MySQL)               │
-│                  │  SSE   │  socketBridge.ts:      │ socket │                        │
-│                  │◄──────►│   joins restoAdmin's   │◄──────►│  socketService.js      │
-└─────────────────┘        │   Socket.IO rooms as a │        │  emits table_updated    │
-                            │   plain client         │        │  on every mutation      │
-                            └──────────────────────┘        └───────────────────────┘
+│   admin creds)   │        │   holds creds, calls   │        │  restaurant_tables,    │
+│                  │        │   restoAdmin's REST    │        │  orders, billing,      │
+│                  │  SSE   │  socketBridge.ts:      │ socket │  menu (MySQL)          │
+│                  │◄──────►│   joins restoAdmin's   │◄──────►│                        │
+└─────────────────┘        │   Socket.IO rooms as a │        │  socketService.js      │
+                            │   plain client         │        │  emits table_updated,  │
+                            └──────────────────────┘        │  order_created/updated │
+                                                             └───────────────────────┘
 ```
 
-- The browser only ever talks to restoDashboard's own backend (`server/`), same-origin, via a Vite
-  dev proxy in development ([vite.config.ts](../restoDashboard/vite.config.ts)).
-- `server/adminClient.ts` logs into restoAdmin via `POST /api/login` (JWT), caches/refreshes the
-  token, and exposes `getBlueMoonTables`, `setTableStatus`, `setDashboardLink`.
-- `server/socketBridge.ts` connects to restoAdmin's existing Socket.IO server as an ordinary client
-  (the same way restoAdmin's kitchen/cashier/waiter apps do), joins the Blue Moon branch's rooms, and
-  forwards `table_updated` events into this backend's own Server-Sent Events stream
-  (`GET /api/admin/stream`) for the browser.
-- restoAdmin's own Table Settings page (`Tables.tsx`) *also* opened its own Socket.IO client
-  connection so it updates live too — this was a separate, smaller follow-up fix, not part of the
-  original credential-proxying design above, but it uses the same `table_updated` event.
-- There is **no separate database** for the link itself — restoAdmin's `restaurant_tables` table is
-  the single source of truth (see below), so restoDashboard's backend stays stateless.
+- The browser only talks to restoDashboard's own backend (`server/`), same-origin, via the Vite dev
+  proxy ([vite.config.ts](../vite.config.ts)).
+- [`server/adminClient.ts`](../server/adminClient.ts) logs into restoAdmin with `POST /api/login`
+  (JWT), refreshes the token, and wraps every restoAdmin REST call the dashboard makes.
+- [`server/socketBridge.ts`](../server/socketBridge.ts) connects to restoAdmin's Socket.IO server as
+  an ordinary client (like restoAdmin's own kitchen/cashier/waiter apps), joins the Blue Moon
+  branch's rooms, and forwards `table_updated` / `order_created` / `order_updated` to the browser
+  over Server-Sent Events (`GET /api/admin/stream`).
+- The backend is stateless. Nothing about the dashboard is stored in restoAdmin.
 
-## Data model
+### What restoDashboard uses from restoAdmin
 
-restoAdmin's `restaurant_tables` gained two nullable columns (self-migrating, see
-[ensureSchema.js](../restoAdmin/server/utils/ensureSchema.js)):
+All stock restoAdmin endpoints and events:
 
-| Column | Purpose |
+| Purpose | restoAdmin |
 |---|---|
-| `DASHBOARD_ZONE_ID` | The restoDashboard `TableRoom.id` this row is linked to, or `NULL` |
-| `DASHBOARD_LINKED_AT` | When the link was set, or `NULL` |
-
-restoDashboard's `TableRoom` ([types.ts](../restoDashboard/src/types.ts)) gained matching fields:
-
-| Field | Purpose |
-|---|---|
-| `adminTableId` | The restoAdmin `restaurant_tables.IDNo` this zone is linked to |
-| `adminTableName` | Cached display name (`TABLE_NUMBER`) of that admin table, for UI display without an extra lookup |
-
-### Status mapping
-
-restoAdmin's `STATUS` is a 0–3 int enum; restoDashboard's `TableStatus` was extended from 2 states to
-the same 4, so a linked zone never loses information:
-
-| restoAdmin `STATUS` | restoDashboard `TableStatus` |
-|---|---|
-| `0` | `not_available` |
-| `1` | `available` |
-| `2` | `occupied` |
-| `3` | `reserved` |
-
-The mapping lives in one place: [`src/services/adminSync.ts`](../restoDashboard/src/services/adminSync.ts).
+| Sign in / refresh | `POST /api/login`, `POST /api/refresh` |
+| Tables (status, name, room charge) | `GET /restaurant_tables?branch_id=` |
+| Menu | `GET /menus?branch_id=` |
+| Orders | `GET /orders/data?branch_id=`, `GET /orders/:id`, `GET /orders/:id/items`, `POST /orders`, `PUT /orders/:id`, `PATCH /orders/:id/status`, `POST /orders/:id/items`, `PUT`/`DELETE /order_items/:id` |
+| Billing / sales | `GET /billing/:orderId`, `PUT /billing/:orderId`, `GET /billing/data` |
+| Live updates | Socket.IO: `join_kitchen` / `join_cashier` / `join_waiter` rooms; `table_updated`, `order_created`, `order_updated` events |
 
 ## How linking works
 
-> **Linking is now a developer task.** Every zone's link is fixed in
-> [floorLayout.json](../restoDashboard/src/data/floorLayout.json), and the linking UI below is part of
-> the dormant layout editor. See [docs/layout-editor.md](layout-editor.md) to turn it back on.
+Each zone in [floorLayout.json](../src/data/floorLayout.json) has an `adminTableId` — restoAdmin's
+`restaurant_tables.IDNo`. **That field is the link, and the only record of it.** restoAdmin doesn't
+know which zone shows which of its tables.
 
-1. In restoDashboard's layout editor, editing an existing zone (`EditTableModal`) shows a "Link to Blue Moon Table"
-   picker, populated from `GET /api/admin/tables` (only currently-unlinked admin tables, plus the
-   zone's own current link).
-2. Saving calls `POST /api/admin/link { zoneId, adminTableId }` on restoDashboard's backend, which:
-   - Looks up all Blue Moon tables, clears `DASHBOARD_ZONE_ID` on any *other* table already linked to
-     that `zoneId` (keeps the mapping 1:1), then
-   - Sets `DASHBOARD_ZONE_ID`/`DASHBOARD_LINKED_AT` on the newly chosen table via
-     `PATCH /restaurant_table/:id/dashboard-link` on restoAdmin.
-3. restoAdmin's Table Settings shows a read-only "Linked" badge for any table with a
-   `DASHBOARD_ZONE_ID` set — no new interactive functionality there by design, just visibility.
-4. Deleting a linked zone (or bulk-deleting all zones on a floor) in restoDashboard best-effort clears
-   the link on restoAdmin's side too, so it doesn't keep pointing at a zone that no longer exists.
+Changing links is a developer task done in the dormant layout editor, which saves into
+`floorLayout.json` — see [layout-editor.md](layout-editor.md). On every load the dashboard compares
+`floorLayout.json` with restoAdmin's table list and logs a console warning if they've drifted
+(renamed or deleted tables, tables with no zone, two zones on one table).
+
+Because the link is a database id, `floorLayout.json` is tied to one restoAdmin database's ids. The
+current ids match restoAdmin's `restaurants.sql` dump (Blue Moon, branch 3), which is a production
+snapshot. If the dashboard is ever pointed at a database whose ids differ, the startup check will say
+so.
+
+### Status mapping
+
+| restoAdmin `STATUS` | restoDashboard `TableStatus` | Set by |
+|---|---|---|
+| `1` | `available` | restoAdmin, automatically, when an order is settled/cancelled |
+| `2` | `occupied` | restoAdmin, automatically, when an order is created |
+| `3` | `reserved` | restoAdmin's Table Settings only |
+| `0` | `unavailable` (shown as "Not Available") | restoAdmin's Table Settings only |
+
+The dashboard never sets a table's status. Reserved and Not Available are display-only on the
+dashboard. The mapping lives in [`src/services/adminSync.ts`](../src/services/adminSync.ts).
 
 ## How sync works
 
-**restoDashboard → restoAdmin:** when a linked zone's status changes (`TableDetailModal`'s status
-buttons, or "Clear Table"), `App.tsx`'s `handleUpdateTable` fires `PATCH /api/admin/tables/:id/status`
-on restoDashboard's backend, which proxies to restoAdmin's `PATCH /restaurant_table/:id/status`. This
-is fire-and-forget — restoDashboard's local state already reflects the change either way, so a failed
-push doesn't block the UI, just logs a warning.
+**restoAdmin → restoDashboard:** restoAdmin emits `table_updated` on every table change, including
+the automatic flips from its order pipeline, and `order_created`/`order_updated` on order changes from
+any path (its own UI, mobile apps, or this dashboard). `socketBridge.ts` relays them; `App.tsx`
+applies them to the matching zone. Order events are enriched with room-timer fields first — see
+[order-sync-integration.md](order-sync-integration.md#room-timer-fields).
 
-**restoAdmin → restoDashboard:** restoAdmin already emits a `table_updated` Socket.IO event on every
-table mutation, including ones the order pipeline makes automatically (order created → Occupied,
-settled → Available). restoDashboard's `socketBridge.ts` is always listening for these (joined as a
-client, see Architecture above) and forwards them over SSE; `App.tsx` applies the new status directly
-to the matching linked zone (`applyRemoteStatus`) without pushing it back — that guard is what stops
-the two apps from ping-ponging the same change back and forth. There's also a one-time reconciliation
-fetch on restoDashboard's load, to catch drift from while it was closed.
+There's also a full reconciliation (tables + active orders) on load, from the sidebar's refresh
+button, and automatically when the live connection comes back after an outage, since events missed
+during an outage are never replayed.
 
-**Within restoAdmin itself:** `Tables.tsx` also listens for the same `table_updated` event directly
-(its own Socket.IO client, joined to whichever branch(es) are currently visible in the table) and
-patches the affected row in place. This makes Table Settings live for *any* status change, not just
-ones coming from restoDashboard — it was a natural follow-on once the event was already being emitted
-for everything.
+**restoDashboard → restoAdmin:** only order actions (create, edit items, confirm, cancel, settle),
+as direct REST calls. See [order-sync-integration.md](order-sync-integration.md).
 
 ## Setting up the sync account
 
-restoAdmin has no API-key/service-account system — just user-credential JWT login — so
-restoDashboard's backend authenticates as an ordinary restoAdmin user. Existing branch-scoping already
-handles this correctly (a non-admin user's `/restaurant_tables` calls are automatically scoped to
-their own branch), so no new backend auth code was needed:
+restoAdmin has no API keys, so the dashboard's backend signs in as an ordinary restoAdmin user:
 
 1. In restoAdmin, go to **Employees / User Management** and create a new user.
 2. Give it **non-admin** permissions, scoped to the **Blue Moon** branch.
-3. Put its username/password into `restoDashboard/.env` as `ADMIN_USERNAME`/`ADMIN_PASSWORD` (copy
-   from `restoDashboard/.env.example`), along with `ADMIN_API_BASE_URL` and `ADMIN_BRANCH_ID=3`.
+3. Put its username/password in `.env` as `ADMIN_USERNAME`/`ADMIN_PASSWORD` (copy `.env.example`),
+   along with `ADMIN_API_BASE_URL` and `ADMIN_BRANCH_ID=3`.
 
-This account is only ever used server-to-server, by restoDashboard's backend — it's never exposed to
-any browser.
+**Nobody else may sign in with this account.** restoAdmin allows one active session per account:
+each sign-in ends the previous one. If a person signs in with it, the dashboard loses its session,
+signs back in on its next request, and logs that person out, back and forth.
 
-## Known limitations / explicitly out of scope
+The account is only used server-to-server; it's never exposed to a browser. Orders and payments made
+from the dashboard are recorded in restoAdmin under this account.
 
-- **Blue Moon only.** `ADMIN_BRANCH_ID` is a single value; restoDashboard has no concept of multiple
-  branches yet.
-- **Status only.** Guest name/party size/notes/dish orders don't sync — restoAdmin has no equivalent
-  fields on `restaurant_tables` for them.
-- **No retry queue.** A failed push (either direction) just logs a warning; the next successful
-  write or the load-time reconciliation is what re-syncs things, not an automatic retry.
-- **restoAdmin's dev-mode CORS and Socket.IO room joins are unauthenticated** — pre-existing gaps in
-  restoAdmin, not introduced or worsened by this integration (restoDashboard's backend talks to
-  restoAdmin server-to-server, so browser CORS doesn't apply to it either way).
+## Connecting to a hosted restoAdmin (production)
+
+Pointing the dashboard at a hosted restoAdmin instead of a local one is a `.env` change on the
+machine running the dashboard's backend:
+
+| `.env` key | Set to |
+|---|---|
+| `ADMIN_API_BASE_URL` | The hosted restoAdmin **Node API**'s URL (not its web frontend's), e.g. `https://api.example.com`. Ask whoever runs restoAdmin's server. REST and Socket.IO both use it. |
+| `ADMIN_SOCKET_PATH` | Only if restoAdmin is served under a path prefix by a reverse proxy (`https://example.com/resto/...`): put the prefix in `ADMIN_API_BASE_URL` too, and set this to the matching Socket.IO path, e.g. `/resto/socket.io`. Otherwise leave it unset. |
+| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | A sync account that exists **on that server's database** (see above). |
+| `ADMIN_BRANCH_ID` | Blue Moon's branch id on that database (3 on the current one). |
+
+Then restart the backend (`npm run dev:server`). No CORS change is needed on restoAdmin, because
+only the dashboard's backend talks to it, never the browser.
+
+Before switching:
+
+- **Everything becomes real.** Orders created from the dashboard are real orders: they deduct
+  inventory and count in sales. Don't test against production.
+- **Check the startup link check** (browser console) on the first load: it confirms the
+  `adminTableId`s in `floorLayout.json` exist on that server.
+- **The dashboard itself isn't deployable yet.** It only runs as a Vite dev server plus the backend.
+  Hosting it somewhere (building `dist/` and serving it with the backend) is separate work, to be
+  done once a host is chosen.
+
+## Optional restoAdmin improvements
+
+None of these are needed. They'd make the dashboard lighter, and are for restoAdmin's maintainers to
+decide on:
+
+- **Include `service_charge`, `room_charge` and `encoded_dt` in `order_created`/`order_updated`
+  events.** The dashboard currently looks up the first two for every order event. It already uses
+  them from the event when present, so this needs no dashboard change.
+- **Let `GET /orders/data` filter by status and table** (e.g. `status=2,3&table_id=`). The dashboard
+  currently pulls the branch's latest orders (capped at 2000) just to find the few open ones, on every
+  load and resync.
+
+## Known limitations
+
+- **Blue Moon only.** `ADMIN_BRANCH_ID` is a single value.
+- **No retry queue.** A failed order action shows an error; nothing is retried automatically.
+- **restoAdmin's Socket.IO room joins are unauthenticated** — a pre-existing restoAdmin trait, not
+  something this integration adds or relies on beyond joining the branch's rooms.
 
 ## Where the code lives
 
 | Concern | Files |
 |---|---|
-| Schema + link endpoint (restoAdmin) | [ensureSchema.js](../restoAdmin/server/utils/ensureSchema.js), [tableModel.js](../restoAdmin/server/models/tableModel.js), [tableController.js](../restoAdmin/server/controllers/tableController.js), [tableRoutes.js](../restoAdmin/server/routes/tableRoutes.js) |
-| "Linked" badge + live updates (restoAdmin) | [Tables.tsx](../restoAdmin/src/components/users/Tables.tsx) |
-| Sync backend (restoDashboard) | [server/index.ts](../restoDashboard/server/index.ts), [server/adminClient.ts](../restoDashboard/server/adminClient.ts), [server/socketBridge.ts](../restoDashboard/server/socketBridge.ts) |
-| Frontend sync + linking UI (restoDashboard) | [src/services/adminSync.ts](../restoDashboard/src/services/adminSync.ts), [EditTableModal.tsx](../restoDashboard/src/layoutEditor/EditTableModal.tsx), [floorLayout.json](../restoDashboard/src/data/floorLayout.json), [TableDetailModal.tsx](../restoDashboard/src/components/TableDetailModal.tsx), [App.tsx](../restoDashboard/src/App.tsx) |
-
-See [CHANGELOG.md](../CHANGELOG.md) `[1.5.0]` for the full list of changes that built this, with the
-reasoning behind each.
+| Sync backend | [server/index.ts](../server/index.ts), [server/adminClient.ts](../server/adminClient.ts), [server/socketBridge.ts](../server/socketBridge.ts) |
+| Frontend sync | [src/services/adminSync.ts](../src/services/adminSync.ts), [src/services/orderSync.ts](../src/services/orderSync.ts), [App.tsx](../src/App.tsx) |
+| Zone ↔ table links | [floorLayout.json](../src/data/floorLayout.json), [EditTableModal.tsx](../src/layoutEditor/EditTableModal.tsx) (dormant editor) |
+| Connection settings | [.env.example](../.env.example) |

@@ -7,8 +7,8 @@ screen. The top-right bar now holds only
 **Info Panels** and **Fullscreen**.
 
 The zoom code is still in the repo, in
-[`FloorPlanMap.tsx`](../restoDashboard/src/components/FloorPlanMap.tsx), behind one build-time
-setting in [`src/config/zoomControls.ts`](../restoDashboard/src/config/zoomControls.ts):
+[`FloorPlanMap.tsx`](../src/components/FloorPlanMap.tsx), behind one build-time
+setting in [`src/config/zoomControls.ts`](../src/config/zoomControls.ts):
 
 ```ts
 export const ZOOM_CONTROLS_ENABLED = import.meta.env.VITE_ENABLE_ZOOM_CONTROLS === 'true';
@@ -27,11 +27,10 @@ This setting is separate from the layout editor's `VITE_ENABLE_LAYOUT_EDITOR`
 
 - **For one run** (Git Bash / macOS / Linux):
   ```bash
-  cd restoDashboard
   VITE_ENABLE_ZOOM_CONTROLS=true npm run dev:all
   ```
   In PowerShell: `$env:VITE_ENABLE_ZOOM_CONTROLS='true'; npm run dev:all`
-- **On your machine until you remove it:** add this line to `restoDashboard/.env.local`
+- **On your machine until you remove it:** add this line to `.env.local`
   (git-ignored):
   ```
   VITE_ENABLE_ZOOM_CONTROLS=true

@@ -1,124 +1,110 @@
-# 3Core Restaurant Platform
+# restoDashboard
 
-This repository contains two apps, developed and deployed independently but integrated for the
-Blue Moon branch:
+A floor-plan status board for Blue Moon's front-of-house staff. It shows every table and room on an
+interactive map of both floors, with live status, active orders and room timers, and lets staff
+place and settle orders without switching to the back office.
 
-- **[restoAdmin/](restoAdmin/)** — the restaurant admin/back-office web app (React + Node/Express +
-  MySQL, plus a Python analytics service). Branch, table, menu, order, billing, and employee
-  management.
-- **[restoDashboard/](restoDashboard/)** — a floor-plan/zone status dashboard (React) for front-of-house
-  staff to see and update table/room status on an interactive floor map.
-
-For Blue Moon, a restoDashboard zone can be optionally linked to a restoAdmin table so status stays
-in sync between the two apps in real time. See **[docs/blue-moon-integration.md](docs/blue-moon-integration.md)**
-for how that works and why it's built the way it is — this README only covers getting both apps
-running locally.
-
-Changes to either app are tracked together in **[CHANGELOG.md](CHANGELOG.md)**; see
-**[CLAUDE.md](CLAUDE.md)** for the contribution/changelog convention.
+It runs on top of **restoAdmin** (the restaurant back office), which is a separate project:
+restoDashboard reads restoAdmin's tables and orders and sends orders to it, and needs **no changes
+to restoAdmin** to do so. See [docs/blue-moon-integration.md](docs/blue-moon-integration.md) for how
+the two connect.
 
 ## Prerequisites
 
-- **Node.js 18+** and npm (both apps)
-- **MySQL** (restoAdmin only) — local dev typically uses [XAMPP](https://www.apachefriends.org/); the
-  default config expects it on `localhost:3306`
-- **Python 3.10+** and pip (restoAdmin's `pyserver` only — this is an optional analytics service; the
-  rest of restoAdmin works without it)
+- **Node.js 18+** and npm.
+- A running **restoAdmin** Node API to connect to — locally, a clone of restoAdmin next to this
+  folder:
 
-> **Database note:** this repo does not include a full schema dump. Many tables self-create on
-> server boot (see `server/models/*.js` and `server/utils/ensureSchema.js` in restoAdmin), but core
-> tables (`user_info`, `restaurant_tables`, `orders`, menu tables, etc.) are expected to already
-> exist. If you're setting up fresh rather than restoring an existing `restaurants` database dump,
-> get one from the team first.
+  ```
+  Projects/
+  ├── restoAdmin/       ← restoAdmin's own repo; set up and run per its README (API on :2000)
+  └── restoDashboard/   ← this repo
+  ```
 
-## Setup: restoAdmin
+  The dashboard only talks to restoAdmin over HTTP, so restoAdmin can live anywhere (or on another
+  server); the folder layout above is just the local convention.
 
-```bash
-cd restoAdmin
-npm install
-cd server && npm install && cd ..
-cp .env.example .env   # adjust DB_HOST/DB_USER/DB_PASSWORD/DB_NAME etc. for your MySQL setup
-```
-
-Optional — only needed for the analytics/reporting service (`pyserver`):
+## Setup
 
 ```bash
-cd pyserver
-python -m venv .venv
-# Windows:
-.venv\Scripts\Activate.ps1
-# macOS/Linux:
-source .venv/Scripts/activate
-pip install -r requirements.txt
-cd ..
-```
-
-Run everything (Vite frontend on `:3000`, Node API on `:2000`, and PyServer on `:2100` if the venv
-above is set up):
-
-```bash
-npm run dev:all
-```
-
-Or run just the frontend + Node API without PyServer:
-
-```bash
-npm run dev        # frontend, :3000
-npm run dev:server # Node API, :2000
-```
-
-Open `http://localhost:3000` and log in (see [restoAdmin/README.md](restoAdmin/README.md) for local
-dev credentials).
-
-## Setup: restoDashboard
-
-```bash
-cd restoDashboard
 npm install
 cp .env.example .env
 ```
 
-`restoDashboard/.env` needs restoAdmin's Node API reachable (`ADMIN_API_BASE_URL`, defaults to
-`http://localhost:2000`) and credentials for a dedicated restoAdmin user account — see
-**[docs/blue-moon-integration.md](docs/blue-moon-integration.md#setting-up-the-sync-account)** for
-how to create that account. The dashboard still runs and is fully usable without it configured; only
-the Blue Moon linking/sync feature needs it.
+In `.env`, set:
 
-Run everything (Vite frontend on `:3500`, the sync backend on `:3510`):
+- `ADMIN_API_BASE_URL` — restoAdmin's Node API (default `http://localhost:2000`).
+- `ADMIN_USERNAME` / `ADMIN_PASSWORD` — a dedicated restoAdmin account used only by the dashboard.
+  See [Setting up the sync account](docs/blue-moon-integration.md#setting-up-the-sync-account).
+- `ADMIN_BRANCH_ID` — Blue Moon's branch id (`3`).
 
-```bash
-npm run dev:all
+## Running
+
+1. Start restoAdmin first (in `../restoAdmin`, per its README — `npm run dev:all` there).
+2. Start the dashboard:
+
+   ```bash
+   npm run dev:all
+   ```
+
+   This runs the Vite frontend on `:3500` and the dashboard's backend on `:3510`.
+3. Open `http://localhost:3500`. The sidebar's connection badge shows **Live** once the backend is
+   connected to restoAdmin.
+
+The dashboard still opens without restoAdmin running; zones just show no live status or orders until
+it's reachable, and it catches up automatically when it is.
+
+| Command | What it does |
+| --- | --- |
+| `npm run dev:all` | Frontend (`:3500`) and backend (`:3510`) together |
+| `npm run dev` / `npm run dev:server` | Just the frontend / just the backend |
+| `npm run build` | Production build of the frontend into `dist/` |
+| `npm run lint` | Type-check (`tsc --noEmit`) |
+
+## Connecting to a hosted restoAdmin
+
+Pointing the dashboard at a hosted (e.g. production) restoAdmin instead of a local one is an `.env`
+change — mainly `ADMIN_API_BASE_URL`, plus a sync account that exists on that server. Read
+[Connecting to a hosted restoAdmin](docs/blue-moon-integration.md#connecting-to-a-hosted-restoadmin-production)
+first: against production, every order the dashboard creates is real.
+
+## Project layout
+
+```text
+├── server/                  # The dashboard's backend: holds the restoAdmin credentials
+│   ├── index.ts             #   /api/admin/* routes + SSE stream for the browser
+│   ├── adminClient.ts       #   restoAdmin REST client
+│   └── socketBridge.ts      #   restoAdmin Socket.IO → SSE relay
+├── src/
+│   ├── App.tsx              # Layout, live sync wiring, reconciliation
+│   ├── components/          # Floor plan, sidebar, table/order modals, directory, order queue
+│   ├── services/            # adminSync.ts (tables, shared SSE stream), orderSync.ts, salesSync.ts
+│   ├── data/floorLayout.json# The fixed zones + info panels, and each zone's restoAdmin table link
+│   ├── layoutEditor/        # Dormant zone editor — see docs/layout-editor.md
+│   └── config/              # Build-time feature flags (layout editor, zoom controls)
+├── public/floorplans/       # Floor plan images
+└── docs/                    # How things work and why
 ```
-
-Open `http://localhost:3500`.
-
-## Running both together
-
-For the Blue Moon integration to actually sync, both apps need to be running:
-
-1. Start restoAdmin first (`npm run dev:all` in `restoAdmin/`).
-2. Create the dedicated sync user account in restoAdmin (Employees/User Management), scoped to the
-   Blue Moon branch — see [docs/blue-moon-integration.md](docs/blue-moon-integration.md#setting-up-the-sync-account).
-3. Put that account's credentials in `restoDashboard/.env`.
-4. Start restoDashboard (`npm run dev:all` in `restoDashboard/`).
-5. In restoDashboard, edit a zone and link it to a Blue Moon table. Status changes on either side
-   should now show up on the other without a manual refresh.
 
 ## More docs
 
-- [CHANGELOG.md](CHANGELOG.md) — history of notable changes to either app
-- [CLAUDE.md](CLAUDE.md) — changelog/contribution convention for AI-assisted changes
-- [docs/blue-moon-integration.md](docs/blue-moon-integration.md) — how and why the two apps are linked
-- [restoAdmin/README.md](restoAdmin/README.md), [restoAdmin/pyserver/README.md](restoAdmin/pyserver/README.md)
-- [restoDashboard/README.md](restoDashboard/README.md)
+- [docs/blue-moon-integration.md](docs/blue-moon-integration.md) — how the dashboard connects to
+  restoAdmin, the sync account, and switching servers
+- [docs/order-sync-integration.md](docs/order-sync-integration.md) — placing and managing orders
+- [docs/layout-editor.md](docs/layout-editor.md) — changing the floor layout and zone links
+- [docs/zoom-controls.md](docs/zoom-controls.md) — the (off by default) zoom buttons
+- [CHANGELOG.md](CHANGELOG.md) — history of notable changes
 
 ## Troubleshooting
 
-- **Port already in use:** restoAdmin uses `3000`/`2000`/`2100`, restoDashboard uses `3500`/`3510`.
-  Free the port or adjust it in the relevant `vite.config.ts` / `.env` / `package.json` script.
-- **restoDashboard's link picker is empty or errors:** confirm restoAdmin's Node API is running and
-  reachable at `ADMIN_API_BASE_URL`, and that the sync account credentials in
-  `restoDashboard/.env` are correct.
-- **Status changes aren't syncing live:** both apps rely on restoAdmin's Socket.IO server (started
-  alongside its Node API). If it's not running, changes still save but won't push live — a page
-  refresh will still pick up the latest state on both sides.
+- **Port already in use:** the dashboard uses `3500` (frontend) and `3510` (backend; `PORT` in
+  `.env`, and the proxy target in [vite.config.ts](vite.config.ts)). restoAdmin uses `3000`, `2000`
+  and `2100`.
+- **Badge says "restoAdmin offline", or nothing loads:** check restoAdmin's Node API is running and
+  reachable at `ADMIN_API_BASE_URL`, and that the sync account's credentials in `.env` are right
+  (the backend's terminal logs the exact error).
+- **The dashboard keeps getting signed out / someone else does:** someone is signing in with the
+  sync account elsewhere. restoAdmin allows one session per account; give the dashboard its own.
+- **Browser console shows a `[layout] … out of step` warning:** `floorLayout.json` and restoAdmin's
+  tables have drifted (table renamed, deleted or added). See
+  [docs/layout-editor.md](docs/layout-editor.md#the-startup-link-check).

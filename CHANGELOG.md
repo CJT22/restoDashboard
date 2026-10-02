@@ -2,11 +2,24 @@
 
 All notable changes across this repository are documented in this file.
 
-This changelog was moved here from `restoDashboard/CHANGELOG.md` so that changes to **both**
-[restoAdmin/](restoAdmin/) and [restoDashboard/](restoDashboard/) are tracked in one place. Every
-entry from `[1.4.0]` down is restoDashboard's pre-merge history — file links there were rewritten
-to be relative to this new root location. Going forward, each bullet is tagged with which app it
-touches (see [CLAUDE.md](CLAUDE.md) for the convention).
+This is restoDashboard's changelog. From `[1.5.0]` to `[1.21.0]` this repo (then `restoMerge`)
+also held a copy of restoAdmin, so those entries are tagged `[restoAdmin]`/`[restoDashboard]`, and
+their file links point at the old `restoAdmin/` and `restoDashboard/` folders, which no longer exist
+here. They're kept as written for the record. restoAdmin now lives in its own repo, and the
+restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
+entries cover this app only and carry no prefix.
+
+## [2.0.0]
+
+### Changed
+- **This repo is now just restoDashboard, and restoAdmin is a separate project it connects to.** The dashboard's files moved from `restoDashboard/` up to the repo root, and the embedded copy of restoAdmin was deleted. restoAdmin is cloned separately (locally at `../restoAdmin`) and keeps pulling updates from its own upstream repo, which the embedded copy couldn't. The dashboard reaches it only over HTTP and Socket.IO at `ADMIN_API_BASE_URL`, exactly as before, so nothing about how it runs changes beyond running `npm` commands from the repo root instead of `restoDashboard/`. The README, [CLAUDE.md](CLAUDE.md) and every doc under [docs/](docs/) were rewritten for the single-project layout. The package is renamed from `react-example` to `resto-dashboard` ([README.md](README.md), [package.json](package.json), [blue-moon-integration.md](docs/blue-moon-integration.md), [order-sync-integration.md](docs/order-sync-integration.md), [layout-editor.md](docs/layout-editor.md), [zoom-controls.md](docs/zoom-controls.md)).
+- **The dashboard now works against restoAdmin exactly as it ships, with no restoAdmin changes.** The restoAdmin patches made while both apps shared this repo are not in restoAdmin's real repo, so the dashboard now covers each of them itself:
+  - *Zone ↔ table links* were mirrored into a `DASHBOARD_ZONE_ID` column through a `PATCH /restaurant_table/:id/dashboard-link` endpoint that stock restoAdmin doesn't have. The link already lived in [floorLayout.json](src/data/floorLayout.json) (`adminTableId`), so that file is now the only record of it. The backend's `POST /api/admin/link` route is gone. The dormant layout editor saves links into its layout draft only, so **Discard Changes** now undoes them too, and its table picker hides tables other zones already use. The startup drift check now flags two zones sharing one table instead of comparing against restoAdmin's column ([server/adminClient.ts](server/adminClient.ts), [server/index.ts](server/index.ts), [adminSync.ts](src/services/adminSync.ts), [EditTableModal.tsx](src/layoutEditor/EditTableModal.tsx), [LayoutEditor.tsx](src/layoutEditor/LayoutEditor.tsx)).
+  - *Room timers* relied on restoAdmin adding `service_charge`, `room_charge` and `encoded_dt` to its order events and to `GET /orders/:id`. Without that, a room's countdown wouldn't follow an hours change made in restoAdmin. The backend now looks up the service charge (`GET /orders/:id`) and the table's hourly rate (the table list) for each order event before forwarding it. Events are processed one at a time so a slow lookup can't deliver an older update after a newer one. The order's start time comes from `GET /orders/data`, whose rows already include it. If restoAdmin ever adds those fields to its events, the backend uses them directly and skips the lookups ([server/socketBridge.ts](server/socketBridge.ts), [server/adminClient.ts](server/adminClient.ts), [App.tsx](src/App.tsx)).
+- **`.env` can now point the dashboard at a hosted restoAdmin, including one behind a path prefix.** A new optional `ADMIN_SOCKET_PATH` sets the Socket.IO path for a restoAdmin served under a prefix (e.g. `/resto/socket.io`). Everything else was already driven by `ADMIN_API_BASE_URL`. [.env.example](.env.example) now explains each setting for local and production use, warns that orders against production are real, and drops the unused AI Studio leftovers `GEMINI_API_KEY` and `APP_URL`. The steps for switching servers are in [blue-moon-integration.md](docs/blue-moon-integration.md#connecting-to-a-hosted-restoadmin-production) ([server/socketBridge.ts](server/socketBridge.ts), [.env.example](.env.example)).
+
+### Added
+- **Reserved and Not Available tables now show as such on the dashboard.** Stock restoAdmin has four table statuses (Not Available, Available, Occupied, Reserved). The dashboard only knew two and showed Reserved or Not Available tables as Available. Each now gets its own color on the map, matching restoAdmin's own badges: blue for Reserved, red for Not Available. Both also appear in the legend and on the table's status badge (with a calendar or "no" icon). They're display-only: they can be set only from restoAdmin's Table Settings, the dashboard offers no way to set them, and they don't change what staff can do with the table ([types.ts](src/types.ts), [statusColors.ts](src/utils/statusColors.ts), [adminSync.ts](src/services/adminSync.ts), [FloorPlanMap.tsx](src/components/FloorPlanMap.tsx), [TableDetailModal.tsx](src/components/TableDetailModal.tsx)).
 
 ## [1.21.0]
 

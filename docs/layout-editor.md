@@ -23,15 +23,15 @@ linked 1:1 to restoAdmin's 36 Blue Moon tables.
 
 ## Where the fixed layout lives
 
-[`restoDashboard/src/data/floorLayout.json`](../restoDashboard/src/data/floorLayout.json) is the
+[`src/data/floorLayout.json`](../src/data/floorLayout.json) is the
 **single source of truth**, and every device loads it as-is. It has two lists:
 
 - **`zones`** — one entry per table or room:
-  - `id`: the zone id. restoAdmin stores it as `DASHBOARD_ZONE_ID`, so don't change it for an
-    existing zone.
+  - `id`: the zone id. Only the dashboard uses it (restoAdmin doesn't know about zones), but keep it
+    stable for an existing zone anyway.
   - `name`, `code`, `type`, `floor`, `capacity`.
   - `adminTableId`: restoAdmin's `restaurant_tables.IDNo`. This is what makes orders and status
-    sync.
+    sync, and it's the **only** record of the link: restoAdmin itself stores nothing about zones.
   - `adminTableName`: restoAdmin's `TABLE_NUMBER` at the time of linking. The startup check uses it
     to notice renames.
   - `x`, `y`, `width`, `height`: percentages of the 16:9 floor plan image.
@@ -56,7 +56,7 @@ starting floor, a widget's order, a zone's capacity or display name.
 
 ## How the on/off switch works
 
-[`restoDashboard/src/config/layoutEditor.ts`](../restoDashboard/src/config/layoutEditor.ts) reads
+[`src/config/layoutEditor.ts`](../src/config/layoutEditor.ts) reads
 one build-time setting:
 
 ```ts
@@ -65,7 +65,7 @@ export const LAYOUT_EDITOR_ENABLED = import.meta.env.VITE_ENABLE_LAYOUT_EDITOR =
 
 - **Off (the default):** `npm run dev`, `npm run dev:all` and `npm run build` all leave the editor
   off. Vite inlines the value at build time, so the editor code
-  ([`src/layoutEditor/`](../restoDashboard/src/layoutEditor/)) is **left out of the production
+  ([`src/layoutEditor/`](../src/layoutEditor/)) is **left out of the production
   bundle entirely**. It isn't hidden, it's absent, so the dormant code costs nothing in size or speed.
   With the editor off, `npm run build` produces no `LayoutEditor-*.js` file.
 - **On:** the only change is an **Edit Zones** button in the floor plan's top bar, next to the Info
@@ -81,11 +81,10 @@ Pick one:
 
 - **For one run:** start the dev server with the setting on (Git Bash / macOS / Linux):
   ```bash
-  cd restoDashboard
   VITE_ENABLE_LAYOUT_EDITOR=true npm run dev:all
   ```
   In PowerShell: `$env:VITE_ENABLE_LAYOUT_EDITOR='true'; npm run dev:all`
-- **Until you remove it:** create `restoDashboard/.env.local` containing:
+- **Until you remove it:** create `.env.local` containing:
   ```
   VITE_ENABLE_LAYOUT_EDITOR=true
   ```
@@ -107,10 +106,10 @@ Open the floor plan and click **Edit Zones**. The editor can:
 - **Delete** one zone (🗑 on hover), or every zone on the current floor (**Delete All Zones**).
 - **Discard Changes:** puts everything back to `floorLayout.json`.
 
-> ⚠️ **Linking and deleting write to restoAdmin immediately.** They update the table's
-> `DASHBOARD_ZONE_ID` in whichever restoAdmin your `restoDashboard/.env` points at. They don't wait
-> for you to save the layout. If that's the live restoAdmin, the live link changes. **Discard
-> Changes does not undo them.** Re-link anything you changed back by hand.
+Linking only changes the draft. Nothing is written to restoAdmin, so **Discard Changes** undoes
+links too. (The editor still *reads* restoAdmin's table list for the link picker, from whichever
+restoAdmin `.env` points at — the table ids must come from the same database the dashboard will run
+against.)
 
 ### 3. Your work is saved as a draft in this browser
 
@@ -128,7 +127,7 @@ copy(localStorage.getItem('restaurant_dashboard_layout_draft'))
 ```
 
 This copies the draft to your clipboard. Replace the **entire** contents of
-`restoDashboard/src/data/floorLayout.json` with it. If the clipboard ends up holding `null`, there's no draft, meaning the layout has no changes.
+`src/data/floorLayout.json` with it. If the clipboard ends up holding `null`, there's no draft, meaning the layout has no changes.
 
 Then hand-edit anything the editor can't set. At the moment that is only `widgetFloors`. Panels keep
 their existing `widgetFloors`; a new panel's widgets start on the panel's own floor.
@@ -146,7 +145,7 @@ their existing `widgetFloors`; a new panel's widgets start on the panel's own fl
 
 On every load, restoDashboard compares `floorLayout.json` against restoAdmin's Blue Moon tables
 (`warnOnLayoutLinkDrift` in
-[`adminSync.ts`](../restoDashboard/src/services/adminSync.ts)). If anything is out of step, it logs a
+[`adminSync.ts`](../src/services/adminSync.ts)). If anything is out of step, it logs a
 single `[layout] Floor plan and restoAdmin tables are out of step` warning to the **browser console**.
 Staff never see it. It flags:
 
@@ -155,7 +154,7 @@ Staff never see it. It flags:
 | zone isn't linked to any restoAdmin table | a new zone was saved without a link | link it in the editor |
 | linked to table #N, which no longer exists | table deleted in restoAdmin | re-link the zone, or delete it |
 | table #N was renamed from "A" to "B" | renamed in restoAdmin's Table Settings | update that zone's `adminTableName` (and `name` if wanted) in `floorLayout.json` |
-| table #N points at zone X, not "Y" | the link was changed from another machine or directly in restoAdmin | re-link in the editor |
+| table #N is linked to both zone X and zone Y | two zones in `floorLayout.json` share one `adminTableId` | re-link one of them in the editor |
 | table #N has no zone on the floor plan | table added in restoAdmin | draw a zone for it and link it |
 
 A renamed table keeps working in the meantime. Orders and status still sync by `adminTableId`, and
@@ -166,13 +165,13 @@ the zone's "Synced to" label picks up the new name on the next load. The warning
 
 | What | Where |
 | --- | --- |
-| The on/off setting | [`src/config/layoutEditor.ts`](../restoDashboard/src/config/layoutEditor.ts), typed in [`src/vite-env.d.ts`](../restoDashboard/src/vite-env.d.ts) |
-| Fixed layout + helpers | [`src/data/floorLayout.json`](../restoDashboard/src/data/floorLayout.json), [`src/data/floorLayout.ts`](../restoDashboard/src/data/floorLayout.ts) |
-| The editor overlay (move/resize/draw/delete, editor bar) | [`src/layoutEditor/LayoutEditor.tsx`](../restoDashboard/src/layoutEditor/LayoutEditor.tsx) |
-| Zone edit + restoAdmin link modal | [`src/layoutEditor/EditTableModal.tsx`](../restoDashboard/src/layoutEditor/EditTableModal.tsx) |
-| Info panel widget/layout modal | [`src/layoutEditor/InfoPanelModal.tsx`](../restoDashboard/src/layoutEditor/InfoPanelModal.tsx) |
-| Where it plugs in | [`App.tsx`](../restoDashboard/src/App.tsx) (lazy `LayoutEditor`, draft save/load), [`FloorPlanMap.tsx`](../restoDashboard/src/components/FloorPlanMap.tsx) (Edit Zones button, `editor` slot in the canvas) |
-| Link API (backend) | `POST /api/admin/link` in [`server/index.ts`](../restoDashboard/server/index.ts); see [blue-moon-integration.md](blue-moon-integration.md#how-linking-works) |
+| The on/off setting | [`src/config/layoutEditor.ts`](../src/config/layoutEditor.ts), typed in [`src/vite-env.d.ts`](../src/vite-env.d.ts) |
+| Fixed layout + helpers | [`src/data/floorLayout.json`](../src/data/floorLayout.json), [`src/data/floorLayout.ts`](../src/data/floorLayout.ts) |
+| The editor overlay (move/resize/draw/delete, editor bar) | [`src/layoutEditor/LayoutEditor.tsx`](../src/layoutEditor/LayoutEditor.tsx) |
+| Zone edit + restoAdmin link modal | [`src/layoutEditor/EditTableModal.tsx`](../src/layoutEditor/EditTableModal.tsx) |
+| Info panel widget/layout modal | [`src/layoutEditor/InfoPanelModal.tsx`](../src/layoutEditor/InfoPanelModal.tsx) |
+| Where it plugs in | [`App.tsx`](../src/App.tsx) (lazy `LayoutEditor`, draft save/load), [`FloorPlanMap.tsx`](../src/components/FloorPlanMap.tsx) (Edit Zones button, `editor` slot in the canvas) |
+| restoAdmin table list for the picker (backend) | `GET /api/admin/tables` in [`server/index.ts`](../server/index.ts); see [blue-moon-integration.md](blue-moon-integration.md#how-linking-works) |
 
 How it fits together: `FloorPlanMap` is read-only and always draws the zones and panels. When editing,
 `App` passes the lazily-loaded `LayoutEditor` into FloorPlanMap's `editor` slot. The editor is a
