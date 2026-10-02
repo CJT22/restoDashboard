@@ -9,7 +9,8 @@
 
 import { EventEmitter } from 'events';
 import { io as ioClient, type Socket } from 'socket.io-client';
-import { ADMIN_API_BASE_URL, ADMIN_BRANCH_ID, encodedDtToIso, getBlueMoonTables, getOrderById } from './adminClient.js';
+import { ADMIN_API_BASE_URL, ADMIN_BRANCH_ID, encodedDtToIso, getBlueMoonTables, getOrderById, SessionEndedError } from './adminClient.js';
+import { anySessions } from './sessions.js';
 
 // Socket.IO's default path. Only needs overriding when restoAdmin sits behind
 // a reverse proxy that serves it under a prefix (e.g. /resto/socket.io).
@@ -67,22 +68,31 @@ let socket: Socket | null = null;
 // from the order's current row and its table's ROOM_CHARGE. Best-effort: on
 // failure the event goes out as-is, and the browser falls back to what it
 // already knew about the order.
+//
+// The lookups borrow any signed-in user's session (this bridge has no
+// account of its own). With nobody signed in there's nobody to send the
+// event to either, so it goes out as-is. A session restoAdmin has since
+// ended is dropped and the next one tried.
 async function withRoomTimerFields(event: OrderEvent): Promise<OrderEvent> {
   if (event.serviceCharge != null && event.roomRate != null) return event;
-  try {
-    const [order, tables] = await Promise.all([
-      event.serviceCharge == null ? getOrderById(event.orderId) : Promise.resolve(null),
-      event.roomRate == null && event.tableId != null ? getBlueMoonTables() : Promise.resolve([]),
-    ]);
-    return {
-      ...event,
-      serviceCharge: event.serviceCharge ?? order?.serviceCharge ?? null,
-      roomRate: event.roomRate ?? tables.find((t) => t.id === event.tableId)?.roomCharge ?? null,
-    };
-  } catch (err: any) {
-    console.warn('[socketBridge] could not look up room-timer fields for order', event.orderId, err?.message || err);
-    return event;
+  for (const session of anySessions()) {
+    try {
+      const [order, tables] = await Promise.all([
+        event.serviceCharge == null ? getOrderById(session, event.orderId) : Promise.resolve(null),
+        event.roomRate == null && event.tableId != null ? getBlueMoonTables(session) : Promise.resolve([]),
+      ]);
+      return {
+        ...event,
+        serviceCharge: event.serviceCharge ?? order?.serviceCharge ?? null,
+        roomRate: event.roomRate ?? tables.find((t) => t.id === event.tableId)?.roomCharge ?? null,
+      };
+    } catch (err: any) {
+      if (err instanceof SessionEndedError) continue;
+      console.warn('[socketBridge] could not look up room-timer fields for order', event.orderId, err?.message || err);
+      return event;
+    }
   }
+  return event;
 }
 
 // Order events are enriched one at a time, in arrival order, so a slow

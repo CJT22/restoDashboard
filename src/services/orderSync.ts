@@ -5,6 +5,7 @@
 
 import { AdminOrderLineItem, AdminOrderSummary } from '../types';
 import { listenToAdminStream } from './adminSync';
+import { adminFetch } from './auth';
 
 export interface AdminMenuItem {
   id: number;
@@ -145,13 +146,13 @@ export function mapAdminOrder(row: any): AdminOrderSummary {
 }
 
 export async function getMenu(): Promise<AdminMenuItem[]> {
-  const res = await fetch('/api/admin/menu');
+  const res = await adminFetch('/api/admin/menu');
   const json = await parseJsonOrThrow(res, 'Failed to load the menu from restoAdmin');
   return Array.isArray(json.data) ? json.data : [];
 }
 
 export async function getActiveOrderForTable(adminTableId: number): Promise<AdminOrderSummary | null> {
-  const res = await fetch(`/api/admin/orders/by-table/${adminTableId}`);
+  const res = await adminFetch(`/api/admin/orders/by-table/${adminTableId}`);
   const json = await parseJsonOrThrow(res, 'Failed to load the active order from restoAdmin');
   return json.data ? mapAdminOrder(json.data) : null;
 }
@@ -166,7 +167,7 @@ export interface ActiveOrderEntry {
 // table's order details (not just its Available/Occupied status) are
 // already populated on a fresh load, without a round trip per table.
 export async function getActiveOrders(): Promise<ActiveOrderEntry[]> {
-  const res = await fetch('/api/admin/orders/active');
+  const res = await adminFetch('/api/admin/orders/active');
   const json = await parseJsonOrThrow(res, 'Failed to load active orders from restoAdmin');
   const rows = Array.isArray(json.data) ? json.data : [];
   return rows
@@ -181,7 +182,7 @@ export async function createOrder(
   roomChargeQty?: number
 ): Promise<CreateOrderResult> {
   // No order number: the backend generates it (server/adminClient.ts).
-  const res = await fetch('/api/admin/orders', {
+  const res = await adminFetch('/api/admin/orders', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ tableId: adminTableId, orderType, items, roomChargeQty }),
@@ -196,7 +197,7 @@ export async function updateOrderRoomCharge(
   orderId: number,
   roomChargeQty: number
 ): Promise<{ ok: boolean; message?: string }> {
-  const res = await fetch(`/api/admin/orders/${orderId}/room-charge`, {
+  const res = await adminFetch(`/api/admin/orders/${orderId}/room-charge`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ roomChargeQty }),
@@ -205,7 +206,7 @@ export async function updateOrderRoomCharge(
 }
 
 export async function addItemsToOrder(orderId: number, items: NewOrderItemInput[]): Promise<AddItemsResult> {
-  const res = await fetch(`/api/admin/orders/${orderId}/items`, {
+  const res = await adminFetch(`/api/admin/orders/${orderId}/items`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ items }),
@@ -214,7 +215,7 @@ export async function addItemsToOrder(orderId: number, items: NewOrderItemInput[
 }
 
 export async function confirmOrder(orderId: number): Promise<{ ok: boolean; message?: string }> {
-  const res = await fetch(`/api/admin/orders/${orderId}/status`, {
+  const res = await adminFetch(`/api/admin/orders/${orderId}/status`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status: 2 }),
@@ -223,7 +224,7 @@ export async function confirmOrder(orderId: number): Promise<{ ok: boolean; mess
 }
 
 export async function cancelOrder(orderId: number): Promise<{ ok: boolean; message?: string }> {
-  const res = await fetch(`/api/admin/orders/${orderId}/status`, {
+  const res = await adminFetch(`/api/admin/orders/${orderId}/status`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ status: -1 }),
@@ -232,7 +233,7 @@ export async function cancelOrder(orderId: number): Promise<{ ok: boolean; messa
 }
 
 export async function updateItemQty(orderItemId: number, qty: number): Promise<UpdateItemResult> {
-  const res = await fetch(`/api/admin/order-items/${orderItemId}`, {
+  const res = await adminFetch(`/api/admin/order-items/${orderItemId}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ qty }),
@@ -241,12 +242,12 @@ export async function updateItemQty(orderItemId: number, qty: number): Promise<U
 }
 
 export async function deleteItem(orderItemId: number): Promise<{ ok: boolean; message?: string }> {
-  const res = await fetch(`/api/admin/order-items/${orderItemId}`, { method: 'DELETE' });
+  const res = await adminFetch(`/api/admin/order-items/${orderItemId}`, { method: 'DELETE' });
   return res.json();
 }
 
 export async function getBilling(orderId: number): Promise<AdminBilling | null> {
-  const res = await fetch(`/api/admin/orders/${orderId}/billing`);
+  const res = await adminFetch(`/api/admin/orders/${orderId}/billing`);
   const json = await parseJsonOrThrow(res, 'Failed to load the billing record from restoAdmin');
   return json.data ?? null;
 }
@@ -255,7 +256,7 @@ export async function settleOrder(
   orderId: number,
   params: { paymentMethod: string; amountPaid: number; paymentRef: string | null }
 ): Promise<{ ok: boolean; status?: number; message?: string }> {
-  const res = await fetch(`/api/admin/orders/${orderId}/settle`, {
+  const res = await adminFetch(`/api/admin/orders/${orderId}/settle`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),

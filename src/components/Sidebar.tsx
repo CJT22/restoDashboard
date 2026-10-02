@@ -12,10 +12,12 @@ import {
   Users,
   PanelLeftClose,
   PanelLeftOpen,
-  Clock
+  Clock,
+  LogOut
 } from 'lucide-react';
 import { TableRoom } from '../types';
 import { ConnectionStatus } from '../services/adminSync';
+import { DashboardUser, displayName } from '../services/auth';
 import { getRoomTiming, getTimerTone, formatDuration, formatWait, TIMER_TEXT_CLASS, RoomTiming } from '../utils/roomTimer';
 import { morphLayers } from '../utils/morphLayers';
 
@@ -78,6 +80,9 @@ interface SidebarProps {
   lastSyncedAt: number | null;
   // Reloads every zone's status and order from restoAdmin; rejects on failure.
   onRefresh: () => Promise<void>;
+  // Who's signed in, shown under "Blue Moon" next to Sign Out.
+  user: DashboardUser;
+  onSignOut: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -96,6 +101,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   connectionStatus,
   lastSyncedAt,
   onRefresh,
+  user,
+  onSignOut,
 }) => {
   // Live clock matching the screenshot "1:44:22 PM", "TUESDAY, SEPTEMBER 15"
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -265,6 +272,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onToggleOccupiedFilter={onToggleOccupiedFilter}
           attentionCount={attentionRooms.length}
           hasExpired={hasExpired}
+          userName={displayName(user)}
+          onSignOut={onSignOut}
         />
       )}
       {showFull && (
@@ -281,19 +290,35 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <div className="mb-4 flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-sm font-bold tracking-wide text-white uppercase truncate">Blue Moon</div>
-                <div className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase">Floor Dashboard</div>
+                <div
+                  className="text-[10px] font-semibold tracking-wider text-slate-500 uppercase truncate"
+                  title={`Signed in as ${user.username}`}
+                >
+                  {displayName(user)}
+                </div>
               </div>
-              <button
-                id="btn-collapse-sidebar"
-                data-sidebar-toggle
-                onClick={onToggleCollapsed}
-                title="Collapse sidebar (more room for the floor plan)"
-                aria-label="Collapse sidebar"
-                aria-expanded={true}
-                className="w-8 h-8 -mr-1 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
-              >
-                <PanelLeftClose data-morph="toggle" className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  id="btn-sign-out"
+                  onClick={onSignOut}
+                  title={`Sign out ${displayName(user)}`}
+                  aria-label="Sign out"
+                  className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:text-rose-300 hover:bg-rose-500/10 active:scale-95 transition-all"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+                <button
+                  id="btn-collapse-sidebar"
+                  data-sidebar-toggle
+                  onClick={onToggleCollapsed}
+                  title="Collapse sidebar (more room for the floor plan)"
+                  aria-label="Collapse sidebar"
+                  aria-expanded={true}
+                  className="w-8 h-8 -mr-1 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+                >
+                  <PanelLeftClose data-morph="toggle" className="w-4 h-4" />
+                </button>
+              </div>
             </div>
 
             <div className="text-3xl font-bold tracking-tight text-white font-mono flex items-baseline justify-between">
@@ -585,6 +610,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               })}
             </div>
           </div>
+
         </div>
       )}
       {/* Icons gliding between the two layouts fly here, above both */}
@@ -632,6 +658,8 @@ interface SidebarRailProps {
   onToggleOccupiedFilter: () => void;
   attentionCount: number;
   hasExpired: boolean;
+  userName: string;
+  onSignOut: () => void;
   // True while this is the outgoing layout of a collapse/expand.
   inert: boolean;
 }
@@ -658,6 +686,8 @@ const SidebarRail: React.FC<SidebarRailProps> = ({
   onToggleOccupiedFilter,
   attentionCount,
   hasExpired,
+  userName,
+  onSignOut,
   inert,
 }) => {
   const synced = syncedAgo == null ? '' : syncedAgo === 'just now' ? ' · synced just now' : ` · synced ${syncedAgo} ago`;
@@ -797,6 +827,16 @@ const SidebarRail: React.FC<SidebarRailProps> = ({
         ) : (
           <CheckCircle2 data-morph="attention-clear" className="w-5 h-5 text-emerald-400/70" />
         )}
+      </button>
+
+      <button
+        id="rail-sign-out"
+        onClick={onSignOut}
+        title={`Signed in as ${userName}\nTap to sign out`}
+        aria-label={`Sign out ${userName}`}
+        className={`${RAIL_BUTTON_CLASSES} mt-auto text-slate-400 hover:text-rose-300 hover:bg-rose-500/10`}
+      >
+        <LogOut className="w-5 h-5" />
       </button>
     </div>
   );

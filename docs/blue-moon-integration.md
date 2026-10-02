@@ -26,17 +26,18 @@ that clone gets replaced by every upstream pull.
 
 ## Architecture
 
-The browser never holds restoAdmin credentials. restoDashboard has a small backend of its own that
-holds them and relays everything the browser needs:
+Staff sign in to the dashboard with their own restoAdmin account, but the browser never holds a
+restoAdmin token. restoDashboard has a small backend of its own that keeps each signed-in user's
+tokens and relays everything the browser needs, as that user:
 
 ```
 ┌─────────────────┐        ┌──────────────────────┐        ┌───────────────────────┐
 │  restoDashboard  │  same  │   restoDashboard      │  REST  │       restoAdmin       │
 │   React (:3500)  │ origin │   server/ (:3510)     │  +     │   Node API (:2000)     │
 │                  │◄──────►│                       │◄──────►│   + Socket.IO          │
-│  (browser, no    │  /api  │  adminClient.ts:      │  JWT   │                        │
-│   admin creds)   │        │   holds creds, calls   │        │  restaurant_tables,    │
-│                  │        │   restoAdmin's REST    │        │  orders, billing,      │
+│  (browser: only  │  /api  │  auth.ts/sessions.ts: │  JWT   │                        │
+│   a session      │        │   per-user tokens      │        │  restaurant_tables,    │
+│   cookie)        │        │  adminClient.ts: REST  │        │  orders, billing,      │
 │                  │  SSE   │  socketBridge.ts:      │ socket │  menu (MySQL)          │
 │                  │◄──────►│   joins restoAdmin's   │◄──────►│                        │
 └─────────────────┘        │   Socket.IO rooms as a │        │  socketService.js      │
@@ -47,13 +48,17 @@ holds them and relays everything the browser needs:
 
 - The browser only talks to restoDashboard's own backend (`server/`), same-origin, via the Vite dev
   proxy ([vite.config.ts](../vite.config.ts)).
-- [`server/adminClient.ts`](../server/adminClient.ts) logs into restoAdmin with `POST /api/login`
-  (JWT), refreshes the token, and wraps every restoAdmin REST call the dashboard makes.
+- [`server/auth.ts`](../server/auth.ts) handles the login page's sign-in (see
+  [Signing in](#signing-in)) and guards every `/api/admin/*` route.
+  [`server/sessions.ts`](../server/sessions.ts) keeps each signed-in user's restoAdmin tokens.
+- [`server/adminClient.ts`](../server/adminClient.ts) wraps every restoAdmin REST call the
+  dashboard makes, as the signed-in user, and refreshes their token when it expires.
 - [`server/socketBridge.ts`](../server/socketBridge.ts) connects to restoAdmin's Socket.IO server as
   an ordinary client (like restoAdmin's own kitchen/cashier/waiter apps), joins the Blue Moon
   branch's rooms, and forwards `table_updated` / `order_created` / `order_updated` to the browser
   over Server-Sent Events (`GET /api/admin/stream`).
-- The backend is stateless. Nothing about the dashboard is stored in restoAdmin.
+- The backend stores only sign-in sessions (`.data/sessions.json`, gitignored, so a restart
+  doesn't sign everyone out). Nothing about the dashboard is stored in restoAdmin.
 
 ### What restoDashboard uses from restoAdmin
 
@@ -111,21 +116,43 @@ during an outage are never replayed.
 **restoDashboard → restoAdmin:** only order actions (create, edit items, confirm, cancel, settle),
 as direct REST calls. See [order-sync-integration.md](order-sync-integration.md).
 
-## Setting up the sync account
+## Signing in
 
-restoAdmin has no API keys, so the dashboard's backend signs in as an ordinary restoAdmin user:
+The dashboard opens on a login page. Staff sign in with their own restoAdmin username and password,
+and everything they do (orders, payments) is recorded in restoAdmin under their name.
 
-1. In restoAdmin, go to **Employees / User Management** and create a new user.
-2. Give it **non-admin** permissions, scoped to the **Blue Moon** branch.
-3. Put its username/password in `.env` as `ADMIN_USERNAME`/`ADMIN_PASSWORD` (copy `.env.example`),
-   along with `ADMIN_API_BASE_URL` and `ADMIN_BRANCH_ID=3`.
+**Who can sign in:** restoAdmin users whose `BRANCH_ID` is `ADMIN_BRANCH_ID` (Blue Moon, `3`) **and**
+whose `PERMISSIONS` (user role id) is `3`. Anyone else is refused after restoAdmin accepts the
+password, with "This account isn't allowed to use the Blue Moon dashboard". Admins are refused too.
+The role id is `DASHBOARD_PERMISSION_ID` in [server/auth.ts](../server/auth.ts). Accounts are made in
+restoAdmin's **Employees / User Management**; there's nothing to configure on the dashboard's side.
 
-**Nobody else may sign in with this account.** restoAdmin allows one active session per account:
-each sign-in ends the previous one. If a person signs in with it, the dashboard loses its session,
-signs back in on its next request, and logs that person out, back and forth.
+**How it works:** the backend signs in with restoAdmin's `POST /api/login` (the same call the staff
+app makes), keeps the returned tokens in [sessions.ts](../server/sessions.ts), and gives the browser
+only a random session id in an httpOnly cookie (`rd_session`, `SameSite=Lax`, `Secure` over https).
+Every `/api/admin/*` route needs that cookie and calls restoAdmin with that user's token.
 
-The account is only used server-to-server; it's never exposed to a browser. Orders and payments made
-from the dashboard are recorded in restoAdmin under this account.
+**How long it lasts:** until the user taps Sign Out (top of the sidebar, or the bottom of the
+collapsed rail), or until restoAdmin stops accepting the session's tokens. The access token is
+refreshed automatically, and restoAdmin's refresh token lasts 7 days from its last use, so a
+dashboard used daily stays signed in. Sessions survive a backend restart.
+
+**One session per account.** restoAdmin makes each sign-in the account's only valid session, so:
+
+- Signing in to the dashboard signs that account out of the **staff app** (and any other device) on
+  its next request. That happens as soon as restoAdmin accepts the password, so it also happens when
+  the dashboard then refuses the account for its role or branch.
+- Signing in elsewhere signs the dashboard out, but not right away: restoAdmin only enforces this on
+  its `/api/*` routes and on token refresh, not on the data routes the dashboard uses. The dashboard
+  notices when its access token next needs refreshing (within 24 hours) and returns to the login page
+  with "This account signed in on another device".
+
+Any call that finds the session gone returns 401 to the browser, and it goes back to the login page
+with the reason ([auth.ts](../src/services/auth.ts), [AuthGate.tsx](../src/components/AuthGate.tsx)).
+
+**Live updates without anyone's request:** the Socket.IO bridge needs no account. Its per-event order
+lookups (room-timer fields) borrow any signed-in user's session. With nobody signed in, there's no
+browser to send events to either.
 
 ## Connecting to a hosted restoAdmin (production)
 
@@ -136,7 +163,6 @@ machine running the dashboard's backend:
 |---|---|
 | `ADMIN_API_BASE_URL` | The hosted restoAdmin **Node API**'s URL (not its web frontend's). For the live server it's `https://moonctgroup.com/data-api` (see below). REST calls go to this URL plus the endpoint path; Socket.IO uses only its origin (scheme + host). |
 | `ADMIN_SOCKET_PATH` | Only if Socket.IO itself is served under a prefix (e.g. `/resto/socket.io`). Leave unset for the live server and for local. |
-| `ADMIN_USERNAME` / `ADMIN_PASSWORD` | A sync account that exists **on that server's database** (see above). |
 | `ADMIN_BRANCH_ID` | Blue Moon's branch id on that database (3 on the current one). |
 
 Then restart the backend (`npm run dev:server`). No CORS change is needed on restoAdmin, because
@@ -154,8 +180,8 @@ restoAdmin's Vite server. That server's proxy (restoAdmin's `vite.config.ts`) de
 - Plain `http://moonctgroup.com` serves nginx's default page, so use `https`.
 
 So the live `.env` is `ADMIN_API_BASE_URL="https://moonctgroup.com/data-api"` with
-`ADMIN_SOCKET_PATH` unset. The sync account must exist in the **live** database. An account
-created on a local restoAdmin isn't there, and the login fails with "User not found or inactive".
+`ADMIN_SOCKET_PATH` unset. Staff sign in with accounts from the **live** database. An account
+created on a local restoAdmin isn't there, and sign-in fails with "User not found or inactive".
 
 Before switching:
 
@@ -182,6 +208,8 @@ decide on:
 ## Known limitations
 
 - **Blue Moon only.** `ADMIN_BRANCH_ID` is a single value.
+- **No sign-in rate limit on the dashboard's side.** Failed passwords go straight to restoAdmin's
+  `/api/login`, which applies its own rules.
 - **No retry queue.** A failed order action shows an error; nothing is retried automatically.
 - **restoAdmin's Socket.IO room joins are unauthenticated** — a pre-existing restoAdmin trait, not
   something this integration adds or relies on beyond joining the branch's rooms.
@@ -191,6 +219,7 @@ decide on:
 | Concern | Files |
 |---|---|
 | Sync backend | [server/index.ts](../server/index.ts), [server/adminClient.ts](../server/adminClient.ts), [server/socketBridge.ts](../server/socketBridge.ts) |
+| Sign-in | [server/auth.ts](../server/auth.ts), [server/sessions.ts](../server/sessions.ts), [src/services/auth.ts](../src/services/auth.ts), [AuthGate.tsx](../src/components/AuthGate.tsx), [LoginPage.tsx](../src/components/LoginPage.tsx) |
 | Frontend sync | [src/services/adminSync.ts](../src/services/adminSync.ts), [src/services/orderSync.ts](../src/services/orderSync.ts), [App.tsx](../src/App.tsx) |
 | Zone ↔ table links | [floorLayout.json](../src/data/floorLayout.json), [EditTableModal.tsx](../src/layoutEditor/EditTableModal.tsx) (dormant editor) |
 | Connection settings | [.env.example](../.env.example) |

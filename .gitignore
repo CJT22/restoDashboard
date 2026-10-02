@@ -6,3 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Signed-in dashboard sessions (hold restoAdmin refresh tokens)
+.data/

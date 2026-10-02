@@ -1,7 +1,7 @@
 // Frontend-side bridge to this project's own backend (server/index.ts),
-// which in turn holds the restoAdmin credentials and proxies to restoAdmin.
-// The browser never talks to restoAdmin directly and never sees its
-// credentials — every call here hits our own same-origin /api/admin/* routes.
+// which proxies to restoAdmin as the signed-in user (see auth.ts).
+// The browser never talks to restoAdmin directly and never sees a
+// restoAdmin token — every call here hits our own same-origin /api/admin/* routes.
 //
 // restoAdmin's STATUS is an int enum (0=Not Available, 1=Available,
 // 2=Occupied, 3=Reserved — src/components/users/Tables.tsx in restoAdmin);
@@ -11,6 +11,7 @@
 // Reserved/Not Available), so there's no admin-direction mapping here.
 
 import { TableStatus } from '../types';
+import { adminFetch, checkSession } from './auth';
 
 export interface AdminTable {
   id: number;
@@ -42,7 +43,7 @@ async function parseJsonOrThrow(res: Response, fallbackMessage: string) {
 }
 
 export async function getAdminTables(): Promise<AdminTable[]> {
-  const res = await fetch('/api/admin/tables');
+  const res = await adminFetch('/api/admin/tables');
   const json = await parseJsonOrThrow(res, 'Failed to load Blue Moon tables from restoAdmin');
   return Array.isArray(json.data) ? json.data : [];
 }
@@ -128,6 +129,9 @@ function openStream() {
     if (source.readyState === EventSource.CLOSED) {
       source.close();
       if (sharedSource === source) sharedSource = null;
+      // A refused reconnect is also how a sign-out shows up (the backend
+      // closes the stream and answers 401); returns to the login page if so.
+      void checkSession();
       scheduleReopen();
     }
   };

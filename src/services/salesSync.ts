@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react';
 import { subscribeToOrderUpdates } from './orderSync';
+import { adminFetch } from './auth';
 
 export type SalesPeriod = 'today' | 'yesterday' | 'week' | 'month';
 
@@ -24,7 +25,7 @@ export interface SalesSummary {
 }
 
 async function fetchSalesJson(path: string) {
-  const res = await fetch(path);
+  const res = await adminFetch(path);
   const json = await res.json().catch(() => ({}));
   if (!res.ok || json?.success === false) {
     throw new Error(json?.error || json?.message || 'Failed to load sales from restoAdmin');

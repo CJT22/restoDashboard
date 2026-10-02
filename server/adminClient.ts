@@ -1,8 +1,10 @@
 // Thin authenticated client for restoAdmin's REST API.
 //
-// Holds the restoAdmin service-account credentials and access/refresh tokens
-// entirely server-side — the dashboard's browser never sees them, it only
-// ever talks to this backend's own /api/admin/* routes (see index.ts).
+// Every call runs as a signed-in dashboard user (an AdminSession from
+// sessions.ts), with that user's restoAdmin tokens, which stay server-side —
+// the dashboard's browser never sees them, it only ever talks to this
+// backend's own /api/* routes (see index.ts and auth.ts). restoAdmin records
+// that user as whoever created, confirmed or settled an order.
 //
 // Table status is restoAdmin's own numeric enum (0=Not Available,
 // 1=Available, 2=Occupied, 3=Reserved — see src/components/users/Tables.tsx
@@ -16,9 +18,9 @@
 // needed. Which dashboard zone is which restoAdmin table lives only on this
 // side, in src/data/floorLayout.json's adminTableId.
 
+import { endSession, saveSession, type AdminSession, type DashboardUser, type SessionEndReason } from './sessions.js';
+
 const ADMIN_API_BASE_URL = (process.env.ADMIN_API_BASE_URL || 'http://localhost:2000').replace(/\/+$/, '');
-const ADMIN_USERNAME = process.env.ADMIN_USERNAME || '';
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 export const ADMIN_BRANCH_ID = Number(process.env.ADMIN_BRANCH_ID || 3);
 
 export interface AdminTable {
@@ -130,73 +132,116 @@ export interface AddItemsResult {
   message?: string;
 }
 
-let accessToken: string | null = null;
-let refreshToken: string | null = null;
-let loginPromise: Promise<void> | null = null;
-
-async function login(): Promise<void> {
-  if (!ADMIN_USERNAME || !ADMIN_PASSWORD) {
-    throw new Error('ADMIN_USERNAME/ADMIN_PASSWORD are not configured (see .env.example)');
+// Thrown when restoAdmin stops accepting a session's tokens. The session is
+// already ended by then; index.ts turns this into a 401 so the browser goes
+// back to its login page.
+export class SessionEndedError extends Error {
+  constructor(public code: Exclude<SessionEndReason, 'SIGNED_OUT'>) {
+    super(code === 'SESSION_REPLACED' ? 'This account was signed in on another device.' : 'Your session has expired.');
   }
+}
+
+export interface AdminLoginResult {
+  user: DashboardUser;
+  // restoAdmin's user_role id (users.PERMISSIONS) and users.BRANCH_ID, for
+  // auth.ts to decide whether this account may use the dashboard.
+  permissions: number | null;
+  branchId: number | null;
+  accessToken: string;
+  refreshToken: string;
+}
+
+// Signs a user in to restoAdmin (POST /api/login, the same call its staff app
+// makes). Throws with restoAdmin's own message ("Incorrect password", …).
+// restoAdmin makes this the account's only valid session as soon as it
+// accepts the password, signing it out on any other device.
+export async function loginToAdmin(username: string, password: string): Promise<AdminLoginResult> {
   const res = await fetch(`${ADMIN_API_BASE_URL}/api/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ username: ADMIN_USERNAME, password: ADMIN_PASSWORD }),
+    body: JSON.stringify({ username, password }),
   });
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok || json?.success === false) {
     throw new Error(json?.error || json?.message || `restoAdmin login failed (${res.status})`);
   }
-  accessToken = json.tokens?.accessToken || json.data?.tokens?.accessToken;
-  refreshToken = json.tokens?.refreshToken || json.data?.tokens?.refreshToken;
-  if (!accessToken) {
-    throw new Error('restoAdmin login response did not include an accessToken');
+  const data = json.data || {};
+  const accessToken = json.tokens?.accessToken;
+  const refreshToken = json.tokens?.refreshToken;
+  if (!accessToken || !refreshToken) {
+    throw new Error('restoAdmin login response did not include tokens');
   }
+  const toNumberOrNull = (v: unknown) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  return {
+    user: {
+      id: Number(data.user_id),
+      username: String(data.username ?? username),
+      firstName: String(data.firstname ?? ''),
+      lastName: String(data.lastname ?? ''),
+    },
+    permissions: toNumberOrNull(data.permissions),
+    branchId: toNumberOrNull(data.branch_id),
+    accessToken,
+    refreshToken,
+  };
 }
 
-async function refresh(): Promise<void> {
-  if (!refreshToken) return login();
-  const res = await fetch(`${ADMIN_API_BASE_URL}/api/refresh`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ refreshToken }),
-  });
-  if (!res.ok) {
-    // Refresh token expired/invalid — fall back to a fresh login.
-    return login();
-  }
-  const json: any = await res.json().catch(() => ({}));
-  accessToken = json.tokens?.accessToken || accessToken;
-  refreshToken = json.tokens?.refreshToken || refreshToken;
+// The session's 401 code from restoAdmin, if it said why.
+async function authErrorCode(res: Response): Promise<string | null> {
+  const json: any = await res.clone().json().catch(() => ({}));
+  return typeof json?.code === 'string' ? json.code : null;
 }
 
-async function ensureLoggedIn(): Promise<void> {
-  if (accessToken) return;
-  if (!loginPromise) {
-    loginPromise = login().finally(() => {
-      loginPromise = null;
-    });
+// One refresh at a time per session, shared by every request that hit an
+// expired access token at once.
+const refreshing = new Map<string, Promise<void>>();
+
+function refresh(session: AdminSession): Promise<void> {
+  let pending = refreshing.get(session.id);
+  if (!pending) {
+    pending = (async () => {
+      const res = await fetch(`${ADMIN_API_BASE_URL}/api/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken: session.refreshToken }),
+      });
+      const json: any = await res.json().catch(() => ({}));
+      if (!res.ok || !json?.tokens?.accessToken) {
+        const code = json?.code === 'SESSION_REPLACED' ? 'SESSION_REPLACED' : 'SESSION_EXPIRED';
+        endSession(session.id, code);
+        throw new SessionEndedError(code);
+      }
+      session.accessToken = json.tokens.accessToken;
+      session.refreshToken = json.tokens.refreshToken || session.refreshToken;
+      saveSession(session);
+    })().finally(() => refreshing.delete(session.id));
+    refreshing.set(session.id, pending);
   }
-  return loginPromise;
+  return pending;
 }
 
-// Calls restoAdmin with the current access token, retrying once after a
-// refresh (or fresh login) if the token was rejected as expired.
-async function authedFetch(path: string, init: RequestInit = {}, isRetry = false): Promise<Response> {
-  await ensureLoggedIn();
+// Calls restoAdmin as the session's user, refreshing the access token once
+// if it was rejected. Ends the session (and throws SessionEndedError) if the
+// account signed in elsewhere or the refresh token is no longer valid.
+async function authedFetch(session: AdminSession, path: string, init: RequestInit = {}, isRetry = false): Promise<Response> {
   const res = await fetch(`${ADMIN_API_BASE_URL}${path}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
       ...(init.headers || {}),
-      Authorization: `Bearer ${accessToken}`,
+      Authorization: `Bearer ${session.accessToken}`,
     },
   });
-  if (res.status === 401 && !isRetry) {
-    await refresh();
-    return authedFetch(path, init, true);
+  if (res.status !== 401) return res;
+
+  const code = await authErrorCode(res);
+  if (code === 'SESSION_REPLACED' || isRetry) {
+    const reason = code === 'SESSION_REPLACED' ? 'SESSION_REPLACED' : 'SESSION_EXPIRED';
+    endSession(session.id, reason);
+    throw new SessionEndedError(reason);
   }
-  return res;
+  await refresh(session);
+  return authedFetch(session, path, init, true);
 }
 
 function mapAdminRow(row: any): AdminTable {
@@ -211,8 +256,8 @@ function mapAdminRow(row: any): AdminTable {
   };
 }
 
-export async function getBlueMoonTables(): Promise<AdminTable[]> {
-  const res = await authedFetch(`/restaurant_tables?branch_id=${ADMIN_BRANCH_ID}`);
+export async function getBlueMoonTables(session: AdminSession): Promise<AdminTable[]> {
+  const res = await authedFetch(session, `/restaurant_tables?branch_id=${ADMIN_BRANCH_ID}`);
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok || json?.success === false) {
     throw new Error(json?.error || json?.message || `Failed to fetch restoAdmin tables (${res.status})`);
@@ -256,8 +301,8 @@ function mapAdminOrder(row: any, items: AdminOrderItem[]): AdminOrder {
 // 3=Pending). Mirrors restoAdmin's ORDER_STATUS constants.
 const ACTIVE_ORDER_STATUSES = [2, 3];
 
-export async function getMenuForBranch(): Promise<AdminMenuItem[]> {
-  const res = await authedFetch(`/menus?branch_id=${ADMIN_BRANCH_ID}&include_description=0`);
+export async function getMenuForBranch(session: AdminSession): Promise<AdminMenuItem[]> {
+  const res = await authedFetch(session, `/menus?branch_id=${ADMIN_BRANCH_ID}&include_description=0`);
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok || json?.success === false) {
     throw new Error(json?.error || json?.message || `Failed to fetch restoAdmin menu (${res.status})`);
@@ -282,8 +327,8 @@ export async function getMenuForBranch(): Promise<AdminMenuItem[]> {
 // latest orders (restoAdmin caps an undated list at 2000) and filters here.
 // These rows, unlike GET /orders/:id, carry ENCODED_DT and the table's
 // ROOM_CHARGE, which the room timer needs.
-async function getActiveOrderRows(): Promise<any[]> {
-  const res = await authedFetch(`/orders/data?branch_id=${ADMIN_BRANCH_ID}`);
+async function getActiveOrderRows(session: AdminSession): Promise<any[]> {
+  const res = await authedFetch(session, `/orders/data?branch_id=${ADMIN_BRANCH_ID}`);
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok || json?.success === false) {
     throw new Error(json?.error || json?.message || `Failed to fetch restoAdmin orders (${res.status})`);
@@ -292,8 +337,8 @@ async function getActiveOrderRows(): Promise<any[]> {
   return rows.filter((row: any) => ACTIVE_ORDER_STATUSES.includes(Number(row.STATUS)));
 }
 
-async function getOrderItems(orderId: number): Promise<AdminOrderItem[]> {
-  const res = await authedFetch(`/orders/${orderId}/items`);
+async function getOrderItems(session: AdminSession, orderId: number): Promise<AdminOrderItem[]> {
+  const res = await authedFetch(session, `/orders/${orderId}/items`);
   const json: any = await res.json().catch(() => ({}));
   const rows = Array.isArray(json.data) ? json.data : [];
   return rows.map(mapAdminOrderItem);
@@ -302,11 +347,11 @@ async function getOrderItems(orderId: number): Promise<AdminOrderItem[]> {
 // There's no direct "active order for table" endpoint, so this filters the
 // branch's order list — the same data OrderModel's own 409-guard query
 // resolves server-side, just without a dedicated route.
-export async function getActiveOrderForTable(tableId: number): Promise<AdminOrder | null> {
-  const rows = await getActiveOrderRows();
+export async function getActiveOrderForTable(session: AdminSession, tableId: number): Promise<AdminOrder | null> {
+  const rows = await getActiveOrderRows(session);
   const match = rows.find((row: any) => Number(row.TABLE_ID) === tableId);
   if (!match) return null;
-  return mapAdminOrder(match, await getOrderItems(Number(match.IDNo)));
+  return mapAdminOrder(match, await getOrderItems(session, Number(match.IDNo)));
 }
 
 // Batched equivalent of calling getActiveOrderForTable once per table: one
@@ -314,15 +359,15 @@ export async function getActiveOrderForTable(tableId: number): Promise<AdminOrde
 // used for the once-on-load reconciliation in App.tsx so "Active Orders" and
 // each table's order detail are already populated on a fresh load, not just
 // their Available/Occupied status.
-export async function getActiveOrdersForBranch(): Promise<AdminOrder[]> {
-  const rows = await getActiveOrderRows();
-  return Promise.all(rows.map(async (row: any) => mapAdminOrder(row, await getOrderItems(Number(row.IDNo)))));
+export async function getActiveOrdersForBranch(session: AdminSession): Promise<AdminOrder[]> {
+  const rows = await getActiveOrderRows(session);
+  return Promise.all(rows.map(async (row: any) => mapAdminOrder(row, await getOrderItems(session, Number(row.IDNo)))));
 }
 
 // The order's current row (without createdAt/roomRate — GET /orders/:id
 // doesn't return them) and items.
-export async function getOrderById(orderId: number): Promise<AdminOrder | null> {
-  const [orderRes, items] = await Promise.all([authedFetch(`/orders/${orderId}`), getOrderItems(orderId)]);
+export async function getOrderById(session: AdminSession, orderId: number): Promise<AdminOrder | null> {
+  const [orderRes, items] = await Promise.all([authedFetch(session, `/orders/${orderId}`), getOrderItems(session, orderId)]);
   const orderJson: any = await orderRes.json().catch(() => ({}));
   if (!orderRes.ok || orderJson?.success === false) {
     if (orderRes.status === 404) return null;
@@ -347,7 +392,7 @@ function formatOrderNo(date: Date): string {
 // collision has to be resolved here instead of surfacing as an error.
 const ORDER_NO_ATTEMPTS = 5;
 
-export async function createOrder(params: {
+export async function createOrder(session: AdminSession, params: {
   tableId: number;
   orderType: string;
   items: CreateOrderItemInput[];
@@ -369,18 +414,17 @@ export async function createOrder(params: {
   let serviceCharge = 0;
   const roomChargeQty = Math.max(1, Number(params.roomChargeQty) || 1);
   if (roomChargeQty > 1) {
-    const tables = await getBlueMoonTables();
+    const tables = await getBlueMoonTables(session);
     const rate = tables.find((t) => t.id === params.tableId)?.roomCharge || 0;
     serviceCharge = (roomChargeQty - 1) * rate;
   }
 
   // OrderController.create ignores BRANCH_ID in the body for a non-admin
-  // caller (our service account) and instead resolves the branch from
-  // req.session/req.user, then req.query.branch_id as a last resort. Our
-  // service account's JWT doesn't carry a branch_id claim, so — same as
-  // every GET here — the query param is what actually gets it through.
+  // caller and resolves the branch from the user's own token instead (then
+  // req.query.branch_id as a last resort). auth.ts only signs in users whose
+  // branch is ADMIN_BRANCH_ID, so both point at Blue Moon.
   const postOrder = (orderNo: string) =>
-    authedFetch(`/orders?branch_id=${ADMIN_BRANCH_ID}`, {
+    authedFetch(session, `/orders?branch_id=${ADMIN_BRANCH_ID}`, {
       method: 'POST',
       body: JSON.stringify({
         ORDER_NO: orderNo,
@@ -418,9 +462,9 @@ export async function createOrder(params: {
     // (InventoryDeductionService.deductOnOrderConfirmed) — a create alone
     // never would. If the confirm fails, cancel the just-created order so
     // the table isn't left holding a half-made one.
-    const confirmed = await updateOrderStatus(id, 2).catch((err: any) => ({ ok: false, message: err?.message }));
+    const confirmed = await updateOrderStatus(session, id, 2).catch((err: any) => ({ ok: false, message: err?.message }));
     if (!confirmed.ok) {
-      await updateOrderStatus(id, -1).catch(() => undefined);
+      await updateOrderStatus(session, id, -1).catch(() => undefined);
       return { ok: false, kind: 'error', message: confirmed.message || 'Order was created but could not be confirmed, so it was cancelled.' };
     }
     return { ok: true, id, orderNo: String(json.data.order_no) };
@@ -445,8 +489,8 @@ export async function createOrder(params: {
   return { ok: false, kind: 'error', message: json?.error || json?.message || `Failed to create order (${res.status})` };
 }
 
-export async function addItemsToOrder(orderId: number, items: CreateOrderItemInput[]): Promise<AddItemsResult> {
-  const res = await authedFetch(`/orders/${orderId}/items`, {
+export async function addItemsToOrder(session: AdminSession, orderId: number, items: CreateOrderItemInput[]): Promise<AddItemsResult> {
+  const res = await authedFetch(session, `/orders/${orderId}/items`, {
     method: 'POST',
     body: JSON.stringify({
       items: items.map((it) => ({ menu_id: it.menuId, qty: it.qty, unit_price: it.unitPrice })),
@@ -481,8 +525,8 @@ export interface UpdateItemResult {
 // Confirm (2) or Cancel (-1) an order — restoAdmin already flips the table
 // to Available on cancel, and emits order_updated either way, which the
 // existing socketBridge -> SSE -> App.tsx chain already relays.
-export async function updateOrderStatus(orderId: number, status: 2 | -1): Promise<{ ok: boolean; message?: string }> {
-  const res = await authedFetch(`/orders/${orderId}/status`, {
+export async function updateOrderStatus(session: AdminSession, orderId: number, status: 2 | -1): Promise<{ ok: boolean; message?: string }> {
+  const res = await authedFetch(session, `/orders/${orderId}/status`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });
@@ -499,15 +543,15 @@ export async function updateOrderStatus(orderId: number, status: 2 | -1): Promis
 // Re-fetches the order for its current TABLE_ID/ORDER_TYPE/STATUS/SUBTOTAL/
 // TAX_AMOUNT/DISCOUNT_AMOUNT since restoAdmin's PUT /orders/:id replaces the
 // whole payload rather than patching just SERVICE_CHARGE.
-export async function updateOrderRoomCharge(orderId: number, roomChargeQty: number): Promise<{ ok: boolean; message?: string }> {
-  const order = await getOrderById(orderId);
+export async function updateOrderRoomCharge(session: AdminSession, orderId: number, roomChargeQty: number): Promise<{ ok: boolean; message?: string }> {
+  const order = await getOrderById(session, orderId);
   if (!order) {
     return { ok: false, message: 'Order not found' };
   }
   if (order.tableId == null) {
     return { ok: false, message: 'This order has no table assigned' };
   }
-  const tables = await getBlueMoonTables();
+  const tables = await getBlueMoonTables(session);
   const rate = tables.find((t) => t.id === order.tableId)?.roomCharge || 0;
   if (rate <= 0) {
     return { ok: false, message: 'This table has no room charge' };
@@ -517,7 +561,7 @@ export async function updateOrderRoomCharge(orderId: number, roomChargeQty: numb
   const explicitServiceCharge = (clampedQty - 1) * rate;
   const grandTotal = order.subtotal + order.taxAmount + explicitServiceCharge - order.discountAmount;
 
-  const res = await authedFetch(`/orders/${orderId}`, {
+  const res = await authedFetch(session, `/orders/${orderId}`, {
     method: 'PUT',
     body: JSON.stringify({
       TABLE_ID: order.tableId,
@@ -537,8 +581,8 @@ export async function updateOrderRoomCharge(orderId: number, roomChargeQty: numb
   return { ok: false, message: json?.error || json?.message || `Failed to update room charge (${res.status})` };
 }
 
-export async function updateOrderItemQty(itemId: number, qty: number): Promise<UpdateItemResult> {
-  const res = await authedFetch(`/order_items/${itemId}`, {
+export async function updateOrderItemQty(session: AdminSession, itemId: number, qty: number): Promise<UpdateItemResult> {
+  const res = await authedFetch(session, `/order_items/${itemId}`, {
     method: 'PUT',
     body: JSON.stringify({ qty }),
   });
@@ -552,8 +596,8 @@ export async function updateOrderItemQty(itemId: number, qty: number): Promise<U
   return { ok: false, kind: 'error', message: json?.error || json?.message || `Failed to update item (${res.status})` };
 }
 
-export async function deleteOrderItem(itemId: number): Promise<{ ok: boolean; message?: string }> {
-  const res = await authedFetch(`/order_items/${itemId}`, { method: 'DELETE' });
+export async function deleteOrderItem(session: AdminSession, itemId: number): Promise<{ ok: boolean; message?: string }> {
+  const res = await authedFetch(session, `/order_items/${itemId}`, { method: 'DELETE' });
   const json: any = await res.json().catch(() => ({}));
   if (res.ok && json?.success !== false) {
     return { ok: true };
@@ -561,8 +605,8 @@ export async function deleteOrderItem(itemId: number): Promise<{ ok: boolean; me
   return { ok: false, message: json?.error || json?.message || `Failed to delete item (${res.status})` };
 }
 
-export async function getBilling(orderId: number): Promise<AdminBilling | null> {
-  const res = await authedFetch(`/billing/${orderId}`);
+export async function getBilling(session: AdminSession, orderId: number): Promise<AdminBilling | null> {
+  const res = await authedFetch(session, `/billing/${orderId}`);
   if (res.status === 404) return null;
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok || json?.success === false) {
@@ -584,10 +628,11 @@ export async function getBilling(orderId: number): Promise<AdminBilling | null> 
 // than assume the full grand total, since a partial payment may already
 // exist from restoAdmin's side.
 export async function settleOrder(
+  session: AdminSession,
   orderId: number,
   params: { paymentMethod: string; amountPaid: number; paymentRef: string | null }
 ): Promise<{ ok: boolean; status?: number; message?: string }> {
-  const res = await authedFetch(`/billing/${orderId}`, {
+  const res = await authedFetch(session, `/billing/${orderId}`, {
     method: 'PUT',
     body: JSON.stringify({
       payment_method: params.paymentMethod,
@@ -614,7 +659,7 @@ export interface SalesTotal {
 // confirmed/settled orders, dated by billing.ENCODED_DT), so the figure
 // matches what restoAdmin shows for the same range. limit=1 because only
 // the stats are wanted, not the rows.
-export async function getSalesTotal(startDate: string, endDate: string): Promise<SalesTotal> {
+export async function getSalesTotal(session: AdminSession, startDate: string, endDate: string): Promise<SalesTotal> {
   const qs = new URLSearchParams({
     branch_id: String(ADMIN_BRANCH_ID),
     start_date: startDate,
@@ -622,7 +667,7 @@ export async function getSalesTotal(startDate: string, endDate: string): Promise
     include_stats: '1',
     limit: '1',
   });
-  const res = await authedFetch(`/billing/data?${qs}`);
+  const res = await authedFetch(session, `/billing/data?${qs}`);
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok || json?.success === false) {
     throw new Error(json?.error || json?.message || `Failed to fetch sales from restoAdmin (${res.status})`);

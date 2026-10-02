@@ -17,6 +17,7 @@ import {
 } from './services/adminSync';
 import { subscribeToOrderUpdates, getActiveOrders, getActiveOrderForTable } from './services/orderSync';
 import { LAYOUT_EDITOR_ENABLED } from './config/layoutEditor';
+import { DashboardUser } from './services/auth';
 
 // The dormant layout editor (see src/config/layoutEditor.ts). With the flag
 // off this is a constant null, so the editor is neither loaded nor bundled.
@@ -70,7 +71,13 @@ function loadLayout(): FloorLayout {
 
 const initialLayout = loadLayout();
 
-export default function App() {
+interface AppProps {
+  // The signed-in staff member (see components/AuthGate.tsx).
+  user: DashboardUser;
+  onSignOut: () => void;
+}
+
+export default function App({ user, onSignOut }: AppProps) {
   // Zones and info panels come from the fixed layout on every device; each
   // zone's status and order are filled in live from restoAdmin below.
   const [tables, setTables] = useState<TableRoom[]>(() => zonesFromLayout(initialLayout.zones));
@@ -352,6 +359,8 @@ export default function App() {
         connectionStatus={connectionStatus}
         lastSyncedAt={lastSyncedAt}
         onRefresh={() => resyncFromAdmin()}
+        user={user}
+        onSignOut={onSignOut}
       />
 
       {/* Main View Area */}

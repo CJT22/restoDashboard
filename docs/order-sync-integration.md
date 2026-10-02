@@ -191,10 +191,9 @@ them to the matching linked zone (`applyRemoteOrder`) purely inbound, same as `a
 and deliberately never touches `table.status` itself, since the table-status channel (see above)
 already owns that.
 
-**Attribution:** orders/payments recorded from restoDashboard are attributed to the same shared,
-branch-scoped service account the table sync already authenticates as (see
-[blue-moon-integration.md](blue-moon-integration.md#setting-up-the-sync-account)) — no new auth
-system, and no admin-role elevation was needed: `PUT /billing/:id` (like every other endpoint used
+**Attribution:** orders/payments recorded from restoDashboard are attributed to the staff member
+signed in to the dashboard (see [blue-moon-integration.md](blue-moon-integration.md#signing-in)).
+No admin-role elevation is needed: `PUT /billing/:id` (like every other endpoint used
 here) only requires being authenticated, not an admin permission level.
 
 ## Known limitations / explicitly out of scope
