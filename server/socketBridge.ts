@@ -93,7 +93,10 @@ let orderEventQueue: Promise<void> = Promise.resolve();
 export function connectSocketBridge(): void {
   if (socket) return;
 
-  socket = ioClient(ADMIN_API_BASE_URL, {
+  // Origin only: socket.io-client reads a URL's path as a namespace, so a
+  // prefixed base URL (e.g. https://host/data-api) would join namespace
+  // "/data-api" and never see restoAdmin's events, which go to "/".
+  socket = ioClient(new URL(ADMIN_API_BASE_URL).origin, {
     path: ADMIN_SOCKET_PATH,
     transports: ['websocket', 'polling'],
     reconnection: true,

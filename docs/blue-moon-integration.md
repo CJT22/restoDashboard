@@ -134,13 +134,28 @@ machine running the dashboard's backend:
 
 | `.env` key | Set to |
 |---|---|
-| `ADMIN_API_BASE_URL` | The hosted restoAdmin **Node API**'s URL (not its web frontend's), e.g. `https://api.example.com`. Ask whoever runs restoAdmin's server. REST and Socket.IO both use it. |
-| `ADMIN_SOCKET_PATH` | Only if restoAdmin is served under a path prefix by a reverse proxy (`https://example.com/resto/...`): put the prefix in `ADMIN_API_BASE_URL` too, and set this to the matching Socket.IO path, e.g. `/resto/socket.io`. Otherwise leave it unset. |
+| `ADMIN_API_BASE_URL` | The hosted restoAdmin **Node API**'s URL (not its web frontend's). For the live server it's `https://moonctgroup.com/data-api` (see below). REST calls go to this URL plus the endpoint path; Socket.IO uses only its origin (scheme + host). |
+| `ADMIN_SOCKET_PATH` | Only if Socket.IO itself is served under a prefix (e.g. `/resto/socket.io`). Leave unset for the live server and for local. |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | A sync account that exists **on that server's database** (see above). |
 | `ADMIN_BRANCH_ID` | Blue Moon's branch id on that database (3 on the current one). |
 
 Then restart the backend (`npm run dev:server`). No CORS change is needed on restoAdmin, because
 only the dashboard's backend talks to it, never the browser.
+
+### The live server: moonctgroup.com
+
+restoAdmin's live instance runs at `https://moonctgroup.com` behind nginx, which forwards to
+restoAdmin's Vite server. That server's proxy (restoAdmin's `vite.config.ts`) decides where requests go:
+
+- `/data-api/*` → the Node API, with `/data-api` stripped. This is the only prefix that reaches
+  every endpoint the dashboard uses (`/api/login`, `/restaurant_tables`, `/orders/...`,
+  `/billing/...`, ...). Bare paths like `/orders` return restoAdmin's web app instead.
+- `/socket.io` → the Node API's Socket.IO, at the default path.
+- Plain `http://moonctgroup.com` serves nginx's default page, so use `https`.
+
+So the live `.env` is `ADMIN_API_BASE_URL="https://moonctgroup.com/data-api"` with
+`ADMIN_SOCKET_PATH` unset. The sync account must exist in the **live** database. An account
+created on a local restoAdmin isn't there, and the login fails with "User not found or inactive".
 
 Before switching:
 
