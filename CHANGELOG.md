@@ -9,6 +9,12 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.2.1]
+
+### Changed
+- **Zones no longer repeat their restoAdmin table name, and say whether they're a room or a table correctly.** Every zone's restoAdmin name is the same as its dashboard name apart from spacing ("P1" vs "P 1"). The order detail's "Synced to: P 1" badge and the "M1 • M1"-style subtitles on New Order, Add Items and Settle Order told staff nothing new, so they're gone. Those subtitles now read zone, floor and kind, e.g. "P1 • Floor 1 • Table" or "ROOM 3 • Floor 2 • Room". The kind used to come from the floor plan's zone type, which is "table" for every zone, so the order detail called ROOM 1–13, FAMILY ROOM and ON AIR 1/2 a "Dining Table". A zone is now a Room when restoAdmin bills it an hourly room charge, and a Table otherwise. That matches the map's hover card, and it follows restoAdmin if a room charge is added or removed ([zoneLabels.ts](src/utils/zoneLabels.ts), [TableDetailModal.tsx](src/components/TableDetailModal.tsx), [NewOrderScreen.tsx](src/components/NewOrderScreen.tsx), [AddItemsScreen.tsx](src/components/AddItemsScreen.tsx), [SettlePaymentModal.tsx](src/components/SettlePaymentModal.tsx), [FloorPlanMap.tsx](src/components/FloorPlanMap.tsx)).
+- **Seating capacity ("Cap: N") is no longer shown.** The numbers were typed into the zone editor when the floor plan was laid out (the editor defaults to 4). No one ever checked them against the real seating, and restoAdmin has 0 for every Blue Moon table, so there was nothing to confirm them against. Each place it appeared keeps its layout. The order detail subtitle now reads "Floor 1 • Table". The map's hover card shows a "Room"/"Table" pill where the "Cap: N" pill was, so its header stays balanced. All Tables cards say "Room" or "Table" (no floor, since that page already shows one floor at a time). Those cards also used the floor plan's zone type, which is "table" for every zone, so rooms had been showing as "Table"; they now use the same room-charge rule as everywhere else ([TableDetailModal.tsx](src/components/TableDetailModal.tsx), [FloorPlanMap.tsx](src/components/FloorPlanMap.tsx), [TableDirectoryView.tsx](src/components/TableDirectoryView.tsx)).
+
 ## [2.2.0]
 
 ### Added

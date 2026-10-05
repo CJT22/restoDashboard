@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { InfoPanelView } from './InfoPanelView';
 import { MAX_LISTED_ORDER_ITEMS, groupOrderLines } from '../services/orderSync';
+import { zoneKindLabel } from '../utils/zoneLabels';
 import { LAYOUT_EDITOR_ENABLED } from '../config/layoutEditor';
 import { ZOOM_CONTROLS_ENABLED } from '../config/zoomControls';
 
@@ -789,7 +790,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-white text-xs">{table.name}</span>
                         <span className="text-[10px] px-2 py-0.5 rounded-full uppercase font-mono font-bold bg-white/10 text-slate-300">
-                          Cap: {table.capacity}
+                          {zoneKindLabel(table)}
                         </span>
                       </div>
 
@@ -829,7 +830,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
                       {!activeOrder && (
                         <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px] text-slate-400">
-                          No order yet for this {(table.adminRoomCharge ?? 0) > 0 ? 'room' : 'table'}.
+                          No order yet for this {zoneKindLabel(table).toLowerCase()}.
                         </div>
                       )}
 

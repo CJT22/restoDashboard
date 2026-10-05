@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { TableRoom, AdminOrderSummary } from '../types';
 import { addItemsToOrder, groupOrderLines } from '../services/orderSync';
+import { formatZoneSubtitle } from '../utils/zoneLabels';
 import { QuickAddDrinks } from './QuickAddDrinks';
 import { OrderScreen, CartLineList, InsufficientAlert, useOrderCart, useMenuCatalog } from './OrderScreen';
 
@@ -130,7 +131,7 @@ export const AddItemsScreen: React.FC<AddItemsScreenProps> = ({ table, order, on
   return (
     <OrderScreen
       title="Add Items"
-      subtitle={`${table.name} • ${table.adminTableName || `Table #${table.adminTableId}`}`}
+      subtitle={formatZoneSubtitle(table)}
       catalog={catalog}
       catalogError={catalogError}
       qtyOf={cart.qtyOf}

@@ -16,6 +16,7 @@ import {
 } from '../services/orderSync';
 import { getAdminTables } from '../services/adminSync';
 import { getStatusColors } from '../utils/statusColors';
+import { zoneKindLabel } from '../utils/zoneLabels';
 import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, getTimerTone, TIMER_TEXT_CLASS, TimerTone } from '../utils/roomTimer';
 import { NewOrderScreen } from './NewOrderScreen';
 import { AddItemsScreen } from './AddItemsScreen';
@@ -30,7 +31,6 @@ import {
   Users,
   UtensilsCrossed,
   Plus,
-  Link2,
   AlertTriangle,
   Wallet,
   Ban,
@@ -354,19 +354,9 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                   )}
                   {getStatusColors(table.status).label}
                 </span>
-                {table.adminTableId != null && (
-                  <span
-                    className="text-xs px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-mono flex items-center gap-1"
-                    title={`Synced with restoAdmin table #${table.adminTableId} (Blue Moon)`}
-                  >
-                    <Link2 className="w-3 h-3" />
-                    Synced to: {table.adminTableName || `#${table.adminTableId}`}
-                  </span>
-                )}
               </div>
               <p className="text-xs text-slate-400 mt-0.5">
-                Floor {table.floor} • Cap: {table.capacity} •{' '}
-                {table.type === 'room' ? 'Private KTV Room' : table.type === 'booth' ? 'Dining Booth' : 'Dining Table'}
+                Floor {table.floor} • {zoneKindLabel(table, roomChargeRate)}
                 {table.serverName ? ` • Server: ${table.serverName}` : ''}
               </p>
             </div>

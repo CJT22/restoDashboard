@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { TableRoom, AdminOrderSummary } from '../types';
 import { createOrder, addItemsToOrder, getActiveOrderForTable, ORDER_TYPES } from '../services/orderSync';
 import { getAdminTables } from '../services/adminSync';
+import { formatZoneSubtitle } from '../utils/zoneLabels';
 import { QtyStepper } from './QtyStepper';
 import { QuickAddDrinks } from './QuickAddDrinks';
 import { OrderScreen, CartLineList, InsufficientAlert, useOrderCart, useMenuCatalog } from './OrderScreen';
@@ -223,7 +224,7 @@ export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, 
   return (
     <OrderScreen
       title="New Order"
-      subtitle={`${table.name} • ${table.adminTableName || `Table #${table.adminTableId}`}`}
+      subtitle={formatZoneSubtitle(table, roomChargeRate)}
       catalog={catalog}
       catalogError={catalogError}
       qtyOf={cart.qtyOf}

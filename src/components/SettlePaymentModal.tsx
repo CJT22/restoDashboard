@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { TableRoom } from '../types';
 import { getBilling, settleOrder } from '../services/orderSync';
+import { formatZoneSubtitle } from '../utils/zoneLabels';
 import { X, Wallet } from 'lucide-react';
 
 interface SettlePaymentModalProps {
@@ -82,7 +83,7 @@ export const SettlePaymentModal: React.FC<SettlePaymentModalProps> = ({ orderId,
             <div>
               <h3 className="font-bold text-white text-base">Settle Order</h3>
               <p className="text-xs text-slate-400">
-                {table.name} • {table.adminTableName || `Table #${table.adminTableId}`}
+                {formatZoneSubtitle(table)}
               </p>
             </div>
           </div>

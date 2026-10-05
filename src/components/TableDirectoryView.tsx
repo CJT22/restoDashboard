@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { TableRoom, TableStatus } from '../types';
 import { getStatusColors } from '../utils/statusColors';
+import { zoneKindLabel } from '../utils/zoneLabels';
 import { formatItemCount, groupOrderLines } from '../services/orderSync';
 import {
   Search,
@@ -161,7 +162,7 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
                         {table.name}
                       </h3>
                       <span className="text-[10px] text-slate-400">
-                        {table.type === 'room' ? 'Private Room' : table.type === 'booth' ? 'Booth' : 'Table'} • Cap: {table.capacity}
+                        {zoneKindLabel(table)}
                       </span>
                     </div>
                   </div>
