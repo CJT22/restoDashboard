@@ -322,6 +322,37 @@ export async function getMenuForBranch(session: AdminSession): Promise<AdminMenu
     }));
 }
 
+export interface MenuPopularity {
+  menuId: number;
+  qty: number;
+  revenue: number;
+}
+
+// How many items to ask GET /api/menu/top-revenue for. Above the branch's
+// whole menu (~300), so every item that has ever sold comes back ranked, not
+// just the top few.
+const POPULARITY_LIMIT = 1000;
+
+// All-time units sold and revenue per menu item, ranked by revenue — the
+// same endpoint the staff app's "Top Revenue Items" uses. Feeds the order
+// screen's Top Revenue section and Quick Add Drinks ranking. Returns [] if
+// this restoAdmin doesn't have the route, so the order screen still works,
+// just unranked.
+export async function getMenuPopularity(session: AdminSession): Promise<MenuPopularity[]> {
+  const res = await authedFetch(session, `/api/menu/top-revenue?branch_id=${ADMIN_BRANCH_ID}&limit=${POPULARITY_LIMIT}`);
+  if (res.status === 404 || res.status === 501) return [];
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok || json?.success === false) {
+    throw new Error(json?.error || json?.message || `Failed to fetch restoAdmin top revenue items (${res.status})`);
+  }
+  const rows = Array.isArray(json.data) ? json.data : [];
+  return rows.map((row: any) => ({
+    menuId: Number(row.id),
+    qty: Number(row.sales_qty ?? 0),
+    revenue: Number(row.total_revenue ?? 0),
+  }));
+}
+
 // The branch's Pending/Confirmed order rows, straight from GET /orders/data —
 // restoAdmin has no "active orders" filter, so this pulls the branch's
 // latest orders (restoAdmin caps an undated list at 2000) and filters here.

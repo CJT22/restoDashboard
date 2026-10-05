@@ -1,9 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { TableRoom, AdminOrderLineItem, AdminOrderSummary } from '../types';
+import { TableRoom, AdminOrderSummary } from '../types';
 import {
   getActiveOrderForTable,
-  getMenu,
-  AdminMenuItem,
   addItemsToOrder,
   updateItemQty,
   deleteItem,
@@ -12,11 +10,18 @@ import {
   updateOrderRoomCharge,
   formatOrderType,
   formatItemCount,
+  groupOrderLines,
+  OrderLineGroup,
+  UpdateItemResult,
 } from '../services/orderSync';
 import { getAdminTables } from '../services/adminSync';
 import { getStatusColors } from '../utils/statusColors';
 import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, getTimerTone, TIMER_TEXT_CLASS, TimerTone } from '../utils/roomTimer';
-import { NewOrderModal } from './NewOrderModal';
+import { NewOrderScreen } from './NewOrderScreen';
+import { AddItemsScreen } from './AddItemsScreen';
+import { QuickAddDrinks } from './QuickAddDrinks';
+import { useMenuCatalog } from './OrderScreen';
+import { CatalogItem } from '../services/menuCatalog';
 import { SettlePaymentModal } from './SettlePaymentModal';
 import { QtyStepper } from './QtyStepper';
 import {
@@ -29,7 +34,6 @@ import {
   AlertTriangle,
   Wallet,
   Ban,
-  ChevronDown,
   CalendarClock
 } from 'lucide-react';
 
@@ -66,9 +70,10 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   const [isConfirmingCancel, setIsConfirmingCancel] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
 
-  const [menu, setMenu] = useState<AdminMenuItem[]>([]);
-  const [selectedMenuId, setSelectedMenuId] = useState('');
-  const [addQty, setAddQty] = useState(1);
+  const { catalog } = useMenuCatalog();
+  const [showAddItems, setShowAddItems] = useState(false);
+  // The Quick Add Drinks tap being saved, so repeat taps can't race it.
+  const [savingDrinkId, setSavingDrinkId] = useState<number | null>(null);
   // The item whose −/+ change is in flight, so repeat taps can't race it.
   const [savingItemId, setSavingItemId] = useState<number | null>(null);
 
@@ -106,14 +111,6 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [table.id, table.adminTableId]);
 
-  // Menu for the inline "add item" row, fetched once a real order exists to add to.
-  useEffect(() => {
-    if (table.adminTableId == null) return;
-    getMenu()
-      .then(setMenu)
-      .catch(() => setMenu([]));
-  }, [table.adminTableId]);
-
   useEffect(() => {
     if (table.adminTableId == null) return;
     let cancelled = false;
@@ -133,6 +130,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
 
   const activeOrder = table.activeOrder;
   const orderItems = activeOrder?.items ?? [];
+  const orderRows = groupOrderLines(orderItems);
   const tableId = table.id;
 
   // Derived from the order's current SERVICE_CHARGE (which already includes
@@ -181,46 +179,36 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
     }
   };
 
-  const handleAddItem = async () => {
-    if (!activeOrder || !selectedMenuId) return;
-    const menuItem = menu.find((m) => String(m.id) === selectedMenuId);
-    if (!menuItem || addQty <= 0) return;
-    setOrderError(null);
-    setInsufficient(null);
-    try {
-      const result = await addItemsToOrder(activeOrder.id, [
-        { menuId: menuItem.id, qty: addQty, unitPrice: menuItem.price },
-      ]);
-      if (result.ok) {
-        setSelectedMenuId('');
-        setAddQty(1);
-        await refreshOrder();
-      } else if (result.kind === 'insufficient') {
-        setInsufficient(result.insufficient ?? []);
-      } else {
-        setOrderError(result.message || 'Failed to add item');
-      }
-    } catch (err: any) {
-      setOrderError(err.message || 'Failed to add item');
+  // One row per menu item, however many lines restoAdmin holds for it (see
+  // groupOrderLines). A ±1 acts on the row's newest line, leaving older ones
+  // (often already prepared) alone; a newest line down to its last unit is
+  // deleted instead, so the row drops by one and its other lines keep theirs.
+  // Callers hold the lock and clear the alerts.
+  const stepRow = async (group: OrderLineGroup, delta: 1 | -1) => {
+    const newest = group.lines[group.lines.length - 1];
+    const result: UpdateItemResult =
+      delta < 0 && newest.quantity <= 1
+        ? await deleteItem(newest.id)
+        : await updateItemQty(newest.id, newest.quantity + delta);
+    if (result.ok) {
+      await refreshOrder();
+    } else if (result.kind === 'insufficient') {
+      setInsufficient(result.insufficient ?? []);
+    } else {
+      setOrderError(result.message || 'Failed to update item');
     }
   };
 
   // −/+ on an item row: saves each step straight to restoAdmin, like the
   // room-charge stepper. Minimum 1 — removing is the trash button's job.
-  const handleItemQtyChange = async (item: AdminOrderLineItem, nextQty: number) => {
-    if (nextQty < 1 || savingItemId != null) return;
-    setSavingItemId(item.id);
+  const handleRowStep = async (group: OrderLineGroup, delta: 1 | -1) => {
+    if (savingItemId != null || savingDrinkId != null) return;
+    if (delta < 0 && group.quantity <= 1) return;
+    setSavingItemId(group.id);
     setOrderError(null);
     setInsufficient(null);
     try {
-      const result = await updateItemQty(item.id, nextQty);
-      if (result.ok) {
-        await refreshOrder();
-      } else if (result.kind === 'insufficient') {
-        setInsufficient(result.insufficient ?? []);
-      } else {
-        setOrderError(result.message || 'Failed to update item');
-      }
+      await stepRow(group, delta);
     } catch (err: any) {
       setOrderError(err.message || 'Failed to update item');
     } finally {
@@ -228,17 +216,54 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
     }
   };
 
-  const handleDeleteItem = async (item: AdminOrderLineItem) => {
+  // Trash removes the item entirely: every line it has on the order.
+  const handleDeleteRow = async (group: OrderLineGroup) => {
+    if (savingItemId != null || savingDrinkId != null) return;
+    setSavingItemId(group.id);
     setOrderError(null);
     try {
-      const result = await deleteItem(item.id);
-      if (result.ok) {
-        await refreshOrder();
-      } else {
-        setOrderError(result.message || 'Failed to delete item');
+      for (const line of group.lines) {
+        const result = await deleteItem(line.id);
+        if (!result.ok) {
+          setOrderError(result.message || 'Failed to delete item');
+          break;
+        }
       }
     } catch (err: any) {
       setOrderError(err.message || 'Failed to delete item');
+    } finally {
+      // Also after a partial failure, so the rows show what's really left.
+      await refreshOrder().catch(() => {});
+      setSavingItemId(null);
+    }
+  };
+
+  // A Quick Add Drinks tap saves straight to restoAdmin, for a table's next
+  // round without opening Add Items. A drink already on the order goes on its
+  // row the same way as that row's +, rather than adding a new line per tap.
+  const handleQuickDrink = async (drink: CatalogItem) => {
+    if (!activeOrder || savingDrinkId != null || savingItemId != null) return;
+    const existing = orderRows.find((row) => row.menuId === drink.id);
+    setSavingDrinkId(drink.id);
+    setOrderError(null);
+    setInsufficient(null);
+    try {
+      if (existing) {
+        await stepRow(existing, 1);
+        return;
+      }
+      const result = await addItemsToOrder(activeOrder.id, [{ menuId: drink.id, qty: 1, unitPrice: drink.price }]);
+      if (result.ok) {
+        await refreshOrder();
+      } else if (result.kind === 'insufficient') {
+        setInsufficient(result.insufficient ?? []);
+      } else {
+        setOrderError(result.message || `Failed to add ${drink.name}`);
+      }
+    } catch (err: any) {
+      setOrderError(err.message || `Failed to add ${drink.name}`);
+    } finally {
+      setSavingDrinkId(null);
     }
   };
 
@@ -286,7 +311,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   // and the effect above closing the modal, so the form doesn't flash.)
   if (table.adminTableId != null && !activeOrder && !hadOrderRef.current) {
     return (
-      <NewOrderModal
+      <NewOrderScreen
         table={table}
         onClose={onClose}
         onOrderChanged={(order) => onOrderChanged(tableId, order)}
@@ -374,7 +399,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
               </div>
               {activeOrder && (
                 <div className="text-xs text-slate-400">
-                  {formatOrderType(activeOrder.orderType)} • {formatItemCount(orderItems.length)}
+                  {formatOrderType(activeOrder.orderType)} • {formatItemCount(orderRows.length)}
                 </div>
               )}
             </div>
@@ -446,15 +471,15 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                 )}
 
                 {/* Items table */}
-                {orderItems.length === 0 ? (
+                {orderRows.length === 0 ? (
                   <div className="p-6 rounded-2xl bg-white/[0.02] border border-dashed border-white/10 text-center text-slate-500 text-xs">
                     No items on this order.
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {orderItems.map((item) => (
+                    {orderRows.map((item) => (
                       <div
-                        key={item.id}
+                        key={item.menuId}
                         className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between gap-3"
                       >
                         <div className="text-sm text-white min-w-0 truncate" title={item.name}>
@@ -462,51 +487,33 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                         </div>
                         <QtyStepper
                           amount={`₱${item.lineTotal.toFixed(2)}`}
-                          onDecrement={() => handleItemQtyChange(item, item.quantity - 1)}
-                          onIncrement={() => handleItemQtyChange(item, item.quantity + 1)}
+                          onDecrement={() => handleRowStep(item, -1)}
+                          onIncrement={() => handleRowStep(item, 1)}
                           decrementDisabled={savingItemId != null || item.quantity <= 1}
                           incrementDisabled={savingItemId != null}
-                          onRemove={() => handleDeleteItem(item)}
+                          onRemove={() => handleDeleteRow(item)}
                         />
                       </div>
                     ))}
                   </div>
                 )}
 
-                {/* Inline add-item row */}
-                <div className="flex items-stretch gap-2">
-                  <div className="relative flex-1 min-w-0">
-                    <select
-                      value={selectedMenuId}
-                      onChange={(e) => setSelectedMenuId(e.target.value)}
-                      className="w-full appearance-none h-10 px-3 pr-9 rounded-xl bg-white/5 border border-white/10 text-sm text-white focus:outline-none focus:border-indigo-500"
-                    >
-                      <option value="" className="bg-[#1a1c30]">
-                        Select an item to add…
-                      </option>
-                      {menu.map((m) => (
-                        <option key={m.id} value={m.id} className="bg-[#1a1c30]">
-                          {m.name} — ₱{m.price}
-                        </option>
-                      ))}
-                    </select>
-                    <ChevronDown className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  </div>
-                  <input
-                    type="number"
-                    min={1}
-                    value={addQty}
-                    onChange={(e) => setAddQty(parseInt(e.target.value) || 1)}
-                    className="w-16 h-10 px-2 rounded-xl bg-white/5 border border-white/10 text-sm text-white text-center focus:outline-none focus:border-indigo-500"
+                <button
+                  type="button"
+                  onClick={() => setShowAddItems(true)}
+                  className="w-full h-11 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold flex items-center justify-center gap-1.5"
+                >
+                  <Plus className="w-4 h-4" /> Add Items
+                </button>
+
+                {catalog && (
+                  <QuickAddDrinks
+                    drinks={catalog.quickDrinks}
+                    qtyOf={(menuId) => orderRows.find((row) => row.menuId === menuId)?.quantity ?? 0}
+                    onAdd={handleQuickDrink}
+                    busyId={savingDrinkId}
                   />
-                  <button
-                    onClick={handleAddItem}
-                    disabled={!selectedMenuId}
-                    className="h-10 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-semibold flex items-center justify-center gap-1 shrink-0"
-                  >
-                    <Plus className="w-3.5 h-3.5" /> Add
-                  </button>
-                </div>
+                )}
               </>
             )}
           </div>
@@ -580,6 +587,15 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
           </div>
         </div>
       </div>
+
+      {showAddItems && activeOrder && (
+        <AddItemsScreen
+          table={table}
+          order={activeOrder}
+          onClose={() => setShowAddItems(false)}
+          onAdded={refreshOrder}
+        />
+      )}
 
       {showSettleModal && activeOrder && (
         <SettlePaymentModal

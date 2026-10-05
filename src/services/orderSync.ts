@@ -97,6 +97,31 @@ export function formatOrderType(orderType: string | null | undefined): string {
   return ORDER_TYPES.find((t) => t.value === value)?.label ?? value;
 }
 
+// One menu item's lines on an order, shown as a single row. restoAdmin never
+// merges added items into an existing line: every Add Items round, staff-app
+// additional order or restoAdmin edit adds a new one, so "Chamisul" can sit on
+// an order as two "1x" lines. id/unitPrice come from the first line;
+// quantity/lineTotal are totals; `lines` keeps the real rows (oldest first)
+// for edits.
+export interface OrderLineGroup extends AdminOrderLineItem {
+  lines: AdminOrderLineItem[];
+}
+
+export function groupOrderLines(items: AdminOrderLineItem[]): OrderLineGroup[] {
+  const groups = new Map<number, OrderLineGroup>();
+  for (const it of items) {
+    const g = groups.get(it.menuId);
+    if (g) {
+      g.quantity += it.quantity;
+      g.lineTotal += it.lineTotal;
+      g.lines.push(it);
+    } else {
+      groups.set(it.menuId, { ...it, lines: [it] });
+    }
+  }
+  return [...groups.values()];
+}
+
 export function formatItemCount(count: number): string {
   return `${count} item${count === 1 ? '' : 's'}`;
 }
@@ -148,6 +173,18 @@ export function mapAdminOrder(row: any): AdminOrderSummary {
 export async function getMenu(): Promise<AdminMenuItem[]> {
   const res = await adminFetch('/api/admin/menu');
   const json = await parseJsonOrThrow(res, 'Failed to load the menu from restoAdmin');
+  return Array.isArray(json.data) ? json.data : [];
+}
+
+export interface MenuPopularity {
+  menuId: number;
+  qty: number; // all-time units sold
+  revenue: number;
+}
+
+export async function getMenuPopularity(): Promise<MenuPopularity[]> {
+  const res = await adminFetch('/api/admin/menu/popularity');
+  const json = await parseJsonOrThrow(res, 'Failed to load top revenue items from restoAdmin');
   return Array.isArray(json.data) ? json.data : [];
 }
 

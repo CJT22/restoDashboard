@@ -2,7 +2,7 @@ import React, { useLayoutEffect, useRef, useState } from 'react';
 import { Timer, ClipboardList, Banknote, Gauge, ChevronRight } from 'lucide-react';
 import { FloorScope, InfoPanel, InfoPanelLayout, InfoWidgetType, TableRoom } from '../types';
 import { INFO_WIDGET_META } from '../data/infoPanels';
-import { MAX_LISTED_ORDER_ITEMS } from '../services/orderSync';
+import { MAX_LISTED_ORDER_ITEMS, groupOrderLines } from '../services/orderSync';
 import { getSales, SALES_PERIODS, SalesPeriod, useLiveSales } from '../services/salesSync';
 import { getRoomTiming, formatDuration, formatHours, formatWait, formatClockTime, getTimerTone, TIMER_TEXT_CLASS } from '../utils/roomTimer';
 
@@ -330,7 +330,7 @@ const ActiveOrdersWidget: React.FC<WidgetProps> = ({ panel, allTables, nowMs, co
   const itemLineCount = (count: number) => Math.min(count, MAX_LISTED_ORDER_ITEMS) + (count > MAX_LISTED_ORDER_ITEMS ? 1 : 0);
   const floorHeadingLines = groups.filter((g) => g.floor).length;
   const linesIfAllExpanded =
-    floorHeadingLines + rows.reduce((sum, t) => sum + 1 + itemLineCount(t.activeOrder!.items.length), 0);
+    floorHeadingLines + rows.reduce((sum, t) => sum + 1 + itemLineCount(groupOrderLines(t.activeOrder!.items).length), 0);
   const allFit = linesIfAllExpanded * rowPx <= bodyHeightPx;
 
   return (
@@ -343,8 +343,10 @@ const ActiveOrdersWidget: React.FC<WidgetProps> = ({ panel, allTables, nowMs, co
               {group.floor && <FloorSubheading floor={group.floor} count={group.rows.length} heightPx={rowPx} />}
               {group.rows.map((table) => {
                 const order = table.activeOrder!;
+                // One row per menu item, however many lines restoAdmin holds for it.
+                const items = groupOrderLines(order.items);
                 const startMs = order.createdAt ? Date.parse(order.createdAt) : NaN;
-                const hasItems = order.items.length > 0;
+                const hasItems = items.length > 0;
                 const expanded = hasItems && (expandedOverrides[order.id] ?? allFit);
                 return (
                   <div key={table.id}>
@@ -372,15 +374,15 @@ const ActiveOrdersWidget: React.FC<WidgetProps> = ({ panel, allTables, nowMs, co
                     </div>
                     {expanded && (
                       <div className="pl-3 pr-1 text-slate-200">
-                        {order.items.slice(0, MAX_LISTED_ORDER_ITEMS).map((item) => (
-                          <div key={item.id} className="flex items-center gap-1.5" style={{ height: rowPx }}>
+                        {items.slice(0, MAX_LISTED_ORDER_ITEMS).map((item) => (
+                          <div key={item.menuId} className="flex items-center gap-1.5" style={{ height: rowPx }}>
                             <span className="shrink-0 tabular-nums text-slate-400">{item.quantity}×</span>
                             <span className="truncate">{item.name}</span>
                           </div>
                         ))}
-                        {order.items.length > MAX_LISTED_ORDER_ITEMS && (
+                        {items.length > MAX_LISTED_ORDER_ITEMS && (
                           <div className="italic text-slate-500" style={{ height: rowPx }}>
-                            +{order.items.length - MAX_LISTED_ORDER_ITEMS} more
+                            +{items.length - MAX_LISTED_ORDER_ITEMS} more
                           </div>
                         )}
                       </div>

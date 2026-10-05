@@ -12,6 +12,7 @@ import express from 'express';
 import {
   getBlueMoonTables,
   getMenuForBranch,
+  getMenuPopularity,
   getActiveOrderForTable,
   getActiveOrdersForBranch,
   createOrder,
@@ -62,6 +63,19 @@ app.get('/api/admin/menu', async (_req, res) => {
   } catch (err: any) {
     if (sendIfSessionEnded(res, err)) return;
     console.error('[GET /api/admin/menu]', err.message || err);
+    res.status(502).json({ success: false, error: err.message || 'Failed to reach restoAdmin' });
+  }
+});
+
+// GET units sold and revenue per menu item, for the order screen's Top
+// Revenue section and Quick Add Drinks ranking.
+app.get('/api/admin/menu/popularity', async (_req, res) => {
+  try {
+    const popularity = await getMenuPopularity(sessionOf(res));
+    res.json({ success: true, data: popularity });
+  } catch (err: any) {
+    if (sendIfSessionEnded(res, err)) return;
+    console.error('[GET /api/admin/menu/popularity]', err.message || err);
     res.status(502).json({ success: false, error: err.message || 'Failed to reach restoAdmin' });
   }
 });

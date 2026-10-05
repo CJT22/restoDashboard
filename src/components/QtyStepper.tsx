@@ -18,7 +18,7 @@ interface QtyStepperProps {
 }
 
 // The − ₱amount + control shared by the room-charge row and order-item rows
-// in NewOrderModal and TableDetailModal. Fixed widths keep the columns aligned.
+// on the order screens' carts and in TableDetailModal. Fixed widths keep the columns aligned.
 export const QtyStepper: React.FC<QtyStepperProps> = ({
   amount,
   onDecrement,

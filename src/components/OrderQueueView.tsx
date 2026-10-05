@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { TableRoom, AdminOrderSummary } from '../types';
-import { confirmOrder, cancelOrder, formatOrderType, formatItemCount } from '../services/orderSync';
+import { confirmOrder, cancelOrder, formatOrderType, formatItemCount, groupOrderLines } from '../services/orderSync';
 import { SettlePaymentModal } from './SettlePaymentModal';
 import {
   UtensilsCrossed,
@@ -163,7 +163,7 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
                         <span className="text-[10px] text-slate-400">Floor {table.floor}</span>
                       </div>
                       <div className="text-xs text-slate-300 mt-1">
-                        {formatOrderType(order.orderType)} • {formatItemCount(order.items.length)}
+                        {formatOrderType(order.orderType)} • {formatItemCount(groupOrderLines(order.items).length)}
                       </div>
                     </div>
                   </div>
