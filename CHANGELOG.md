@@ -9,6 +9,21 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.3.0]
+
+### Added
+- **All Tables & Rooms has an "All Floors" option, like Active Orders.** The floor toggle is now All Floors / 1st Floor / 2nd Floor and works the same way as Active Orders' toggle. The page opens on the floor the map is showing, picking a floor moves the map there too, and All Floors leaves the map where it is. All Floors lists the 1st floor's 23 zones under a "1st Floor" heading, then the 2nd floor's 13 under "2nd Floor". The old labels "1st Floor (Main Dining)" and "2nd Floor (KTV Rooms)" are gone: FAMILY ROOM and ON AIR 1/2 are rooms on the 1st floor, so "KTV Rooms" for the 2nd floor was misleading ([TableDirectoryView.tsx](src/components/TableDirectoryView.tsx)).
+- **Occupied rooms show their countdown on their card**, e.g. "Room • 1:29:24 left", in the same yellow (last 15 minutes) and red (expired, "Expired · 0:12:03 over") as the map and Room Timers panel. It sits on the card's existing subtitle line, so cards don't grow ([TableDirectoryView.tsx](src/components/TableDirectoryView.tsx)).
+- **A message when nothing matches.** A search or status with no results used to leave the page blank. It now says nothing matches and offers **Clear filters** ([TableDirectoryView.tsx](src/components/TableDirectoryView.tsx)).
+
+### Changed
+- **The status filters are the table statuses, with live counts.** The chips are now All · Occupied · Available, each with a count for the selected floor and search, plus Reserved and Not Available while any table has that status. Each chip has its status's colour dot, matching the map legend. Reserved and Not Available tables could not be filtered at all before. "Needs Action" is gone: it meant "has an open order", which is almost always the same set as Occupied, and the Active Orders page already covers it ([TableDirectoryView.tsx](src/components/TableDirectoryView.tsx)).
+- **Zones are in name order.** Cards followed the order zones were drawn in the layout file, so ROOM 4 came before ROOM 3 and ROOM 8 before ROOM 7. They now sort by name, with numbers in numeric order (M2 before M10) ([TableDirectoryView.tsx](src/components/TableDirectoryView.tsx)).
+- **Cards say what tapping them does.** "Update →" is now "New Order →" for a table with no order and "View Order →" for one with an order, which is what each opens ([TableDirectoryView.tsx](src/components/TableDirectoryView.tsx)).
+- **Cards drop the code badge.** The square badge repeated the name ("M1" beside "M1", "BR" beside "BAR"), so the name now gets the room. The header keeps the badge's height, so cards stay the same size. The order row now has a fixed height too, so a card showing an order lines up exactly with its neighbours (it used to sit about 2px off). Search still matches the codes ([TableDirectoryView.tsx](src/components/TableDirectoryView.tsx)).
+- **Cards are buttons, so they can be reached and opened with the keyboard** ([TableDirectoryView.tsx](src/components/TableDirectoryView.tsx)).
+- **The page title and subtitle match the page.** The title "Tables & KTV Rooms" is now "All Tables & Rooms", as in the sidebar. "Real-time occupancy and live kitchen order progress" described kitchen tracking that no longer exists, and now reads "Every table and room with its status and open order. Tap one to start or view its order." Search can now be cleared with an × ([TableDirectoryView.tsx](src/components/TableDirectoryView.tsx)).
+
 ## [2.2.1]
 
 ### Changed
