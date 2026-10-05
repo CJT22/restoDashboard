@@ -9,6 +9,16 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.4.0]
+
+### Added
+- **Active Orders cards list what's on each order, priced like a receipt.** Each card lists the order's items as combined rows ("2× Chamisul"), each with its amount, then the total. An order runs from one item to ten or more, and cards in a row stretch to the tallest. So a card lists at most 5 items (the same limit as the map's hover card and the Active Orders panel), and the rest collapse into one "+N more items" row carrying their combined amount. A room's charge gets its own first row with the booked hours ("Room charge · 1.5h"). Anything else in restoAdmin's total (tax, a discount) shows as a final row, so the rows always add up to the total shown under them ([OrderQueueView.tsx](src/components/OrderQueueView.tsx)).
+- **Counts on the floor toggle, and a floor-aware empty state.** The toggle reads "All Floors 2 · 1st Floor 2 · 2nd Floor 0". When the chosen floor has no orders but another floor does, the page says so ("No active orders on the 2nd Floor", "2 on the 1st Floor") with a **Show all floors** button. It no longer says "All Clear!", which suggested nothing was open anywhere ([OrderQueueView.tsx](src/components/OrderQueueView.tsx)).
+
+### Changed
+- **Longest-waiting order first.** Cards used to follow the floor plan file's order. They're now sorted by when the order was opened, and each card says how long ago ("opened 42m ago"), so the page reads as a queue ([OrderQueueView.tsx](src/components/OrderQueueView.tsx)).
+- **Cards match All Tables & Rooms.** The code badge that repeated the name ("P1" beside "P1", "OA2" beside "ON AIR 2") is gone. The subtitle reads "Floor 1 • Room", with a room's countdown in yellow or red as it nears and passes its end time, and the table's status badge sits top-right. Tapping the name opens the order. "View Table Details →" is now "View Order →", sitting on the same row as Cancel/Settle. Actions are pinned to the card's bottom, so they line up across a row. Cards go 4 across on wide screens instead of 3, like All Tables & Rooms. All Floors groups the cards under "1st Floor · 4" and "2nd Floor · 1" headings, like All Tables & Rooms, with each floor still longest-waiting first ([OrderQueueView.tsx](src/components/OrderQueueView.tsx)).
+
 ## [2.3.0]
 
 ### Added
