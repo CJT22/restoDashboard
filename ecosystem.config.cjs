@@ -1,7 +1,7 @@
 /**
  * PM2 ecosystem for restoDashboard.
  * - resto-dashboard-api: Express backend (server/index.ts via tsx) on port 3510
- * - resto-dashboard:     Vite frontend on port 3520, proxies /api -> 3510
+ * - resto-dashboard:     Vite frontend on port 2520 (inside ufw's open 2000:3000 range), proxies /api -> 3510
  *   (package.json's `dev` uses 3500, but marketadmin-dashboard already owns it)
  *
  * Start both:      pm2 start ecosystem.config.cjs
@@ -32,7 +32,7 @@ module.exports = {
       name: 'resto-dashboard',
       cwd: __dirname,
       script: 'node_modules/.bin/vite',
-      args: '--port 3520 --strictPort --host 0.0.0.0',
+      args: '--port 2520 --strictPort --host 0.0.0.0',
       interpreter: 'none',
       instances: 1,
       exec_mode: 'fork',
