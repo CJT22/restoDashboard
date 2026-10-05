@@ -83,7 +83,7 @@ export default function App({ user, onSignOut }: AppProps) {
   const [tables, setTables] = useState<TableRoom[]>(() => zonesFromLayout(initialLayout.zones));
   const [infoPanels, setInfoPanels] = useState<InfoPanel[]>(() => initialLayout.panels);
 
-  // Active Floor: 1 (Main Dining) or 2 (KTV Rooms)
+  // The floor the map shows (1st or 2nd)
   const [currentFloor, setCurrentFloor] = useState<1 | 2>(1);
 
   // Active Navigation Tab

@@ -152,16 +152,24 @@ same rule; nothing had to be added to filter them out specifically.
 
 1. "New Order" only appears on a zone already linked to a restoAdmin table with no active order yet.
    An unlinked zone's order section shows a prompt to link it first.
-2. Opening it (`TableDetailModal` → `NewOrderModal`) fetches the branch's live menu
-   (`GET /api/admin/menu`) — table and floor are pre-filled from the zone being viewed, unlike
-   restoAdmin's own New Order modal which has its own Floor/Table pickers (restoDashboard doesn't need
-   them: you're already looking at the table).
+2. Opening it (`TableDetailModal` → `NewOrderScreen`) opens a full-screen order screen
+   (`OrderScreen`). It loads the branch's live menu (`GET /api/admin/menu`) and each item's all-time
+   units sold and revenue (`GET /api/admin/menu/popularity`, which proxies restoAdmin's
+   `/api/menu/top-revenue`, the endpoint behind the staff app's Top Revenue Items), merged in
+   [menuCatalog.ts](../src/services/menuCatalog.ts). Items are grouped by restoAdmin category into a
+   few sections, best sellers first, with Top Revenue and Quick Add Drinks built from the same data.
+   restoAdmin's "Room Charge" items are hidden, since the room-charge stepper already bills rooms.
+   Table and floor come from the zone being viewed, unlike restoAdmin's own New Order modal, which
+   has its own Floor/Table pickers (restoDashboard doesn't need them: you're already looking at the
+   table).
 3. Submitting calls `POST /api/admin/orders`. Three outcomes: success (modal closes, `activeOrder`
    refreshes), **`ACTIVE_ORDER_EXISTS` (409)** — offers "Add Items to Order #X" instead of blocking
    outright, or **insufficient inventory** — restoAdmin's own validation response surfaced directly.
 4. Once a table has an active order, `TableDetailModal` shows it the way restoAdmin's own order-detail
-   modal does: a status badge, the item list with per-row quantity edit and delete plus an inline
-   "add item" row, and — depending on status — **Confirm** (Pending only), **Cancel Order**
+   modal does: a status badge, the item list with per-row quantity edit and delete, an **Add Items**
+   button (`AddItemsScreen`: the same order screen, with picked items sent in one
+   `POST /api/admin/orders/:id/items` call), a Quick Add Drinks strip whose taps save immediately,
+   and — depending on status — **Confirm** (Pending only), **Cancel Order**
    (Pending/Confirmed), and **Settle** (Confirmed only, mirroring the fact that restoAdmin's own
    Billing screen only ever lists Confirmed/Settled orders — settling a still-Pending order works at
    the API level, but isn't offered here, to match restoAdmin's actual workflow).
@@ -220,7 +228,7 @@ here) only requires being authenticated, not an admin permission level.
 | Order/billing endpoints (restoAdmin, unchanged — reference only; in the separate restoAdmin repo) | `server/controllers/orderController.js`, `server/controllers/billingController.js` |
 | Sync backend (restoDashboard) | [server/adminClient.ts](../server/adminClient.ts), [server/socketBridge.ts](../server/socketBridge.ts), [server/index.ts](../server/index.ts) |
 | Frontend order sync (restoDashboard) | [src/services/orderSync.ts](../src/services/orderSync.ts), [src/services/adminSync.ts](../src/services/adminSync.ts) |
-| Order UI (restoDashboard) | [NewOrderModal.tsx](../src/components/NewOrderModal.tsx), [SettlePaymentModal.tsx](../src/components/SettlePaymentModal.tsx), [TableDetailModal.tsx](../src/components/TableDetailModal.tsx), [OrderQueueView.tsx](../src/components/OrderQueueView.tsx) |
+| Order UI (restoDashboard) | [OrderScreen.tsx](../src/components/OrderScreen.tsx), [NewOrderScreen.tsx](../src/components/NewOrderScreen.tsx), [AddItemsScreen.tsx](../src/components/AddItemsScreen.tsx), [QuickAddDrinks.tsx](../src/components/QuickAddDrinks.tsx), [SettlePaymentModal.tsx](../src/components/SettlePaymentModal.tsx), [TableDetailModal.tsx](../src/components/TableDetailModal.tsx), [OrderQueueView.tsx](../src/components/OrderQueueView.tsx) |
 | Types | [types.ts](../src/types.ts) |
 
 See [CHANGELOG.md](../CHANGELOG.md) `[1.6.0]` for the full list of changes that built this, with the

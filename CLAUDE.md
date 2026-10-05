@@ -25,6 +25,12 @@ asked.
 
 - Add an entry under the current unreleased version section (bump to a new `## [x.y.z]` heading if
   the top entry has already shipped/been committed as a release).
+- **Check git before every changelog edit, not just once per session.** The user commits between
+  turns without saying so, so a section you wrote earlier may already be released. Run
+  `git diff HEAD -- CHANGELOG.md` and `git show HEAD:CHANGELOG.md | grep -m1 '^## \['`. If the top
+  `## [x.y.z]` heading is already in `HEAD`, that version is released: add a new heading above it
+  rather than editing it. Use a patch bump (`x.y.z+1`) for small fixes and UI follow-ups, and a minor
+  bump (`x.y+1.0`) for new features.
 - Use the existing style: `### Added` / `### Changed` / `### Removed` subsections, bold the headline
   of each bullet, and link to the files touched relative to the repo root (e.g.
   `[App.tsx](src/App.tsx)`, `[adminClient.ts](server/adminClient.ts)`).

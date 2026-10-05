@@ -14,7 +14,8 @@ import {
   LayoutDashboard
 } from 'lucide-react';
 import { InfoPanelView } from './InfoPanelView';
-import { MAX_LISTED_ORDER_ITEMS } from '../services/orderSync';
+import { MAX_LISTED_ORDER_ITEMS, groupOrderLines } from '../services/orderSync';
+import { zoneKindLabel } from '../utils/zoneLabels';
 import { LAYOUT_EDITOR_ENABLED } from '../config/layoutEditor';
 import { ZOOM_CONTROLS_ENABLED } from '../config/zoomControls';
 
@@ -677,14 +678,15 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
               const timing = getRoomTiming(activeOrder, nowMs);
               const itemCount = activeOrder?.items.reduce((sum, i) => sum + i.quantity, 0) ?? 0;
+              // One row per menu item, however many lines restoAdmin holds for it.
+              const orderItems = groupOrderLines(activeOrder?.items ?? []);
               const label = getZoneLabelLayout(
                 (table.width / 100) * canvasPx.width,
                 (table.height / 100) * canvasPx.height,
                 timing,
                 activeOrder != null,
-                activeOrder?.items.length ?? 0
+                orderItems.length
               );
-              const orderItems = activeOrder?.items ?? [];
 
               // Keep the hover preview card from clipping at the workspace's
               // edges, from where the zone lands on screen (at 1x; the frame's
@@ -788,7 +790,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                       <div className="flex items-center justify-between mb-1">
                         <span className="font-bold text-white text-xs">{table.name}</span>
                         <span className="text-[10px] px-2 py-0.5 rounded-full uppercase font-mono font-bold bg-white/10 text-slate-300">
-                          Cap: {table.capacity}
+                          {zoneKindLabel(table)}
                         </span>
                       </div>
 
@@ -808,7 +810,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                       {orderItems.length > 0 && (
                         <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px] text-slate-200 space-y-0.5">
                           {orderItems.slice(0, MAX_LISTED_ORDER_ITEMS).map((item) => (
-                            <div key={item.id} className="flex items-center gap-1.5">
+                            <div key={item.menuId} className="flex items-center gap-1.5">
                               <span className="shrink-0 tabular-nums text-slate-400">{item.quantity}×</span>
                               <span className="truncate">{item.name}</span>
                             </div>
@@ -828,7 +830,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
                       {!activeOrder && (
                         <div className="mt-2 pt-1.5 border-t border-white/10 text-[11px] text-slate-400">
-                          No order yet for this {(table.adminRoomCharge ?? 0) > 0 ? 'room' : 'table'}.
+                          No order yet for this {zoneKindLabel(table).toLowerCase()}.
                         </div>
                       )}
 
