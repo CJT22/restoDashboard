@@ -9,6 +9,11 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.4.2]
+
+### Changed
+- **The server's dashboard API moved to port 2512.** Under PM2 the backend now listens on 2512 instead of 3510, inside the 2000–3000 range the server's firewall already opens, next to the frontend on 2520. (2510 and 2511 are taken by other apps on the server.) The Vite proxy reads the API port from a new `API_PORT` variable that PM2 sets, so the frontend follows the API wherever it runs. Local `npm run dev:all` still uses 3510 ([ecosystem.config.cjs](ecosystem.config.cjs), [vite.config.ts](vite.config.ts)).
+
 ## [2.4.1]
 
 ### Changed

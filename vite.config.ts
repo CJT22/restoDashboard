@@ -23,7 +23,9 @@ export default defineConfig(() => {
       // browser needs -- the browser never talks to restoAdmin directly.
       proxy: {
         '/api': {
-          target: 'http://localhost:3510',
+          // API_PORT is set by PM2 on the server (ecosystem.config.cjs);
+          // local dev falls back to the backend's default port.
+          target: `http://localhost:${process.env.API_PORT || 3510}`,
           changeOrigin: true,
         },
       },
