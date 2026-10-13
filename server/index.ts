@@ -28,7 +28,7 @@ import {
 } from './adminClient.js';
 import { connectSocketBridge, tableEvents, orderEvents, bridgeEvents, isBridgeConnected, type TableUpdatedEvent, type OrderEvent } from './socketBridge.js';
 import { authRouter, requireSession, sendIfSessionEnded, sessionOf } from './auth.js';
-import { sessionEvents } from './sessions.js';
+import { sessionEvents, type SessionEndReason } from './sessions.js';
 
 const app = express();
 // Trust X-Forwarded-Proto from a reverse proxy on this machine, so the
@@ -355,11 +355,15 @@ app.get('/api/admin/stream', (req, res) => {
 
   const heartbeat = setInterval(() => res.write(':heartbeat\n\n'), 25000);
 
-  // Close the stream when its session ends (sign-out, or restoAdmin ended
-  // it). The browser's reconnect then gets a 401 and shows the login page.
+  // Close the stream when its session ends (sign-out, the account signed in
+  // on another device, or restoAdmin ended it), saying why first so the
+  // dashboard goes straight back to its sign-in page with the reason. A
+  // client that misses it still gets a 401 with the reason when it reconnects.
   const sessionId = sessionOf(res).id;
-  const onSessionEnded = (endedId: string) => {
-    if (endedId === sessionId) res.end();
+  const onSessionEnded = (endedId: string, reason: SessionEndReason) => {
+    if (endedId !== sessionId) return;
+    res.write(`event: session_ended\ndata: ${JSON.stringify({ reason })}\n\n`);
+    res.end();
   };
   sessionEvents.on('ended', onSessionEnded);
 

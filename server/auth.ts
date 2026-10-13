@@ -11,7 +11,7 @@
 
 import express, { type Request, type Response, type NextFunction } from 'express';
 import { ADMIN_BRANCH_ID, loginToAdmin, SessionEndedError } from './adminClient.js';
-import { createSession, endSession, getSession, type AdminSession } from './sessions.js';
+import { createSession, endedReason, endOtherSessions, endSession, getSession, type AdminSession } from './sessions.js';
 
 // Only Blue Moon staff with this restoAdmin user_role (users.PERMISSIONS)
 // may use the dashboard. Admins and other roles are turned away.
@@ -50,8 +50,16 @@ export function sessionOf(res: Response): AdminSession {
 }
 
 export function requireSession(req: Request, res: Response, next: NextFunction): void {
-  const session = getSession(readSessionId(req));
+  const sessionId = readSessionId(req);
+  const session = getSession(sessionId);
   if (!session) {
+    // Say why, if this device's session was replaced or expired recently.
+    const ended = endedReason(sessionId);
+    if (ended === 'SESSION_REPLACED' || ended === 'SESSION_EXPIRED') {
+      const message = ended === 'SESSION_REPLACED' ? 'This account was signed in on another device.' : 'Your session has expired.';
+      res.status(401).json({ success: false, ok: false, code: ended, error: message, message });
+      return;
+    }
     res.status(401).json({ success: false, ok: false, code: 'UNAUTHENTICATED', error: 'Please sign in.', message: 'Please sign in.' });
     return;
   }
@@ -91,6 +99,8 @@ authRouter.post('/login', async (req, res) => {
     if (previous) endSession(previous, 'SIGNED_OUT');
 
     const session = createSession(login.user, login.accessToken, login.refreshToken);
+    // One device per account: sign the account out everywhere else now.
+    endOtherSessions(session.user.id, session.id);
     setSessionCookie(req, res, session.id, COOKIE_MAX_AGE_S);
     console.log(`[auth] ${username} signed in`);
     res.json({ success: true, data: session.user });

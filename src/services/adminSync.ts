@@ -11,7 +11,7 @@
 // Reserved/Not Available), so there's no admin-direction mapping here.
 
 import { TableStatus } from '../types';
-import { adminFetch, checkSession } from './auth';
+import { adminFetch, checkSession, reportSessionEnded } from './auth';
 
 export interface AdminTable {
   id: number;
@@ -118,6 +118,18 @@ function openStream() {
   sharedSource = source;
   attachedEvents = new Set();
   streamListeners.forEach((_, eventName) => attachEvent(source, eventName));
+  // Sent just before the server closes the stream because this session
+  // ended (e.g. the account signed in on another device): back to the
+  // sign-in page now, with the reason, rather than on a failed reconnect.
+  source.addEventListener('session_ended', (e) => {
+    let reason: unknown;
+    try {
+      reason = JSON.parse((e as MessageEvent).data)?.reason;
+    } catch {
+      reason = undefined;
+    }
+    reportSessionEnded(reason);
+  });
 
   source.onopen = () => {
     bridgeConnected = null;

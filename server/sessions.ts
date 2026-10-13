@@ -9,7 +9,8 @@
 // Sessions are kept in memory and mirrored to SESSIONS_FILE, so restarting
 // this backend doesn't sign everyone out. A session lasts until its user
 // signs out, its account signs in on another device (restoAdmin allows one
-// session per account), or restoAdmin's refresh token expires.
+// session per account, and auth.ts ends the dashboard's other sessions for
+// it right away), or restoAdmin's refresh token expires.
 
 import { EventEmitter } from 'events';
 import { randomBytes } from 'crypto';
@@ -41,6 +42,12 @@ export type SessionEndReason = 'SESSION_REPLACED' | 'SESSION_EXPIRED' | 'SIGNED_
 const SESSIONS_FILE = path.resolve(process.cwd(), '.data', 'sessions.json');
 
 const sessions = new Map<string, AdminSession>();
+
+// Why recently ended sessions ended, so a device that was asleep or offline
+// when its session was replaced still hears why when it next calls in
+// (requireSession), instead of a bare "please sign in". In memory only.
+const ENDED_REASON_TTL_MS = 12 * 60 * 60 * 1000;
+const endedReasons = new Map<string, { reason: SessionEndReason; at: number }>();
 
 // Emits 'ended' (sessionId, reason) so open SSE streams for that session can close.
 export const sessionEvents = new EventEmitter();
@@ -123,5 +130,27 @@ export function saveSession(session: AdminSession): void {
 export function endSession(id: string, reason: SessionEndReason): void {
   if (!sessions.delete(id)) return;
   persist();
+  const now = Date.now();
+  for (const [endedId, { at }] of endedReasons) {
+    if (now - at > ENDED_REASON_TTL_MS) endedReasons.delete(endedId);
+  }
+  endedReasons.set(id, { reason, at: now });
   sessionEvents.emit('ended', id, reason);
+}
+
+// Why a session that no longer exists ended, if it ended recently.
+export function endedReason(id: string | undefined | null): SessionEndReason | null {
+  const ended = id ? endedReasons.get(id) : undefined;
+  return ended && Date.now() - ended.at <= ENDED_REASON_TTL_MS ? ended.reason : null;
+}
+
+// Ends every session of this user but [keepId]: the account just signed in
+// on another device. restoAdmin has already stopped accepting those
+// sessions' tokens; ending them here closes their live streams at once, so
+// the other devices go back to their sign-in page now rather than on their
+// next request.
+export function endOtherSessions(userId: number, keepId: string): void {
+  for (const session of [...sessions.values()]) {
+    if (session.user.id === userId && session.id !== keepId) endSession(session.id, 'SESSION_REPLACED');
+  }
 }

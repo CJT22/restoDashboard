@@ -35,6 +35,12 @@ function notifySignedOut(reason: SignedOutReason) {
   signedOutListeners.forEach((listener) => listener(reason));
 }
 
+// The live stream's session_ended event: the server ended this session (most
+// often because the account just signed in on another device).
+export function reportSessionEnded(reason: unknown) {
+  notifySignedOut(reason === 'SESSION_REPLACED' || reason === 'SESSION_EXPIRED' ? reason : 'UNAUTHENTICATED');
+}
+
 async function reasonFrom(res: Response): Promise<SignedOutReason> {
   const json = await res.clone().json().catch(() => ({}));
   return json?.code === 'SESSION_REPLACED' || json?.code === 'SESSION_EXPIRED' ? json.code : 'UNAUTHENTICATED';

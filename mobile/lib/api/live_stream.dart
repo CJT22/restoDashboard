@@ -21,7 +21,8 @@ class StreamEvent {
 
 /// The server's /api/admin/stream (server-sent events), kept open and
 /// reopened a few seconds after it drops. Carries table_updated,
-/// order_created, order_updated and bridge_status events.
+/// order_created, order_updated and bridge_status events, and session_ended
+/// when the server ends this device's session.
 class LiveStream {
   static const _reopenDelay = Duration(seconds: 3);
   // The server sends a heartbeat every 25s; silence for this long means the
@@ -145,6 +146,13 @@ class LiveStream {
     if (name == 'bridge_status') {
       _bridgeConnected = json['connected'] == true;
       _refreshStatus();
+      return;
+    }
+    // Sent just before the server closes the stream because this session
+    // ended (e.g. the account signed in on another device): back to the
+    // sign-in page now, with the reason, rather than on a failed reconnect.
+    if (name == 'session_ended') {
+      api.reportSignedOut({'code': json['reason']});
       return;
     }
     _events.add(StreamEvent(name, json));
