@@ -27,6 +27,8 @@ interface OrderQueueViewProps {
   onOrderChanged: (tableId: string, order: AdminOrderSummary | undefined) => void;
   onSelectTable: (table: TableRoom) => void;
   currentFloor: 1 | 2;
+  // Bumped when a sidebar floor card is tapped; this view then switches too.
+  floorRequest: number;
   onSelectFloor: (floor: 1 | 2) => void;
 }
 
@@ -102,9 +104,15 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
   onOrderChanged,
   onSelectTable,
   currentFloor,
+  floorRequest,
   onSelectFloor,
 }) => {
   const [filterFloor, setFilterFloor] = useState<FloorFilter>(currentFloor);
+  const [seenFloorRequest, setSeenFloorRequest] = useState(floorRequest);
+  if (floorRequest !== seenFloorRequest) {
+    setSeenFloorRequest(floorRequest);
+    setFilterFloor(currentFloor);
+  }
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [settlingTable, setSettlingTable] = useState<TableRoom | null>(null);
@@ -176,7 +184,7 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
     return (
       <div
         key={table.id}
-        className="h-full p-5 rounded-3xl bg-[#15172b]/90 border border-white/10 shadow-xl flex flex-col"
+        className={`h-full p-5 rounded-3xl border ${getStatusColors(table.status).cardClass} flex flex-col`}
       >
         {/* Header — same as an All Tables & Rooms card */}
         <button type="button" onClick={() => onSelectTable(table)} className="text-left group">
@@ -207,14 +215,23 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
           </div>
         </button>
 
-        <div className="mt-2 text-xs text-slate-300 truncate">
-          {formatOrderType(order.orderType)} • {formatItemCount(groupOrderLines(order.items).length)}
-          {Number.isFinite(startMs) && (
-            <span className="text-slate-500">
-              {' • '}
-              {formatWait(nowMs - startMs) === 'just now' ? 'opened just now' : `opened ${formatWait(nowMs - startMs)} ago`}
-            </span>
-          )}
+        <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+          <span className="min-w-0 text-slate-300 truncate">
+            {formatOrderType(order.orderType)} • {formatItemCount(groupOrderLines(order.items).length)}
+            {Number.isFinite(startMs) && (
+              <span className="text-slate-500">
+                {' • '}
+                {/* Short, so it fits beside "View Order →". */}
+                {formatWait(nowMs - startMs) === 'just now' ? 'just now' : `${formatWait(nowMs - startMs)} ago`}
+              </span>
+            )}
+          </span>
+          <button
+            onClick={() => onSelectTable(table)}
+            className="shrink-0 font-semibold text-indigo-400 hover:text-indigo-300"
+          >
+            View Order &rarr;
+          </button>
         </div>
 
         {/* Receipt */}
@@ -238,65 +255,56 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
           <span className="text-sm text-white font-mono font-bold tabular-nums">{peso(order.grandTotal)}</span>
         </div>
 
-        {/* Actions — pinned to the bottom so they line up across a row */}
-        <div className="mt-auto pt-4 flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            {cancelConfirmId === table.id ? (
-              <>
-                <span className="text-[11px] text-rose-300">Cancel order?</span>
+        {/* Actions, pinned to the bottom so they line up across a row: Cancel
+            and the next step side by side; while confirming a cancel, its
+            prompt takes the row. */}
+        <div className="mt-auto pt-4 flex items-center gap-2">
+          {cancelConfirmId === table.id ? (
+            <>
+              <span className="text-xs text-rose-300">Cancel order?</span>
+              <button
+                onClick={() => handleCancel(table)}
+                disabled={isLoading}
+                className="h-[38px] px-3 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1"
+              >
+                <Ban className="w-3.5 h-3.5" /> Confirm
+              </button>
+              <button
+                onClick={() => setCancelConfirmId(null)}
+                className="h-[38px] px-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 text-xs font-bold"
+              >
+                No
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={() => setCancelConfirmId(table.id)}
+                className="flex-1 h-[38px] rounded-xl bg-rose-500/[0.12] hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold"
+              >
+                Cancel
+              </button>
+
+              {/* Only for a Pending order from restoAdmin — dashboard orders are confirmed on creation. */}
+              {order.status === 3 && (
                 <button
-                  onClick={() => handleCancel(table)}
+                  onClick={() => handleConfirm(table)}
                   disabled={isLoading}
-                  className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1"
+                  className="flex-1 h-[38px] rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-bold flex items-center justify-center gap-1.5"
                 >
-                  <Ban className="w-3.5 h-3.5" /> Confirm
+                  <Check className="w-3.5 h-3.5" /> Confirm
                 </button>
+              )}
+
+              {order.status === 2 && (
                 <button
-                  onClick={() => setCancelConfirmId(null)}
-                  className="px-2 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 text-slate-400 text-xs"
+                  onClick={() => setSettlingTable(table)}
+                  className="flex-1 h-[38px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5"
                 >
-                  No
+                  <Wallet className="w-3.5 h-3.5" /> Settle
                 </button>
-              </>
-            ) : (
-              <>
-                <button
-                  onClick={() => setCancelConfirmId(table.id)}
-                  className="px-2.5 py-1.5 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-300 text-xs font-semibold"
-                >
-                  Cancel
-                </button>
-
-                {/* Only for a Pending order from restoAdmin — dashboard orders are confirmed on creation. */}
-                {order.status === 3 && (
-                  <button
-                    onClick={() => handleConfirm(table)}
-                    disabled={isLoading}
-                    className="px-2.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1"
-                  >
-                    <Check className="w-3.5 h-3.5" /> Confirm
-                  </button>
-                )}
-
-                {order.status === 2 && (
-                  <button
-                    onClick={() => setSettlingTable(table)}
-                    className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1 shadow-md shadow-emerald-600/20"
-                  >
-                    <Wallet className="w-3.5 h-3.5" /> Settle
-                  </button>
-                )}
-              </>
-            )}
-          </div>
-
-          {cancelConfirmId !== table.id && (
-            <button
-              onClick={() => onSelectTable(table)}
-              className="shrink-0 text-[11px] text-indigo-400 hover:text-indigo-300 font-medium"
-            >
-              View Order &rarr;
-            </button>
+              )}
+            </>
           )}
         </div>
       </div>

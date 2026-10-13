@@ -1,0 +1,37 @@
+name: resto_dashboard
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  http: ^1.6.0
+  shared_preferences: ^2.5.6
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.14.4
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/blue_moon_logo.png
+
+# The home-screen icon, from the Blue Moon logo. After changing the logo,
+# regenerate the Android icons with: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/icon/blue_moon_logo_1024.png
+  # Android 8+: the round badge on white, inset to leave a slim white rim, as
+  # in the brand's own logo-on-white file. (On navy, the badge's edge vanished.)
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: assets/icon/blue_moon_logo_1024.png
+  adaptive_icon_foreground_inset: 20
+  min_sdk_android: 21

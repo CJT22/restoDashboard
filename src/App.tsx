@@ -6,6 +6,7 @@ import { FloorPlanMap } from './components/FloorPlanMap';
 import { TableDetailModal } from './components/TableDetailModal';
 import { TableDirectoryView } from './components/TableDirectoryView';
 import { OrderQueueView } from './components/OrderQueueView';
+import { ConfirmModal } from './components/ConfirmModal';
 import {
   ConnectionStatus,
   getAdminTables,
@@ -17,7 +18,7 @@ import {
 } from './services/adminSync';
 import { subscribeToOrderUpdates, getActiveOrders, getActiveOrderForTable } from './services/orderSync';
 import { LAYOUT_EDITOR_ENABLED } from './config/layoutEditor';
-import { DashboardUser } from './services/auth';
+import { DashboardUser, displayName } from './services/auth';
 
 // The dormant layout editor (see src/config/layoutEditor.ts). With the flag
 // off this is a constant null, so the editor is neither loaded nor bundled.
@@ -85,6 +86,12 @@ export default function App({ user, onSignOut }: AppProps) {
 
   // The floor the map shows (1st or 2nd)
   const [currentFloor, setCurrentFloor] = useState<1 | 2>(1);
+  // Bumped when a sidebar floor card is tapped, so All Tables & Rooms and
+  // Active Orders follow it even when their own floor filter already moved.
+  const [floorRequest, setFloorRequest] = useState(0);
+
+  // Sign out sits among everyday buttons, so a stray tap asks first.
+  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
 
   // Active Navigation Tab
   const [activeNav, setActiveNav] = useState<'floorplan' | 'directory' | 'orders'>('floorplan');
@@ -354,13 +361,18 @@ export default function App({ user, onSignOut }: AppProps) {
         showOccupiedFilter={showOccupiedFilter}
         onToggleOccupiedFilter={() => setShowOccupiedFilter(!showOccupiedFilter)}
         tables={tables}
-        onSelectFloor={(floor) => setCurrentFloor(floor)}
+        onSelectFloor={(floor) => {
+          setCurrentFloor(floor);
+          setFloorRequest((prev) => prev + 1);
+        }}
+        showInfoPanels={showInfoPanels}
+        onToggleInfoPanels={() => setShowInfoPanels((prev) => !prev)}
         onSelectTable={(table) => setSelectedTable(table)}
         connectionStatus={connectionStatus}
         lastSyncedAt={lastSyncedAt}
         onRefresh={() => resyncFromAdmin()}
         user={user}
-        onSignOut={onSignOut}
+        onSignOut={() => setConfirmingSignOut(true)}
       />
 
       {/* Main View Area */}
@@ -391,7 +403,6 @@ export default function App({ user, onSignOut }: AppProps) {
             }
             infoPanels={infoPanels}
             showInfoPanels={showInfoPanels}
-            onToggleInfoPanels={() => setShowInfoPanels((prev) => !prev)}
           />
         )}
 
@@ -400,6 +411,7 @@ export default function App({ user, onSignOut }: AppProps) {
             tables={tables}
             onSelectTable={(table) => setSelectedTable(table)}
             currentFloor={currentFloor}
+            floorRequest={floorRequest}
             onSelectFloor={(floor) => setCurrentFloor(floor)}
           />
         )}
@@ -410,10 +422,21 @@ export default function App({ user, onSignOut }: AppProps) {
             onOrderChanged={handleOrderChanged}
             onSelectTable={(table) => setSelectedTable(table)}
             currentFloor={currentFloor}
+            floorRequest={floorRequest}
             onSelectFloor={(floor) => setCurrentFloor(floor)}
           />
         )}
       </main>
+
+      <ConfirmModal
+        isOpen={confirmingSignOut}
+        onClose={() => setConfirmingSignOut(false)}
+        onConfirm={onSignOut}
+        title={`Sign out ${displayName(user)}?`}
+        description="This device goes back to the sign-in page, and live updates stop until someone signs in again."
+        confirmText="Sign out"
+        icon="signOut"
+      />
 
       {/* Interactive Table / Room Detail Modal (View Status & Orders) */}
       {/* Keyed by zone so its per-zone state (new-order vs. detail view)

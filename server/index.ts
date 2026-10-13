@@ -9,6 +9,7 @@
 
 import 'dotenv/config';
 import express from 'express';
+import { readFileSync } from 'node:fs';
 import {
   getBlueMoonTables,
   getMenuForBranch,
@@ -36,6 +37,20 @@ app.set('trust proxy', 'loopback');
 app.use(express.json());
 
 app.use('/api/auth', authRouter);
+
+// The fixed floor plan (src/data/floorLayout.json) for clients that don't
+// bundle it, i.e. the Flutter tablet app in mobile/. Read per request so the
+// app picks up a new layout without being rebuilt. Not secret: zone names,
+// positions and table links only.
+app.get('/api/layout', (_req, res) => {
+  try {
+    const layout = JSON.parse(readFileSync(new URL('../src/data/floorLayout.json', import.meta.url), 'utf8'));
+    res.json({ success: true, data: layout });
+  } catch (err: any) {
+    console.error('[GET /api/layout]', err.message || err);
+    res.status(500).json({ success: false, error: 'Failed to read the floor layout' });
+  }
+});
 // Every /api/admin/* route acts as the signed-in user.
 app.use('/api/admin', requireSession);
 

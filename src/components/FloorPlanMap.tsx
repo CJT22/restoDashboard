@@ -5,13 +5,10 @@ import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, Ro
 import {
   ZoomIn,
   ZoomOut,
-  Maximize2,
-  Minimize2,
   RotateCcw,
   Move,
   Info,
-  ChevronRight,
-  LayoutDashboard
+  ChevronRight
 } from 'lucide-react';
 import { InfoPanelView } from './InfoPanelView';
 import { MAX_LISTED_ORDER_ITEMS, groupOrderLines } from '../services/orderSync';
@@ -70,13 +67,6 @@ const ZOOM_STEP = 0.15;
 // Shared by zoom in / out / reset; greys out when the action can't go further.
 const ZOOM_BUTTON_CLASSES =
   'w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-300 hover:text-white transition-all disabled:opacity-40 disabled:hover:bg-white/5 disabled:hover:text-slate-300 disabled:cursor-default';
-
-// Labeled view buttons (Info Panels, Fullscreen): same height and type as the
-// floor tabs so the two top bars mirror each other. Labels collapse to
-// icon-only below xl, where the bar would crowd the floor switcher.
-const VIEW_BUTTON_CLASSES =
-  'h-8 px-3 flex items-center gap-2 rounded-xl text-sm font-bold tracking-wide transition-all';
-const VIEW_BUTTON_IDLE = 'text-slate-400 hover:text-white hover:bg-white/5';
 
 // Zone info panel: one dark panel pinned to the zone's top-left, stacking
 // lines in priority order — name, room timer, item count, order total, then
@@ -173,37 +163,6 @@ function getZoneLabelLayout(
   };
 }
 
-// Fullscreen API with the webkit-prefixed fallback older iPadOS Safari needs.
-// iPhone Safari doesn't support element fullscreen at all, so there the
-// toggle button is hidden rather than shown as a dead control.
-type WebkitDocument = Document & {
-  webkitFullscreenEnabled?: boolean;
-  webkitFullscreenElement?: Element | null;
-  webkitExitFullscreen?: () => Promise<void> | void;
-};
-type WebkitElement = HTMLElement & {
-  webkitRequestFullscreen?: () => Promise<void> | void;
-};
-
-const isFullscreenSupported = () => {
-  const doc = document as WebkitDocument;
-  return Boolean(doc.fullscreenEnabled || doc.webkitFullscreenEnabled);
-};
-const getFullscreenElement = () => {
-  const doc = document as WebkitDocument;
-  return doc.fullscreenElement ?? doc.webkitFullscreenElement ?? null;
-};
-const enterFullscreen = () => {
-  const el = document.documentElement as WebkitElement;
-  if (el.requestFullscreen) return el.requestFullscreen();
-  return el.webkitRequestFullscreen?.();
-};
-const exitFullscreen = () => {
-  const doc = document as WebkitDocument;
-  if (doc.exitFullscreen) return doc.exitFullscreen();
-  return doc.webkitExitFullscreen?.();
-};
-
 const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
 
 interface FloorPlanMapProps {
@@ -222,7 +181,6 @@ interface FloorPlanMapProps {
   editor?: React.ReactNode;
   infoPanels: InfoPanel[];
   showInfoPanels: boolean;
-  onToggleInfoPanels: () => void;
 }
 
 export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
@@ -238,7 +196,6 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   editor,
   infoPanels,
   showInfoPanels,
-  onToggleInfoPanels,
 }) => {
   // The canvas already fills the whole workspace at 1x, so no default zoom-in.
   const DEFAULT_ZOOM = 1;
@@ -382,27 +339,6 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   };
   const resetZoom = () => setZoomKeepingCenter(() => DEFAULT_ZOOM);
 
-  // Fullscreen covers the whole dashboard (sidebar included). State is synced
-  // from the browser's change event so exiting via Esc/back gesture updates the icon.
-  const [canFullscreen] = useState<boolean>(isFullscreenSupported);
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(() => getFullscreenElement() !== null);
-  useEffect(() => {
-    if (!canFullscreen) return;
-    const onChange = () => setIsFullscreen(getFullscreenElement() !== null);
-    document.addEventListener('fullscreenchange', onChange);
-    document.addEventListener('webkitfullscreenchange', onChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', onChange);
-      document.removeEventListener('webkitfullscreenchange', onChange);
-    };
-  }, [canFullscreen]);
-  const toggleFullscreen = () => {
-    const result = isFullscreen ? exitFullscreen() : enterFullscreen();
-    Promise.resolve(result).catch(() => {
-      // Browser refused (e.g. permissions policy) - leave the state as-is.
-    });
-  };
-
   // Check visibility/highlight filter according to the 2 requested buttons:
   // If neither or both are on, show all.
   // If only Available is on, show only available.
@@ -489,8 +425,9 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
           </div>
         </div>
 
-        {/* View bar: Info Panels & Fullscreen, plus Edit Zones and zoom when
-            their dormant build flags are on */}
+        {/* Tool bar: Edit Zones and zoom, only when their dormant build flags
+            are on. Info Panels and Fullscreen live in the sidebar. */}
+        {(LAYOUT_EDITOR_ENABLED || ZOOM_CONTROLS_ENABLED) && (
         <div className="pointer-events-auto flex items-center gap-1 bg-[#141628]/90 backdrop-blur-md border border-white/10 rounded-2xl p-1.5 shadow-xl">
           {LAYOUT_EDITOR_ENABLED && (
             <>
@@ -544,48 +481,10 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
               >
                 <RotateCcw className="w-3.5 h-3.5" />
               </button>
-
-              <div className="h-4 w-px bg-white/10 mx-1" />
-            </>
-          )}
-
-          {/* Toggle: indigo with a lit dot while panels are shown, like the
-              active floor tab; grey with an unlit dot while hidden. */}
-          <button
-            id="btn-toggle-info-panels"
-            onClick={onToggleInfoPanels}
-            aria-pressed={showInfoPanels}
-            className={`${VIEW_BUTTON_CLASSES} ${
-              showInfoPanels ? 'bg-indigo-500/20 text-indigo-200 hover:bg-indigo-500/30' : VIEW_BUTTON_IDLE
-            }`}
-            title={showInfoPanels ? 'Hide info panels' : 'Show info panels'}
-            aria-label="Info panels"
-          >
-            <LayoutDashboard className="w-4 h-4" />
-            <span className="hidden xl:inline">Info Panels</span>
-            <span
-              aria-hidden="true"
-              className={`w-1.5 h-1.5 rounded-full transition-colors ${
-                showInfoPanels ? 'bg-indigo-400 shadow-[0_0_6px] shadow-indigo-400' : 'bg-slate-600'
-              }`}
-            />
-          </button>
-          {canFullscreen && (
-            <>
-              <div className="h-4 w-px bg-white/10 mx-0.5" />
-              <button
-                id="btn-fullscreen"
-                onClick={toggleFullscreen}
-                className={`${VIEW_BUTTON_CLASSES} ${VIEW_BUTTON_IDLE}`}
-                title={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-                aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-              >
-                {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                <span className="hidden xl:inline">{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
-              </button>
             </>
           )}
         </div>
+        )}
       </div>
 
       {/* Main Floor Plan Workspace Canvas */}
@@ -630,8 +529,9 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
               </div>
             )}
 
-            {/* Info panels - read-only widgets in the plan's free space. Styled as dark
-                cards (no status fill) so they never read as a table or room. */}
+            {/* Info panels - read-only widgets in the plan's free space. Opaque dark
+                cards (no status fill) so they never read as a table or room, and
+                the plan's lines never show through their text. */}
             {panelsVisible && floorPanels.map((panel) => {
               // On-screen size decides how many columns fit (see InfoPanelView).
               const panelPx = {
@@ -642,13 +542,12 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                 <div
                   key={panel.id}
                   id={`map-panel-${panel.id}`}
-                  className="absolute rounded-xl shadow-xl border border-white/10"
+                  className="absolute rounded-xl border border-white/[0.18] bg-gradient-to-b from-[#1b1e36] to-[#14162a]"
                   style={{
                     left: `${panel.x}%`,
                     top: `${panel.y}%`,
                     width: `${panel.width}%`,
                     height: `${panel.height}%`,
-                    backgroundColor: 'rgba(15, 17, 32, 0.9)',
                   }}
                 >
                   {/* Scrolls only as a fallback when a panel is too short for its widgets' minimum sizes */}
@@ -850,18 +749,21 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
         </div>
       </div>
 
-      {/* Bottom Bar: status legend */}
-      <div className="p-3.5 px-8 border-t border-white/5 bg-[#0e0f1c]/90 backdrop-blur-md flex flex-wrap items-center justify-between text-xs text-slate-300">
-        <div className="flex items-center gap-6">
-          <span className="text-slate-400 uppercase tracking-wider text-[10px] font-bold">Status:</span>
-
+      {/* Status legend: one chip per status, tinted like the zones on the
+          map, on a floating panel styled like the floor switch at the top. */}
+      <div className="flex justify-center px-4 pb-3.5">
+        <div className="flex flex-wrap items-center justify-center gap-2.5 pl-[18px] pr-2 py-2 rounded-2xl bg-[#141628]/90 backdrop-blur-md border border-white/10 shadow-xl">
+          <span className="mr-1 text-slate-400 uppercase tracking-wider text-[10px] font-bold">Status</span>
           {ALL_TABLE_STATUSES.map((status) => {
             const colors = getStatusColors(status);
             return (
-              <div key={status} className="flex items-center gap-2">
-                <span className={`w-2.5 h-2.5 rounded-full ${colors.legendDotClass}`} />
-                <span className={`${colors.legendTextClass} font-medium`}>{colors.label}</span>
-              </div>
+              <span
+                key={status}
+                className={`flex items-center gap-2 pl-2.5 pr-3 py-1 rounded-full border text-xs font-semibold ${colors.chipClass}`}
+              >
+                <span className={`w-2 h-2 rounded-full ${colors.legendDotClass}`} style={{ boxShadow: `0 0 6px ${colors.glowRgba}` }} />
+                <span className={colors.legendTextClass}>{colors.label}</span>
+              </span>
             );
           })}
         </div>

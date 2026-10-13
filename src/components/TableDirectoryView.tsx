@@ -10,6 +10,8 @@ interface TableDirectoryViewProps {
   tables: TableRoom[];
   onSelectTable: (table: TableRoom) => void;
   currentFloor: 1 | 2;
+  // Bumped when a sidebar floor card is tapped; this view then switches too.
+  floorRequest: number;
   onSelectFloor: (floor: 1 | 2) => void;
 }
 
@@ -29,15 +31,24 @@ const ALWAYS_SHOWN: TableStatus[] = ['occupied', 'available'];
 const byName = (a: TableRoom, b: TableRoom) =>
   a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' });
 
+const formatPeso = (amount: number) =>
+  `₱${amount.toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
 export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
   tables,
   onSelectTable,
   currentFloor,
+  floorRequest,
   onSelectFloor,
 }) => {
   // Same floor behaviour as Active Orders: opens on the map's floor, picking
   // a floor moves the map too, and All Floors leaves the map where it is.
   const [floorFilter, setFloorFilter] = useState<FloorFilter>(currentFloor);
+  const [seenFloorRequest, setSeenFloorRequest] = useState(floorRequest);
+  if (floorRequest !== seenFloorRequest) {
+    setSeenFloorRequest(floorRequest);
+    setFloorFilter(currentFloor);
+  }
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
@@ -80,7 +91,9 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
         key={table.id}
         id={`dir-card-${table.id}`}
         onClick={() => onSelectTable(table)}
-        className="h-full w-full text-left cursor-pointer p-5 rounded-3xl bg-[#15172b]/90 border border-white/10 hover:border-white/20 hover:scale-[1.02] focus-visible:outline-none focus-visible:border-indigo-500 transition-all duration-200 shadow-xl flex flex-col justify-between group"
+        // Every status but Available gets a wash of its colour and a matching
+        // edge (like the status legend), so busy zones stand out of the grid.
+        className={`h-full w-full text-left cursor-pointer p-5 rounded-3xl border ${getStatusColors(table.status).cardClass} hover:brightness-110 hover:scale-[1.02] focus-visible:outline-none focus-visible:border-indigo-500 transition-all duration-200 flex flex-col justify-between group`}
       >
         <div className="flex items-start justify-between gap-3">
           {/* min-h-10 keeps the header the height the old 40px code badge gave it. */}
@@ -113,14 +126,21 @@ export const TableDirectoryView: React.FC<TableDirectoryViewProps> = ({
         {/* Fixed height, so cards with an order chip line up with those without. */}
         <div className="mt-4 pt-3 border-t border-white/10 h-[22px] box-content flex items-center justify-between gap-2 text-xs">
           {activeOrder ? (
-            <span className="px-2 py-0.5 rounded-full font-bold border bg-indigo-500/15 text-indigo-300 border-indigo-500/30 truncate">
-              {formatItemCount(groupOrderLines(activeOrder.items).length)} • ₱{activeOrder.grandTotal.toFixed(2)}
+            // The total always shows in full; the item count beside it gives
+            // way first on a narrow card, then the action hint.
+            <span className="min-w-0 shrink-[100] flex items-center gap-2">
+              <span className="shrink-0 px-2 py-0.5 rounded-full font-bold tabular-nums border bg-indigo-500/15 text-indigo-300 border-indigo-500/30">
+                {formatPeso(activeOrder.grandTotal)}
+              </span>
+              <span className="min-w-0 truncate text-[11px] text-slate-400">
+                {formatItemCount(groupOrderLines(activeOrder.items).length)}
+              </span>
             </span>
           ) : (
             <span className="text-slate-500 text-[11px]">No active order</span>
           )}
 
-          <span className="shrink-0 text-[11px] text-indigo-400 font-medium">{action} &rarr;</span>
+          <span className="min-w-0 truncate text-[11px] text-indigo-400 font-medium">{action} &rarr;</span>
         </div>
       </button>
     );

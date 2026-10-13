@@ -13,13 +13,17 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   Clock,
-  LogOut
+  LogOut,
+  Maximize2,
+  Minimize2,
+  LayoutDashboard
 } from 'lucide-react';
 import { TableRoom } from '../types';
 import { ConnectionStatus } from '../services/adminSync';
 import { DashboardUser, displayName } from '../services/auth';
 import { getRoomTiming, getTimerTone, formatDuration, formatWait, TIMER_TEXT_CLASS, RoomTiming } from '../utils/roomTimer';
 import { morphLayers } from '../utils/morphLayers';
+import { useFullscreen } from '../utils/fullscreen';
 
 // The sidebar's connection badge, per ConnectionStatus (see adminSync.ts).
 const CONNECTION_BADGE: Record<
@@ -72,6 +76,9 @@ interface SidebarProps {
   onToggleAvailableFilter: () => void;
   showOccupiedFilter: boolean;
   onToggleOccupiedFilter: () => void;
+  // Whether the floor plan shows its info panels (a per-device view choice).
+  showInfoPanels: boolean;
+  onToggleInfoPanels: () => void;
   tables: TableRoom[];
   onSelectFloor: (floor: 1 | 2) => void;
   onSelectTable: (table: TableRoom) => void;
@@ -95,6 +102,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onToggleAvailableFilter,
   showOccupiedFilter,
   onToggleOccupiedFilter,
+  showInfoPanels,
+  onToggleInfoPanels,
   tables,
   onSelectFloor,
   onSelectTable,
@@ -199,6 +208,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const badge = CONNECTION_BADGE[connectionStatus];
   const BadgeIcon = badge.icon;
+  const fullscreen = useFullscreen();
+  // The filters and Info Panels only change the floor plan, so elsewhere they
+  // fade out and stop taking taps.
+  const onFloorPlan = activeNav === 'floorplan';
   const syncedAgo = lastSyncedAt != null ? formatWait(nowMs - lastSyncedAt) : null;
 
   // Collapsing/expanding morphs between the two layouts instead of swapping
@@ -270,6 +283,10 @@ export const Sidebar: React.FC<SidebarProps> = ({
           onToggleAvailableFilter={onToggleAvailableFilter}
           showOccupiedFilter={showOccupiedFilter}
           onToggleOccupiedFilter={onToggleOccupiedFilter}
+          showInfoPanels={showInfoPanels}
+          onToggleInfoPanels={onToggleInfoPanels}
+          onFloorPlan={onFloorPlan}
+          fullscreen={fullscreen}
           attentionCount={attentionRooms.length}
           hasExpired={hasExpired}
           userName={displayName(user)}
@@ -286,8 +303,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           className="absolute inset-y-0 left-0 w-80 flex flex-col overflow-y-auto overflow-x-hidden custom-scrollbar"
         >
           {/* Branch, clock & live connection status */}
-          <div className="p-6 pb-4 border-b border-white/5">
-            <div className="mb-4 flex items-start justify-between gap-2">
+          <div className="px-6 pt-4 pb-3.5 border-b border-white/5">
+            <div className="mb-3 flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="text-sm font-bold tracking-wide text-white uppercase truncate">Blue Moon</div>
                 <div
@@ -307,6 +324,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
+                {/* Sign out stands apart from the two view buttons, behind a
+                    divider, so a missed tap on them doesn't land on it. */}
+                <div className="w-px h-5 mx-1.5 bg-white/10" />
+                {fullscreen.supported && (
+                  <button
+                    id="btn-fullscreen"
+                    onClick={fullscreen.toggle}
+                    title={fullscreen.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+                    aria-label={fullscreen.isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                    className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
+                  >
+                    {fullscreen.isFullscreen ? (
+                      <Minimize2 data-morph="fullscreen" className="w-4 h-4" />
+                    ) : (
+                      <Maximize2 data-morph="fullscreen" className="w-4 h-4" />
+                    )}
+                  </button>
+                )}
                 <button
                   id="btn-collapse-sidebar"
                   data-sidebar-toggle
@@ -325,11 +360,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
               <span>{timeString}</span>
             </div>
             <div className="text-[11px] font-semibold tracking-wider text-slate-400 mt-1 uppercase">
+              {/* "TUESDAY, OCTOBER 13, 2026": the year dimmer, so the day still reads first. */}
               {dateString}
+              <span className="text-slate-500">, {currentTime.getFullYear()}</span>
             </div>
 
             {/* Live connection badge (real state, see adminSync.ts) & refresh */}
-            <div className="flex items-center gap-2 mt-4">
+            <div className="flex items-center gap-2 mt-3">
               <div
                 id="connection-status"
                 title={badge.detail}
@@ -365,8 +402,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Main Navigation */}
-          <div className="p-6 py-4 space-y-2">
-            <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-2">
+          <div className="px-6 py-3 space-y-1.5">
+            <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase mb-1.5">
               Navigation
             </div>
 
@@ -374,7 +411,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               id="nav-floor-plan"
               onClick={() => onSelectNav('floorplan')}
-              className={`w-full flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-200 ${
+              className={`w-full flex items-center gap-3 px-4 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 ${
                 activeNav === 'floorplan'
                   ? 'bg-gradient-to-r from-white/[0.12] to-white/[0.04] text-white shadow-lg border border-white/15'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
@@ -388,7 +425,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               id="nav-all-tables"
               onClick={() => onSelectNav('directory')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-200 ${
+              className={`w-full flex items-center justify-between px-4 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 ${
                 activeNav === 'directory'
                   ? 'bg-gradient-to-r from-white/[0.12] to-white/[0.04] text-white shadow-lg border border-white/15'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
@@ -407,7 +444,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <button
               id="nav-order-queue"
               onClick={() => onSelectNav('orders')}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-200 ${
+              className={`w-full flex items-center justify-between px-4 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 ${
                 activeNav === 'orders'
                   ? 'bg-gradient-to-r from-white/[0.12] to-white/[0.04] text-white shadow-lg border border-white/15'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.04]'
@@ -429,97 +466,63 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </button>
           </div>
 
-          {/* QUICK CONTROL / SERVICE FILTERS - Exactly the 2 requested buttons */}
-          <div className="p-6 py-4 border-t border-white/5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">
-                Quick Control & Filter
-              </div>
-              <span
-                className={`text-[10px] text-indigo-400 font-medium transition-opacity duration-300 ${
-                  showAvailableFilter || showOccupiedFilter ? 'opacity-100' : 'opacity-0'
-                }`}
-              >
-                Filter active
-              </span>
+          {/* Floor Plan View: the two quick filters and Info Panels. They only
+              change the floor plan, so on other tabs they fade and go inert. */}
+          <div className="px-6 pt-3 pb-3.5 border-t border-white/5">
+            <div className="flex items-center justify-between mb-2.5">
+              <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">Floor Plan View</div>
+              {onFloorPlan ? (
+                <span
+                  className={`text-[10px] text-indigo-400 font-medium transition-opacity duration-300 ${
+                    showAvailableFilter || showOccupiedFilter ? 'opacity-100' : 'opacity-0'
+                  }`}
+                >
+                  Filter active
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-500">Floor Plan only</span>
+              )}
             </div>
-
-            {/* Button 1: Available Tables/Rooms (Emerald glow when on) */}
             <div
-              id="control-available-tables"
-              onClick={onToggleAvailableFilter}
-              className={`cursor-pointer p-3.5 rounded-2xl flex items-center justify-between transition-all duration-300 ${
-                showAvailableFilter
-                  ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg shadow-emerald-500/20'
-                  : 'bg-[#161829] border border-white/10 text-slate-300 hover:border-white/20'
-              }`}
+              inert={!onFloorPlan}
+              className={`grid grid-cols-3 gap-2 transition-opacity duration-200 ${onFloorPlan ? '' : 'opacity-35'}`}
             >
-              <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                  showAvailableFilter ? 'bg-white/20 text-white' : 'bg-emerald-500/10 text-emerald-400'
-                }`}>
-                  <Check data-morph="filter-available" className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="text-sm font-bold leading-tight">
-                    Available Zones
-                  </div>
-                  <div className={`text-[11px] ${showAvailableFilter ? 'text-white/80' : 'text-slate-400'}`}>
-                    {showAvailableFilter ? 'Showing available tables' : 'Tap to show available'}
-                  </div>
-                </div>
-              </div>
-
-              {/* Toggle switch pill: the knob slides the 24px track (w-12 minus
-                  p-0.5 padding and the w-5 knob) rather than flipping justify, which can't animate */}
-              <div className={`w-12 h-6 rounded-full p-0.5 transition-colors duration-300 flex items-center ${
-                showAvailableFilter ? 'bg-white' : 'bg-white/10'
-              }`}>
-                <div className={`w-5 h-5 rounded-full shadow-md transition-[translate,background-color] duration-300 ease-out ${
-                  showAvailableFilter ? 'translate-x-6 bg-emerald-600' : 'translate-x-0 bg-slate-400'
-                }`} />
-              </div>
-            </div>
-
-            {/* Button 2: Occupied Tables/Rooms (Amber/Orange glow when on) */}
-            <div
-              id="control-occupied-tables"
-              onClick={onToggleOccupiedFilter}
-              className={`cursor-pointer p-3.5 rounded-2xl flex items-center justify-between transition-all duration-300 ${
-                showOccupiedFilter
-                  ? 'bg-gradient-to-r from-amber-500 to-orange-500 text-white shadow-lg shadow-orange-500/20'
-                  : 'bg-[#161829] border border-white/10 text-slate-300 hover:border-white/20'
-              }`}
-            >
-              <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                  showOccupiedFilter ? 'bg-white/20 text-white' : 'bg-amber-500/10 text-amber-400'
-                }`}>
-                  <Users data-morph="filter-occupied" className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="text-sm font-bold leading-tight">
-                    Occupied Zones
-                  </div>
-                  <div className={`text-[11px] ${showOccupiedFilter ? 'text-white/80' : 'text-slate-400'}`}>
-                    {showOccupiedFilter ? 'Showing occupied tables' : 'Tap to show occupied'}
-                  </div>
-                </div>
-              </div>
-
-              <div className={`w-12 h-6 rounded-full p-0.5 transition-colors duration-300 flex items-center ${
-                showOccupiedFilter ? 'bg-white' : 'bg-white/10'
-              }`}>
-                <div className={`w-5 h-5 rounded-full shadow-md transition-[translate,background-color] duration-300 ease-out ${
-                  showOccupiedFilter ? 'translate-x-6 bg-orange-500' : 'translate-x-0 bg-slate-400'
-                }`} />
-              </div>
+              <ViewTile
+                id="control-available-tables"
+                on={showAvailableFilter}
+                onClick={onToggleAvailableFilter}
+                icon={<Check data-morph="filter-available" className="w-5 h-5" />}
+                label="Available"
+                title={showAvailableFilter ? 'Showing available tables' : 'Tap to show available'}
+                onClass="bg-gradient-to-r from-emerald-600 to-teal-600 shadow-lg shadow-emerald-500/25"
+                idleIconClass="text-emerald-400"
+              />
+              <ViewTile
+                id="control-occupied-tables"
+                on={showOccupiedFilter}
+                onClick={onToggleOccupiedFilter}
+                icon={<Users data-morph="filter-occupied" className="w-5 h-5" />}
+                label="Occupied"
+                title={showOccupiedFilter ? 'Showing occupied tables' : 'Tap to show occupied'}
+                onClass="bg-gradient-to-r from-amber-500 to-orange-500 shadow-lg shadow-amber-500/25"
+                idleIconClass="text-amber-400"
+              />
+              <ViewTile
+                id="btn-toggle-info-panels"
+                on={showInfoPanels}
+                onClick={onToggleInfoPanels}
+                icon={<LayoutDashboard data-morph="info-panels" className="w-5 h-5" />}
+                label="Info Panels"
+                title={showInfoPanels ? 'Hide info panels' : 'Show info panels'}
+                onClass="bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg shadow-indigo-600/25"
+                idleIconClass="text-indigo-400"
+              />
             </div>
           </div>
 
           {/* Needs attention: expired / ending-soon rooms, both floors. Fills the
               sidebar's free height and scrolls on its own when the list is long. */}
-          <div className="flex-1 min-h-[150px] flex flex-col p-6 py-4 border-t border-white/5">
+          <div className="flex-1 min-h-[96px] flex flex-col px-6 py-3 border-t border-white/5">
             <div className="flex items-center justify-between mb-2">
               <div className="text-[11px] font-bold tracking-wider text-slate-400 uppercase">Needs Attention</div>
               {attentionRooms.length > 0 && (
@@ -536,10 +539,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
             </div>
 
             {attentionRooms.length === 0 ? (
-              <div className="flex-1 flex flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-white/10 text-center p-4">
-                <CheckCircle2 data-morph="attention-clear" className="w-5 h-5 text-emerald-400" />
+              <div
+                title="Expired rooms and ones ending within 15 minutes show here."
+                className="flex-1 min-h-9 flex items-center justify-center gap-2 rounded-2xl border border-dashed border-white/10 px-4 py-2"
+              >
+                <CheckCircle2 data-morph="attention-clear" className="w-[18px] h-[18px] text-emerald-400" />
                 <div className="text-xs font-semibold text-slate-300">All rooms on time</div>
-                <div className="text-[11px] text-slate-500">Expired rooms and ones ending within 15 minutes show here.</div>
               </div>
             ) : (
               <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar -mx-1 px-1 space-y-1">
@@ -564,7 +569,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
 
           {/* Both floors at a glance; tap one to switch to it */}
-          <div className="p-6 pt-3 border-t border-white/5 bg-[#0e0f1a]">
+          <div className="px-6 pt-2.5 pb-4 border-t border-white/5 bg-[#0e0f1a]">
             <div className="text-[10px] uppercase tracking-wider text-slate-500 font-bold mb-2">Floors</div>
             <div className="grid grid-cols-2 gap-2">
               {floorStats.map(({ floor, total, available, occupied }) => {
@@ -619,6 +624,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
   );
 };
 
+// One of the Floor Plan View tiles: filled with its colour while on.
+const ViewTile: React.FC<{
+  id: string;
+  on: boolean;
+  onClick: () => void;
+  icon: React.ReactNode;
+  label: string;
+  title: string;
+  onClass: string;
+  idleIconClass: string;
+}> = ({ id, on, onClick, icon, label, title, onClass, idleIconClass }) => (
+  <button
+    id={id}
+    onClick={onClick}
+    title={title}
+    aria-pressed={on}
+    className={`h-[60px] min-w-0 rounded-2xl flex flex-col items-center justify-center gap-1 border transition-all duration-300 active:scale-95 ${
+      on ? `${onClass} border-transparent text-white` : 'bg-[#161829] border-white/10 text-slate-300 hover:border-white/20'
+    }`}
+  >
+    <span className={on ? 'text-white' : idleIconClass}>{icon}</span>
+    <span className="max-w-full px-1 truncate text-[11px] font-bold">{label}</span>
+  </button>
+);
+
 // The rail's square buttons; ACTIVE matches the expanded sidebar's selected
 // nav item.
 const RAIL_BUTTON_CLASSES =
@@ -656,6 +686,10 @@ interface SidebarRailProps {
   onToggleAvailableFilter: () => void;
   showOccupiedFilter: boolean;
   onToggleOccupiedFilter: () => void;
+  showInfoPanels: boolean;
+  onToggleInfoPanels: () => void;
+  onFloorPlan: boolean;
+  fullscreen: ReturnType<typeof useFullscreen>;
   attentionCount: number;
   hasExpired: boolean;
   userName: string;
@@ -684,6 +718,10 @@ const SidebarRail: React.FC<SidebarRailProps> = ({
   onToggleAvailableFilter,
   showOccupiedFilter,
   onToggleOccupiedFilter,
+  showInfoPanels,
+  onToggleInfoPanels,
+  onFloorPlan,
+  fullscreen,
   attentionCount,
   hasExpired,
   userName,
@@ -710,6 +748,24 @@ const SidebarRail: React.FC<SidebarRailProps> = ({
       >
         <PanelLeftOpen data-morph="toggle" className="w-5 h-5" />
       </button>
+
+      {/* View controls stay together up here; Sign out sits alone at the
+          bottom, away from anything tapped often. */}
+      {fullscreen.supported && (
+        <button
+          id="btn-rail-fullscreen"
+          onClick={fullscreen.toggle}
+          title={fullscreen.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          aria-label={fullscreen.isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+          className={`${RAIL_BUTTON_CLASSES} ${RAIL_BUTTON_IDLE}`}
+        >
+          {fullscreen.isFullscreen ? (
+            <Minimize2 data-morph="fullscreen" className="w-5 h-5" />
+          ) : (
+            <Maximize2 data-morph="fullscreen" className="w-5 h-5" />
+          )}
+        </button>
+      )}
 
       <div className="py-1 text-center font-mono leading-none">
         <div className="text-sm font-bold text-white tabular-nums">{clock.time}</div>
@@ -771,7 +827,12 @@ const SidebarRail: React.FC<SidebarRailProps> = ({
 
       <RailDivider />
 
-      {/* Quick Control & Filter, as the expanded sidebar's two switches */}
+      {/* Floor Plan View, as the expanded sidebar's three tiles */}
+      <div
+        inert={!onFloorPlan}
+        title={onFloorPlan ? undefined : 'Floor Plan only'}
+        className={`flex flex-col items-center gap-2 transition-opacity duration-200 ${onFloorPlan ? '' : 'opacity-35'}`}
+      >
       <button
         id="rail-control-available-tables"
         onClick={onToggleAvailableFilter}
@@ -800,6 +861,21 @@ const SidebarRail: React.FC<SidebarRailProps> = ({
       >
         <Users data-morph="filter-occupied" className="w-5 h-5" />
       </button>
+      <button
+        id="rail-toggle-info-panels"
+        onClick={onToggleInfoPanels}
+        title={showInfoPanels ? 'Info Panels: on (tap to hide)' : 'Info Panels: tap to show'}
+        aria-label="Info panels"
+        aria-pressed={showInfoPanels}
+        className={`${RAIL_BUTTON_CLASSES} duration-300 ${
+          showInfoPanels
+            ? 'bg-gradient-to-r from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/25'
+            : 'text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20'
+        }`}
+      >
+        <LayoutDashboard data-morph="info-panels" className="w-5 h-5" />
+      </button>
+      </div>
 
       <RailDivider />
 
@@ -829,12 +905,14 @@ const SidebarRail: React.FC<SidebarRailProps> = ({
         )}
       </button>
 
+      <div className="mt-auto" />
+      <RailDivider />
       <button
         id="rail-sign-out"
         onClick={onSignOut}
         title={`Signed in as ${userName}\nTap to sign out`}
         aria-label={`Sign out ${userName}`}
-        className={`${RAIL_BUTTON_CLASSES} mt-auto text-slate-400 hover:text-rose-300 hover:bg-rose-500/10`}
+        className={`${RAIL_BUTTON_CLASSES} text-slate-400 hover:text-rose-300 hover:bg-rose-500/10`}
       >
         <LogOut className="w-5 h-5" />
       </button>

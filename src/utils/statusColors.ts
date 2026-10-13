@@ -10,6 +10,10 @@ export interface StatusColorScheme {
   legendTextClass: string;
   /** Composed classes for the active/selected state of a status-picker button. */
   activeButtonClass: string;
+  /** The status legend's chip: a light wash of the colour and a matching edge. */
+  chipClass: string;
+  /** A zone card's tint (All Tables & Rooms, Active Orders); none for Available. */
+  cardClass: string;
 }
 
 const STATUS_COLORS: Record<TableStatus, StatusColorScheme> = {
@@ -21,6 +25,8 @@ const STATUS_COLORS: Record<TableStatus, StatusColorScheme> = {
     legendDotClass: 'bg-emerald-400',
     legendTextClass: 'text-emerald-300',
     activeButtonClass: 'bg-emerald-500/20 border-emerald-500 text-emerald-300',
+    chipClass: 'bg-emerald-500/10 border-emerald-400/40',
+    cardClass: 'bg-[#15172b] border-white/10',
   },
   occupied: {
     label: 'Occupied',
@@ -30,6 +36,8 @@ const STATUS_COLORS: Record<TableStatus, StatusColorScheme> = {
     legendDotClass: 'bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.8)]',
     legendTextClass: 'text-amber-300',
     activeButtonClass: 'bg-amber-500/20 border-amber-500 text-amber-300',
+    chipClass: 'bg-amber-500/10 border-amber-400/40',
+    cardClass: 'bg-gradient-to-br from-[#342a27] to-[#15172b] border-amber-400/45',
   },
   // Reserved and Not Available are display-only: set from restoAdmin's Table
   // Settings, never from the dashboard. Blue/red match restoAdmin's badges.
@@ -41,6 +49,8 @@ const STATUS_COLORS: Record<TableStatus, StatusColorScheme> = {
     legendDotClass: 'bg-sky-400',
     legendTextClass: 'text-sky-300',
     activeButtonClass: 'bg-sky-500/20 border-sky-500 text-sky-300',
+    chipClass: 'bg-sky-500/10 border-sky-400/40',
+    cardClass: 'bg-gradient-to-br from-[#142b46] to-[#15172b] border-sky-400/45',
   },
   unavailable: {
     label: 'Not Available',
@@ -50,6 +60,8 @@ const STATUS_COLORS: Record<TableStatus, StatusColorScheme> = {
     legendDotClass: 'bg-rose-400',
     legendTextClass: 'text-rose-300',
     activeButtonClass: 'bg-rose-500/20 border-rose-500 text-rose-300',
+    chipClass: 'bg-rose-500/10 border-rose-400/40',
+    cardClass: 'bg-gradient-to-br from-[#341d32] to-[#15172b] border-rose-400/45',
   },
 };
 

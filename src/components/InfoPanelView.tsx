@@ -118,7 +118,7 @@ const WidgetCard: React.FC<{ isList: boolean; children: React.ReactNode }> = ({
   children,
 }) => (
   <section
-    className={`min-w-0 flex flex-col rounded-lg bg-white/[0.04] border border-white/[0.07] p-1.5 ${
+    className={`min-w-0 flex flex-col rounded-lg bg-white/[0.06] border border-white/[0.12] p-1.5 ${
       isList ? 'flex-1 min-h-[56px]' : 'shrink-0'
     }`}
   >
@@ -163,7 +163,7 @@ function SegmentedToggle<T extends string | number>({
   ariaLabel: string;
 }) {
   return (
-    <div className="shrink-0 flex gap-0.5 pt-0.5" role="group" aria-label={ariaLabel}>
+    <div className="shrink-0 flex gap-0.5 p-0.5 mt-0.5 rounded-lg bg-white/[0.08] border border-white/[0.08]" role="group" aria-label={ariaLabel}>
       {options.map((option) => {
         const active = value === option.value;
         return (
@@ -172,9 +172,7 @@ function SegmentedToggle<T extends string | number>({
             onClick={() => onChange(option.value)}
             aria-pressed={active}
             className={`flex-1 min-w-0 truncate px-1 py-0.5 rounded-md text-[10px] font-semibold ${
-              active
-                ? 'bg-indigo-500/30 text-indigo-100 border border-indigo-400/40'
-                : 'text-slate-400 border border-transparent'
+              active ? 'bg-indigo-600 text-white' : 'text-slate-300'
             } ${interactive ? (active ? '' : 'hover:bg-white/10 cursor-pointer') : 'pointer-events-none'}`}
           >
             {option.label}

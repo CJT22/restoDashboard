@@ -210,7 +210,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({
 
   const renderMain = () => {
     if (catalogError) return <p className="text-sm text-rose-400 p-2">{catalogError}</p>;
-    if (!catalog) return <p className="text-sm text-slate-500 p-2">Loading menu…</p>;
+    if (!catalog) return <MenuSkeleton />;
 
     if (query) {
       return (
@@ -360,6 +360,7 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({
               onClick={() => select(g.id)}
             />
           ))}
+          {!catalog && !catalogError && <RailSkeleton />}
         </nav>
 
         {/* Menu */}
@@ -391,6 +392,47 @@ export const OrderScreen: React.FC<OrderScreenProps> = ({
 // ---------------------------------------------------------------------------
 // Pieces
 // ---------------------------------------------------------------------------
+
+// While the menu loads: placeholder sections shaped like the real ones (a
+// header over a grid of name/price/+ tiles), so nothing jumps when it arrives.
+const SKELETON_NAME_WIDTHS = ['w-[72%]', 'w-1/2', 'w-[62%]', 'w-[42%]', 'w-4/5', 'w-[55%]'];
+
+const MenuSkeleton: React.FC = () => (
+  <div role="status" aria-label="Loading menu" className="space-y-6 animate-pulse motion-reduce:animate-none">
+    {[
+      { headerWidth: 'w-[150px]', tiles: 12 },
+      { headerWidth: 'w-[110px]', tiles: 18 },
+    ].map(({ headerWidth, tiles }, s) => (
+      <section key={s}>
+        <div className="h-5 mb-2.5 flex items-center">
+          <div className={`h-3 rounded bg-white/10 ${headerWidth}`} />
+        </div>
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-2">
+          {Array.from({ length: tiles }, (_, i) => (
+            <div key={i} className="h-[60px] rounded-xl border border-white/10 bg-white/[0.03] flex items-center gap-2 pl-3 pr-2">
+              <div className="flex-1 min-w-0 space-y-2">
+                <div className={`h-3 rounded bg-white/10 ${SKELETON_NAME_WIDTHS[i % SKELETON_NAME_WIDTHS.length]}`} />
+                <div className="h-2.5 w-11 rounded bg-amber-300/15" />
+              </div>
+              <div className="w-[34px] h-[34px] shrink-0 rounded-full bg-white/10" />
+            </div>
+          ))}
+        </div>
+      </section>
+    ))}
+  </div>
+);
+
+const RailSkeleton: React.FC = () => (
+  <div aria-hidden="true" className="space-y-1 animate-pulse motion-reduce:animate-none">
+    {['w-[92px]', 'w-[118px]', 'w-[104px]', 'w-[86px]', 'w-[112px]', 'w-[98px]', 'w-[76px]', 'w-16'].map((w, i) => (
+      <div key={i} className="h-11 px-3 flex items-center gap-2.5">
+        <div className="w-4 h-4 rounded bg-white/10" />
+        <div className={`h-2.5 rounded bg-white/10 ${w}`} />
+      </div>
+    ))}
+  </div>
+);
 
 const RailButton: React.FC<{
   label: string;

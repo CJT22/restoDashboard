@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Eye, EyeOff, Loader2, LogIn, Info, AlertTriangle } from 'lucide-react';
+import { Eye, EyeOff, Loader2, LogIn, Info, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
 import { DashboardUser, signIn } from '../services/auth';
+import { useFullscreen } from '../utils/fullscreen';
 
 interface LoginPageProps {
   onSignedIn: (user: DashboardUser) => void;
@@ -17,6 +18,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const fullscreen = useFullscreen();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,18 +42,43 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
     'w-full h-12 px-4 rounded-xl bg-[#0e0f1a] border border-white/10 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors disabled:opacity-60';
 
   return (
-    <div className="min-h-screen w-screen flex items-center justify-center bg-[#0b0c16] text-slate-100 font-sans p-4">
+    // A soft glow behind the logo, so the navy badge stands off the page.
+    <div className="relative min-h-screen w-screen flex items-center justify-center bg-[#0b0c16] bg-[radial-gradient(ellipse_at_50%_25%,rgba(79,70,229,0.22),transparent_55%)] text-slate-100 font-sans p-4">
+      {/* Fullscreen before signing in; the sidebar's toggle shares it. Off
+          until tapped: browsers only allow it from a click. */}
+      {fullscreen.supported && (
+        <button
+          type="button"
+          onClick={fullscreen.toggle}
+          className="absolute top-4 right-4 h-10 pl-[11px] pr-3.5 rounded-xl bg-[#141628]/90 border border-white/10 flex items-center gap-2 text-[13px] font-bold text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          {fullscreen.isFullscreen ? <Minimize2 className="w-4 h-4 text-slate-400" /> : <Maximize2 className="w-4 h-4 text-slate-400" />}
+          {fullscreen.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+        </button>
+      )}
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="text-xl font-bold tracking-wide text-white uppercase">Blue Moon</div>
-          <div className="text-[11px] font-semibold tracking-wider text-slate-500 uppercase">Floor Dashboard</div>
+          {/* The Blue Moon badge (it spells out the name). A faint gold ring and
+              halo separate the dark disc from the dark page; at 160px its
+              "Family KTV" line is legible. */}
+          <div className="mx-auto mb-[18px] w-fit p-[5px] rounded-full border-[1.5px] border-[#f1c83e]/35 shadow-[0_0_48px_4px_rgba(99,102,241,0.35),0_0_18px_rgba(241,200,62,0.12)]">
+            <img src="/blue-moon-logo.png" alt="Blue Moon" width={160} height={160} className="block w-40 h-40" />
+          </div>
+          {/* "FLOOR DASHBOARD" in the logo's gold, between thin gold rules. */}
+          <div className="flex items-center justify-center gap-3">
+            <span className="w-7 h-px bg-[#f1c83e]/40" />
+            <span className="text-[11px] font-bold tracking-[0.22em] text-[#f1c83e]/85 uppercase">Floor Dashboard</span>
+            <span className="w-7 h-px bg-[#f1c83e]/40" />
+          </div>
         </div>
 
         <form
           onSubmit={handleSubmit}
           noValidate
-          className="bg-[#16182c] border border-white/10 rounded-3xl shadow-2xl p-6 flex flex-col gap-4"
+          className="relative bg-[#16182c] border border-white/10 rounded-3xl shadow-2xl p-6 flex flex-col gap-4"
         >
+          {/* A gold hairline along the card's top edge ties it to the logo. */}
+          <span aria-hidden="true" className="absolute top-0 inset-x-12 h-px bg-gradient-to-r from-transparent via-[#f1c83e]/60 to-transparent" />
           <h1 className="text-base font-bold text-white">Sign in</h1>
 
           {notice && !error && (
@@ -124,10 +151,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
             {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
             {submitting ? 'Signing in…' : 'Sign in'}
           </button>
+
+          <p className="-mt-0.5 flex items-start gap-2 text-[11px] leading-snug text-slate-500">
+            <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
+            Signing in here signs this account out on any other device.
+          </p>
         </form>
 
         <p className="mt-4 px-2 text-center text-[11px] leading-relaxed text-slate-500">
-          Use your restoAdmin account. Signing in here signs that account out on any other device.
+          Sign in with your restoAdmin account.
         </p>
       </div>
     </div>

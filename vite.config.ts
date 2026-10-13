@@ -16,7 +16,9 @@ export default defineConfig(() => {
       // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',
       // Disable file watching when DISABLE_HMR is true to save CPU during agent edits.
-      watch: process.env.DISABLE_HMR === 'true' ? null : {},
+      // mobile/ (the Flutter app) is skipped: its build output churns and is
+      // locked mid-build on Windows, which crashed the watcher (EBUSY).
+      watch: process.env.DISABLE_HMR === 'true' ? null : { ignored: ['**/mobile/**'] },
       host: true,
       // Proxy to this project's own backend (server/index.ts), which holds
       // the restoAdmin credentials and proxies/bridges everything the

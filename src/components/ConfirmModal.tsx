@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, Trash2, X } from 'lucide-react';
+import { AlertTriangle, LogOut, Trash2, X } from 'lucide-react';
 
 interface ConfirmModalProps {
   isOpen: boolean;
@@ -9,6 +9,8 @@ interface ConfirmModalProps {
   description: string;
   confirmText?: string;
   confirmVariant?: 'danger' | 'warning' | 'primary';
+  // 'signOut' swaps the warning and delete icons for a sign-out one.
+  icon?: 'warning' | 'signOut';
 }
 
 export const ConfirmModal: React.FC<ConfirmModalProps> = ({
@@ -19,6 +21,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   description,
   confirmText = 'Confirm',
   confirmVariant = 'danger',
+  icon = 'warning',
 }) => {
   if (!isOpen) return null;
 
@@ -33,7 +36,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
       <div className="w-full max-w-md bg-[#16182c] border border-white/20 rounded-3xl shadow-2xl overflow-hidden flex flex-col text-slate-100 p-6 animate-in zoom-in-95 duration-150">
         <div className="flex items-start gap-4">
           <div className="w-12 h-12 rounded-2xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 border border-rose-500/30">
-            <AlertTriangle className="w-6 h-6" />
+            {icon === 'signOut' ? <LogOut className="w-6 h-6" /> : <AlertTriangle className="w-6 h-6" />}
           </div>
 
           <div className="flex-1">
@@ -71,7 +74,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
                 : 'bg-indigo-600 hover:bg-indigo-500 shadow-indigo-600/30'
             }`}
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            {icon === 'signOut' ? <LogOut className="w-3.5 h-3.5" /> : <Trash2 className="w-3.5 h-3.5" />}
             {confirmText}
           </button>
         </div>
