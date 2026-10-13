@@ -9,6 +9,11 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.5.1]
+
+### Changed
+- **The floor plan shows Available and Occupied counts at the top instead of a status legend at the bottom.** The bottom legend listed four statuses, but Blue Moon only uses Available and Occupied, so it mostly explained colours staff never see. A pill at the right end of the top bar, on the same line as the floor switch, now shows "Available 23 · Occupied 1" for the floor being shown, tinted like the zones, and the plan takes over the space the legend used. Reserved and Not Available (set only from restoAdmin) appear there only while a zone on that floor has one, so a blue or red zone is never left unexplained. On a narrow view the counts drop their labels (dot and number, label on hover/long-press), so they never crowd the floor switch. Available and Occupied are also tappable: they're the same two filters as the sidebar's tiles, so tapping a chip turns the filter on (filled like its tile) and the tile lights up with it, and the other way round. Reserved and Not Available have no filter, so theirs only count. In the app, the plan now keeps clear of Android's navigation bar itself, which the legend used to do ([floor_plan.dart](mobile/lib/ui/floor_plan.dart), [shell.dart](mobile/lib/ui/shell.dart), [FloorPlanMap.tsx](src/components/FloorPlanMap.tsx), [App.tsx](src/App.tsx)).
+
 ## [2.5.0]
 
 ### Added

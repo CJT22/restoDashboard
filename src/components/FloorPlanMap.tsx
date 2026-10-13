@@ -173,6 +173,10 @@ interface FloorPlanMapProps {
   onSelectTable: (table: TableRoom) => void;
   showAvailableFilter: boolean;
   showOccupiedFilter: boolean;
+  // The same two filters as the sidebar's tiles, also toggled from the top
+  // bar's status counts.
+  onToggleAvailableFilter: () => void;
+  onToggleOccupiedFilter: () => void;
   // Layout editor (dormant unless VITE_ENABLE_LAYOUT_EDITOR=true — see
   // src/config/layoutEditor.ts). isEditMode only ever turns true then.
   isEditMode: boolean;
@@ -191,6 +195,8 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
   onSelectTable,
   showAvailableFilter,
   showOccupiedFilter,
+  onToggleAvailableFilter,
+  onToggleOccupiedFilter,
   isEditMode,
   onToggleEditMode,
   editor,
@@ -223,6 +229,12 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
   // Filter tables by floor
   const floorTables = tables.filter((t) => t.floor === floor);
+  // Blue Moon only uses Available and Occupied; Reserved and Not Available
+  // (set from restoAdmin) show only while a zone on this floor has them.
+  const statusCounts = ALL_TABLE_STATUSES.map((status) => ({
+    status,
+    count: floorTables.filter((t) => t.status === status).length,
+  })).filter(({ status, count }) => status === 'available' || status === 'occupied' || count > 0);
 
   // Info panels are always shown while editing so they can be arranged.
   const floorPanels = infoPanels.filter((p) => p.floor === floor);
@@ -425,6 +437,55 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
           </div>
         </div>
 
+        <div className="flex items-center gap-3">
+        {/* The floor's status counts, tinted like its zones. On a narrower
+            screen they drop their labels (dot + count, label on hover).
+            Available and Occupied are also the floor plan's two filters, the
+            same ones as the sidebar's tiles (so the two always agree): tapping
+            one turns it on, filled like its tile. Reserved and Not Available
+            have no filter. */}
+        <div className="pointer-events-auto flex items-center gap-1.5 bg-[#141628]/90 backdrop-blur-md border border-white/10 rounded-2xl p-1.5 shadow-xl">
+          {statusCounts.map(({ status, count }) => {
+            const colors = getStatusColors(status);
+            const filter =
+              status === 'available'
+                ? { on: showAvailableFilter, toggle: onToggleAvailableFilter, onClass: 'bg-gradient-to-r from-emerald-600 to-teal-600' }
+                : status === 'occupied'
+                  ? { on: showOccupiedFilter, toggle: onToggleOccupiedFilter, onClass: 'bg-gradient-to-r from-amber-500 to-orange-500' }
+                  : null;
+            const on = filter?.on ?? false;
+            const content = (
+              <>
+                <span
+                  className={`w-2 h-2 rounded-full ${on ? 'bg-white' : colors.legendDotClass}`}
+                  style={on ? undefined : { boxShadow: `0 0 6px ${colors.glowRgba}` }}
+                />
+                <span className={`hidden lg:inline font-semibold ${on ? 'text-white' : colors.legendTextClass}`}>{colors.label}</span>
+                <span className="font-bold text-white tabular-nums">{count}</span>
+              </>
+            );
+            const chipClass = `h-8 px-3 flex items-center gap-2 rounded-xl border text-[13px] transition-colors ${
+              on ? `${filter!.onClass} border-transparent` : colors.chipClass
+            }`;
+            return filter ? (
+              <button
+                key={status}
+                type="button"
+                onClick={filter.toggle}
+                aria-pressed={on}
+                title={`${colors.label}: ${count} (${on ? 'showing only these; click to show all' : 'click to show only these'})`}
+                className={`${chipClass} ${on ? '' : 'hover:brightness-125'}`}
+              >
+                {content}
+              </button>
+            ) : (
+              <span key={status} title={`${colors.label}: ${count}`} className={chipClass}>
+                {content}
+              </span>
+            );
+          })}
+        </div>
+
         {/* Tool bar: Edit Zones and zoom, only when their dormant build flags
             are on. Info Panels and Fullscreen live in the sidebar. */}
         {(LAYOUT_EDITOR_ENABLED || ZOOM_CONTROLS_ENABLED) && (
@@ -485,6 +546,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
           )}
         </div>
         )}
+        </div>
       </div>
 
       {/* Main Floor Plan Workspace Canvas */}
@@ -749,25 +811,6 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
         </div>
       </div>
 
-      {/* Status legend: one chip per status, tinted like the zones on the
-          map, on a floating panel styled like the floor switch at the top. */}
-      <div className="flex justify-center px-4 pb-3.5">
-        <div className="flex flex-wrap items-center justify-center gap-2.5 pl-[18px] pr-2 py-2 rounded-2xl bg-[#141628]/90 backdrop-blur-md border border-white/10 shadow-xl">
-          <span className="mr-1 text-slate-400 uppercase tracking-wider text-[10px] font-bold">Status</span>
-          {ALL_TABLE_STATUSES.map((status) => {
-            const colors = getStatusColors(status);
-            return (
-              <span
-                key={status}
-                className={`flex items-center gap-2 pl-2.5 pr-3 py-1 rounded-full border text-xs font-semibold ${colors.chipClass}`}
-              >
-                <span className={`w-2 h-2 rounded-full ${colors.legendDotClass}`} style={{ boxShadow: `0 0 6px ${colors.glowRgba}` }} />
-                <span className={colors.legendTextClass}>{colors.label}</span>
-              </span>
-            );
-          })}
-        </div>
-      </div>
     </div>
   );
 };

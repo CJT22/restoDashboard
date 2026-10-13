@@ -39,6 +39,8 @@ class FloorPlanView extends StatelessWidget {
   final ValueChanged<Zone> onSelectZone;
   final bool availableFilter;
   final bool occupiedFilter;
+  final VoidCallback onToggleAvailable;
+  final VoidCallback onToggleOccupied;
   final bool showInfoPanels;
 
   const FloorPlanView({
@@ -49,6 +51,8 @@ class FloorPlanView extends StatelessWidget {
     required this.onSelectZone,
     required this.availableFilter,
     required this.occupiedFilter,
+    required this.onToggleAvailable,
+    required this.onToggleOccupied,
     required this.showInfoPanels,
   });
 
@@ -63,6 +67,15 @@ class FloorPlanView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final zones = state.zones.where((z) => z.floor == floor).toList();
+    // Blue Moon only uses Available and Occupied; Reserved and Not Available
+    // (set from restoAdmin) show only while a zone on this floor has them.
+    final statusCounts = {
+      for (final s in TableStatus.values) s: zones.where((z) => z.status == s).length,
+    };
+    final shownStatuses = [
+      for (final s in TableStatus.values)
+        if (s == TableStatus.available || s == TableStatus.occupied || statusCounts[s]! > 0) s,
+    ];
     final panels = showInfoPanels ? state.panels.where((p) => p.floor == floor).toList() : <InfoPanel>[];
 
     // The building, widened to take in any zone or panel placed outside it.
@@ -87,7 +100,7 @@ class FloorPlanView extends StatelessWidget {
           child: Stack(clipBehavior: Clip.none, children: [
             Positioned.fill(
               child: LayoutBuilder(builder: (context, size) {
-                final w = size.maxWidth, h = size.maxHeight;
+                final w = size.maxWidth, h = size.maxHeight - MediaQuery.paddingOf(context).bottom;
                 final boundsW = (b.x1 - b.x0) / 100;
                 final boundsH = (b.y1 - b.y0) / 100 * _aspect;
                 final planW = math.max(
@@ -181,8 +194,9 @@ class FloorPlanView extends StatelessWidget {
                 ]);
               }),
             ),
-            // Floating top bar: floor switch + filter badge. Info Panels and
-            // Fullscreen live in the sidebar.
+            // Floating top bar: floor switch + filter badge on the left, the
+            // floor's status counts on the right. Info Panels and Fullscreen
+            // live in the sidebar.
             Positioned(
               top: 20,
               left: 20,
@@ -190,85 +204,104 @@ class FloorPlanView extends StatelessWidget {
               child: SafeArea(
                 bottom: false,
                 left: false,
-                child: Row(children: [
-                  _bar(Row(mainAxisSize: MainAxisSize.min, children: [
-                    for (final f in [1, 2])
-                      _barButton(
-                        label: floorLabels[f]!,
-                        active: floor == f,
-                        onTap: () => onSelectFloor(f),
+                // On a narrow view the status counts drop their labels (dot +
+                // count, label in a tooltip), so they never crowd the floor
+                // switch.
+                child: LayoutBuilder(builder: (context, box) {
+                  final compact = box.maxWidth < 760;
+                  return Row(children: [
+                    _bar(Row(mainAxisSize: MainAxisSize.min, children: [
+                      for (final f in [1, 2])
+                        _barButton(
+                          label: floorLabels[f]!,
+                          active: floor == f,
+                          onTap: () => onSelectFloor(f),
+                        ),
+                    ])),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: AnimatedOpacity(
+                          opacity: _filterActive ? 1 : 0,
+                          duration: const Duration(milliseconds: 300),
+                          child: _filterBadge(availableFilter ? 'Available' : 'Occupied'),
+                        ),
                       ),
-                  ])),
-                  const SizedBox(width: 12),
-                  Flexible(
-                    child: AnimatedOpacity(
-                      opacity: _filterActive ? 1 : 0,
-                      duration: const Duration(milliseconds: 300),
-                      child: _filterBadge(availableFilter ? 'Available' : 'Occupied'),
                     ),
-                  ),
-                ]),
+                    const SizedBox(width: 12),
+                    Flexible(
+                      flex: 0,
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.centerRight,
+                        child: _bar(Row(mainAxisSize: MainAxisSize.min, children: [
+                          for (var i = 0; i < shownStatuses.length; i++) ...[
+                            if (i > 0) const SizedBox(width: 6),
+                            _statusCount(shownStatuses[i], statusCounts[shownStatuses[i]]!, compact),
+                          ],
+                        ])),
+                      ),
+                    ),
+                  ]);
+                }),
               ),
             ),
           ]),
-        ),
-        // Status legend: one chip per status, tinted like the zones on the map,
-        // on a floating panel styled like the floor switch at the top.
-        SafeArea(
-          top: false,
-          left: false,
-          child: _EaseCentre(
-            child: Container(
-              margin: const EdgeInsets.only(bottom: 14),
-              padding: const EdgeInsets.fromLTRB(18, 8, 8, 8),
-              decoration: BoxDecoration(
-                color: const Color(0xE6141628),
-                border: Border.all(color: AppColors.border),
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 16)],
-              ),
-              child: Wrap(
-                  alignment: WrapAlignment.center,
-                  spacing: 10,
-                  runSpacing: 6,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    const Padding(
-                      padding: EdgeInsets.only(right: 4),
-                      child: Text('STATUS',
-                          style: TextStyle(
-                              fontSize: 10, fontWeight: FontWeight.w700, letterSpacing: 0.8, color: AppColors.slate400)),
-                    ),
-                    for (final s in TableStatus.values) _legendChip(statusColors[s]!),
-                  ]),
-            ),
-          ),
         ),
       ]),
     );
   }
 
-  Widget _legendChip(StatusColors c) => Container(
-        padding: const EdgeInsets.fromLTRB(10, 5, 12, 5),
-        decoration: BoxDecoration(
-          color: c.base.withValues(alpha: 0.12),
-          border: Border.all(color: c.dot.withValues(alpha: 0.4)),
-          borderRadius: BorderRadius.circular(99),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              color: c.dot,
-              shape: BoxShape.circle,
-              boxShadow: [BoxShadow(color: c.glow, blurRadius: 6)],
-            ),
+  // One status's count for the floor shown, tinted like its zones on the map.
+  // Available and Occupied are also the floor plan's two filters, the same
+  // ones as the sidebar's tiles (so the two always agree): tapping one turns
+  // it on, filled like its tile. Reserved and Not Available have no filter.
+  Widget _statusCount(TableStatus status, int count, bool compact) {
+    final c = statusColors[status]!;
+    final (bool on, VoidCallback? onTap, List<Color> onColors) = switch (status) {
+      TableStatus.available => (availableFilter, onToggleAvailable, const [AppColors.emerald600, AppColors.teal600]),
+      TableStatus.occupied => (occupiedFilter, onToggleOccupied, const [AppColors.amber500, AppColors.orange500]),
+      _ => (false, null, const <Color>[]),
+    };
+    return Tooltip(
+      message: onTap == null
+          ? '${c.label}: $count'
+          : '${c.label}: $count${on ? ' (showing only these; tap to show all)' : ' (tap to show only these)'}',
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            gradient: on ? LinearGradient(colors: onColors) : null,
+            color: on ? null : c.base.withValues(alpha: 0.12),
+            border: Border.all(color: on ? Colors.transparent : c.dot.withValues(alpha: 0.4)),
+            borderRadius: BorderRadius.circular(12),
           ),
-          const SizedBox(width: 8),
-          Text(c.label, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: c.text)),
-        ]),
-      );
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: on ? Colors.white : c.dot,
+                shape: BoxShape.circle,
+                boxShadow: on ? null : [BoxShadow(color: c.glow, blurRadius: 6)],
+              ),
+            ),
+            if (!compact) ...[
+              const SizedBox(width: 8),
+              Text(c.label, style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: on ? Colors.white : c.text)),
+            ],
+            const SizedBox(width: 8),
+            Text('$count',
+                style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.white, fontFeatures: tabular)),
+          ]),
+        ),
+      ),
+    );
+  }
 
   Widget _pill(IconData icon, String text) => Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -330,28 +363,6 @@ class FloorPlanView extends StatelessWidget {
               style: TextStyle(
                   fontSize: 13, fontWeight: FontWeight.w700, color: active ? Colors.white : AppColors.slate400)),
         ),
-      ),
-    );
-  }
-}
-
-/// Centres [child] across the width it's given, easing its centre to a new
-/// width (the view jumps to its final width when the sidebar collapses or
-/// expands, then slides) instead of jumping with it.
-class _EaseCentre extends StatelessWidget {
-  final Widget child;
-  const _EaseCentre({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, box) => TweenAnimationBuilder<double>(
-        tween: Tween(end: box.maxWidth),
-        duration: _PlanRect._duration,
-        curve: Curves.easeOut,
-        child: Center(child: child),
-        builder: (context, width, child) =>
-            Transform.translate(offset: Offset((width - box.maxWidth) / 2, 0), child: child),
       ),
     );
   }

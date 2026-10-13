@@ -152,4 +152,18 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(signedOut, 1);
   });
+
+  testWidgets('status chips and sidebar tiles share the filters', (tester) async {
+    await _pumpShell(tester, await _state());
+    final chip = find.byWidgetPredicate((w) => w is Tooltip && (w.message ?? '').startsWith('Available: '));
+    expect(find.text('Filtering: Available Only'), findsNothing);
+    await tester.tap(chip);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('Filtering: Available Only'), findsOneWidget);
+    // The sidebar's Available tile shows the same state and turns it back off.
+    await tester.tap(find.byTooltip('Showing available tables'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byWidgetPredicate((w) => w is Tooltip && w.message == 'Tap to show available'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 }

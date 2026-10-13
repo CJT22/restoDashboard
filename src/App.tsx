@@ -386,6 +386,8 @@ export default function App({ user, onSignOut }: AppProps) {
             onSelectTable={(table) => setSelectedTable(table)}
             showAvailableFilter={showAvailableFilter}
             showOccupiedFilter={showOccupiedFilter}
+            onToggleAvailableFilter={() => setShowAvailableFilter((prev) => !prev)}
+            onToggleOccupiedFilter={() => setShowOccupiedFilter((prev) => !prev)}
             isEditMode={isEditLayoutMode}
             onToggleEditMode={() => setIsEditLayoutMode((prev) => !prev)}
             editor={

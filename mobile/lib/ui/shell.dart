@@ -70,6 +70,11 @@ class _DashboardShellState extends State<DashboardShell> {
     _prefs?.setBool(_prefsSidebarCollapsed, _sidebarCollapsed);
   }
 
+  // One filter state, shared by the sidebar's tiles and the floor plan's
+  // status chips.
+  void _toggleAvailable() => setState(() => _availableFilter = !_availableFilter);
+  void _toggleOccupied() => setState(() => _occupiedFilter = !_occupiedFilter);
+
   void _toggleInfoPanels() {
     setState(() => _showInfoPanels = !_showInfoPanels);
     _prefs?.setBool(_prefsShowInfoPanels, _showInfoPanels);
@@ -123,6 +128,8 @@ class _DashboardShellState extends State<DashboardShell> {
                         onSelectZone: _openZone,
                         availableFilter: _availableFilter,
                         occupiedFilter: _occupiedFilter,
+                        onToggleAvailable: _toggleAvailable,
+                        onToggleOccupied: _toggleOccupied,
                         showInfoPanels: _showInfoPanels,
                       ),
                     NavTab.directory => DirectoryView(
@@ -163,9 +170,9 @@ class _DashboardShellState extends State<DashboardShell> {
                     _floorRequest++;
                   }),
                   availableFilter: _availableFilter,
-                  onToggleAvailable: () => setState(() => _availableFilter = !_availableFilter),
+                  onToggleAvailable: _toggleAvailable,
                   occupiedFilter: _occupiedFilter,
-                  onToggleOccupied: () => setState(() => _occupiedFilter = !_occupiedFilter),
+                  onToggleOccupied: _toggleOccupied,
                   showInfoPanels: _showInfoPanels,
                   onToggleInfoPanels: _toggleInfoPanels,
                   fullscreen: widget.fullscreen,
