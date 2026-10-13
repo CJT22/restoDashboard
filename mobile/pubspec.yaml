@@ -22,6 +22,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/blue_moon_logo.png
+    - assets/grain.png
 
 # The home-screen icon, from the Blue Moon logo. After changing the logo,
 # regenerate the Android icons with: dart run flutter_launcher_icons

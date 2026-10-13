@@ -9,6 +9,11 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.5.2]
+
+### Changed
+- **A redesigned sign-in page, built for landscape screens.** The centred card left most of a landscape tablet or desktop empty. Now the left half is the Blue Moon brand: the logo, larger, in its glow, under a quiet night sky that spans the whole page: a still field of small stars, plentiful around the moon and thinning toward the form, a few brighter and a few gold, identical on the web and the tablet. The page measures where the form and the logo sit and keeps the stars clear of them, including when a notice or error makes the form taller, with "FLOOR DASHBOARD" in gold and "Tables, rooms and orders, live at a glance." The glow fades into a navy right half holding the form, with no hard edge between them (a long fade and a faint grain keep the dark gradients from showing bands): "Welcome back", fields with person and lock icons, and a larger Sign in button. "© 2026 3CORE LeadersTech" sits bottom-left, and the year follows the clock. On load, the logo settles in and the form slides in once (skipped for reduced motion on the web), so nothing moves while staff type. Narrow or portrait screens stack the two halves. Holding the logo still opens the technician's server address dialog in the app ([login_page.dart](mobile/lib/ui/login_page.dart), [LoginPage.tsx](src/components/LoginPage.tsx), [index.css](src/index.css), [grain.png](mobile/assets/grain.png)).
+
 ## [2.5.1]
 
 ### Changed

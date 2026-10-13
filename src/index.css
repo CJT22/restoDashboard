@@ -21,3 +21,38 @@
     background: rgba(255, 255, 255, 0.3);
   }
 }
+
+/* Sign-in page entrance: the logo settles in, the form slides in slightly
+   from the right. Once, on load; nothing moves while staff type. */
+@keyframes login-brand-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes login-form-in {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.login-brand-in {
+  animation: login-brand-in 450ms ease-out both;
+}
+.login-form-in {
+  animation: login-form-in 450ms 80ms ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .login-brand-in,
+  .login-form-in {
+    animation: none;
+  }
+}
