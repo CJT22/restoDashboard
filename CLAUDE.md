@@ -48,22 +48,20 @@ built in, so staff never type it. Full setup and the production release checklis
 
 | Flavor | App name | Package | Address, in `mobile/config/<flavor>.json` |
 | --- | --- | --- | --- |
-| `prod` | Blue Moon | `com.bluemoon.resto_dashboard` | empty until production is live |
-| `dev` | Blue Moon Dev | `….dev` | `http://45.32.119.62:2520` |
-| `local` | Blue Moon Local | `….local` | `http://192.168.110.26:3500` |
+| `prod` | Blue Moon (Prod) | `com.bluemoon.resto_dashboard` | empty until production is live |
+| `dev` | Blue Moon | `….dev` | `http://45.32.119.62:2520` |
+| `local` | Blue Moon (Local) | `….local` | `http://192.168.110.26:3500` |
 
 - Always pass the flavor's own config: `--flavor dev --dart-define-from-file=config/dev.json`. A
   mismatched or missing file builds an app pointing at the wrong server, or at none.
 - The address is the dashboard's **web address** (the Vite frontend, `:2520` under PM2), not the
   API port: it proxies `/api` and serves `/floorplans/*.webp`.
-- A build with an empty address (prod today) falls back to asking for it on the sign-in page.
-  Holding the Blue Moon logo there for 3 seconds lets a technician override any build's address on one
-  tablet.
+- The address can't be changed on the tablet (no address field, no technician override). A build
+  with an empty address (prod today) can't sign in until it's rebuilt with one.
 - Release builds are still signed with the debug key ([build.gradle.kts](mobile/android/app/build.gradle.kts)).
   Before shipping prod to real tablets, a release keystore must be set up; flag this if asked to
   build a prod release, since an APK signed with a different key can't update an installed one.
-- To test on the tablet with an existing sign-in, run the `prod` flavor: it keeps the original
-  package, so the stored session carries over. Judge smoothness only on `--profile`/`--release`
+- Judge smoothness only on `--profile`/`--release`
   builds (debug is much slower); `--dart-define=PERF_OVERLAY=true` shows frame-time graphs.
 
 ## restoAdmin is read-only

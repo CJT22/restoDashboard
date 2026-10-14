@@ -1,5 +1,6 @@
 // The dashboard's sign-in state, against this app's own backend
-// (server/auth.ts). Staff sign in with their restoAdmin account; the backend
+// (server/auth.ts). Every device signs in with the backend's shared
+// restoAdmin account (the login page's quick login); the backend
 // keeps the restoAdmin tokens and gives this browser only an httpOnly
 // session cookie, so there's nothing to store here.
 //
@@ -70,14 +71,12 @@ export async function checkSession(): Promise<void> {
   if (user === null) notifySignedOut('UNAUTHENTICATED');
 }
 
-export async function signIn(username: string, password: string): Promise<DashboardUser> {
+// Quick login: the backend signs in with the shared dashboard account, whose
+// credentials stay on the server.
+export async function signIn(): Promise<DashboardUser> {
   let res: Response;
   try {
-    res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password }),
-    });
+    res = await fetch('/api/auth/login', { method: 'POST' });
   } catch {
     throw new Error("Can't reach the dashboard server. Check the connection and try again.");
   }

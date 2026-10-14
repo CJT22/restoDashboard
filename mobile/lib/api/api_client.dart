@@ -31,12 +31,13 @@ class ApiException implements Exception {
 /// locally, or the server's :2520), which proxies /api to the Node server and
 /// also serves the floor plan images.
 ///
-/// Each build carries its own address (`config/<flavor>.json`), so staff never
-/// type it. A technician can override it from the sign-in page; only a build
-/// without one (prod until its server is set) asks for it there.
+/// Each build carries its own address (`config/<flavor>.json`) and it can't
+/// be changed on the tablet. A build without one (prod until its server is
+/// set) can't sign in.
 class ApiClient {
-  static const _prefsBaseUrl = 'dashboard_base_url';
-  static const _prefsOverride = 'dashboard_base_url_override';
+  // Addresses an older version let staff type or a technician override.
+  // Nothing reads them anymore; cleared on start.
+  static const _legacyPrefs = ['dashboard_base_url', 'dashboard_base_url_override'];
   static const _prefsSession = 'dashboard_session';
   static const _cookieName = 'rd_session';
 
@@ -46,8 +47,6 @@ class ApiClient {
   final SharedPreferences _prefs;
   final http.Client _http = http.Client();
 
-  String? _override;
-  String _entered;
   String? _sessionId;
 
   final _signedOut = StreamController<SignedOutReason>.broadcast();
@@ -56,10 +55,11 @@ class ApiClient {
   /// expired, or the account signed in on another device).
   Stream<SignedOutReason> get signedOut => _signedOut.stream;
 
-  ApiClient._(this._prefs)
-      : _override = _prefs.getString(_prefsOverride),
-        _entered = _prefs.getString(_prefsBaseUrl) ?? '',
-        _sessionId = _prefs.getString(_prefsSession);
+  ApiClient._(this._prefs) : _sessionId = _prefs.getString(_prefsSession) {
+    for (final key in _legacyPrefs) {
+      _prefs.remove(key);
+    }
+  }
 
   static Future<ApiClient> create() async => ApiClient._(await SharedPreferences.getInstance());
 
@@ -68,8 +68,7 @@ class ApiClient {
   /// Which build this is (prod, dev or local), from the same config file.
   static const appEnv = String.fromEnvironment('APP_ENV', defaultValue: 'prod');
 
-  String get baseUrl => _override ?? (hasBuiltInBaseUrl ? builtInBaseUrl : _entered);
-  bool get isOverridden => _override != null;
+  String get baseUrl => builtInBaseUrl;
   bool get hasSession => _sessionId != null;
 
   static String cleanBaseUrl(String url) {
@@ -79,25 +78,6 @@ class ApiClient {
     }
     if (cleaned.isNotEmpty && !cleaned.contains('://')) cleaned = 'http://$cleaned';
     return cleaned;
-  }
-
-  /// The address typed on the sign-in page, for a build without its own.
-  Future<void> setBaseUrl(String url) async {
-    _entered = cleanBaseUrl(url);
-    await _prefs.setString(_prefsBaseUrl, _entered);
-  }
-
-  /// A technician's replacement for the build's address; null or the
-  /// built-in address itself goes back to the built-in one.
-  Future<void> setOverride(String? url) async {
-    final cleaned = url == null ? '' : cleanBaseUrl(url);
-    if (cleaned.isEmpty || cleaned == builtInBaseUrl) {
-      _override = null;
-      await _prefs.remove(_prefsOverride);
-    } else {
-      _override = cleaned;
-      await _prefs.setString(_prefsOverride, cleaned);
-    }
   }
 
   Uri uri(String path) => Uri.parse('$baseUrl$path');
@@ -137,7 +117,7 @@ class ApiClient {
   }
 
   Future<(int, Map<String, dynamic>)> _send(String method, String path, {Object? body}) async {
-    if (baseUrl.isEmpty) throw ApiException('Set the dashboard address first.');
+    if (baseUrl.isEmpty) throw ApiException('This build has no dashboard address yet.');
     final req = http.Request(method, uri(path));
     req.headers.addAll(authHeaders);
     if (body != null) {
@@ -195,8 +175,10 @@ class ApiClient {
     return DashboardUser.fromJson(Map<String, dynamic>.from(data));
   }
 
-  Future<DashboardUser> signIn(String username, String password) async {
-    final (status, json) = await _send('POST', '/api/auth/login', body: {'username': username, 'password': password});
+  /// Quick login: the server signs in with the shared dashboard account,
+  /// whose credentials stay on the server.
+  Future<DashboardUser> signIn() async {
+    final (status, json) = await _send('POST', '/api/auth/login');
     if (status != 200 || json['success'] != true) {
       throw ApiException((json['error'] ?? 'Sign-in failed. Please try again.').toString());
     }

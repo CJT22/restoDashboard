@@ -1,8 +1,8 @@
-// Dashboard sign-in: staff sign in with their own restoAdmin account, and
-// everything they do on the dashboard is done (and recorded by restoAdmin)
-// as them.
+// Dashboard sign-in: every device signs in with one shared restoAdmin
+// account (the login page's quick login button), and everything done on the
+// dashboard is recorded by restoAdmin as that account.
 //
-//   POST /api/auth/login   { username, password } → { success, data: user }
+//   POST /api/auth/login   (no body) → { success, data: user }
 //   GET  /api/auth/me      → { success, data: user | null }
 //   POST /api/auth/logout  → { success }
 //
@@ -16,6 +16,12 @@ import { createSession, endedReason, endOtherSessions, endSession, getSession, t
 // Only Blue Moon staff with this restoAdmin user_role (users.PERMISSIONS)
 // may use the dashboard. Admins and other roles are turned away.
 const DASHBOARD_PERMISSION_ID = 3;
+
+// The shared dashboard account. Kept here rather than in the clients, so the
+// password never ships in the web bundle or the tablet app. .env can
+// override it if the account ever changes.
+const DASHBOARD_USERNAME = process.env.DASHBOARD_USERNAME || 'bm_dash';
+const DASHBOARD_PASSWORD = process.env.DASHBOARD_PASSWORD || '12348765';
 
 const COOKIE_NAME = 'rd_session';
 // The cookie only carries the session id; the session itself lasts until
@@ -78,20 +84,16 @@ export function sendIfSessionEnded(res: Response, err: unknown): boolean {
 export const authRouter = express.Router();
 
 authRouter.post('/login', async (req, res) => {
-  const username = String(req.body?.username ?? '').trim();
-  const password = String(req.body?.password ?? '');
-  if (!username || !password) {
-    return res.status(400).json({ success: false, error: 'Enter your username and password.' });
-  }
+  const username = DASHBOARD_USERNAME;
   try {
-    const login = await loginToAdmin(username, password);
+    const login = await loginToAdmin(username, DASHBOARD_PASSWORD);
     if (login.permissions !== DASHBOARD_PERMISSION_ID || login.branchId !== ADMIN_BRANCH_ID) {
       console.warn(
         `[auth] refused ${username}: permissions=${login.permissions}, branch=${login.branchId} (needs ${DASHBOARD_PERMISSION_ID}, ${ADMIN_BRANCH_ID})`
       );
       return res.status(403).json({
         success: false,
-        error: "This account isn't allowed to use the Blue Moon dashboard. Ask a manager to check its role and branch.",
+        error: `The dashboard account (${username}) isn't allowed to use the Blue Moon dashboard. Ask a manager to check its role and branch in restoAdmin.`,
       });
     }
     // Signing in again from the same browser replaces its old session.

@@ -32,21 +32,22 @@ android {
 
     // One build per dashboard server, installable side by side. Each flavor's
     // address comes from config/<flavor>.json (--dart-define-from-file).
+    // Dev is the everyday app, so it gets the plain "Blue Moon" name.
     flavorDimensions += "env"
     productFlavors {
         create("prod") {
             dimension = "env"
-            resValue("string", "app_name", "Blue Moon")
+            resValue("string", "app_name", "Blue Moon (Prod)")
         }
         create("dev") {
             dimension = "env"
             applicationIdSuffix = ".dev"
-            resValue("string", "app_name", "Blue Moon Dev")
+            resValue("string", "app_name", "Blue Moon")
         }
         create("local") {
             dimension = "env"
             applicationIdSuffix = ".local"
-            resValue("string", "app_name", "Blue Moon Local")
+            resValue("string", "app_name", "Blue Moon (Local)")
         }
     }
 

@@ -57,8 +57,9 @@ Future<DashboardState> _state() async {
   return state;
 }
 
+// The sidebar starts collapsed; most tests open it to reach its labels.
 Future<void> _pumpShell(WidgetTester tester, DashboardState state,
-    {Size size = const Size(1340, 800), VoidCallback? onSignOut}) async {
+    {Size size = const Size(1340, 800), VoidCallback? onSignOut, bool expandSidebar = true}) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
@@ -72,9 +73,23 @@ Future<void> _pumpShell(WidgetTester tester, DashboardState state,
     ),
   ));
   await tester.pump(const Duration(milliseconds: 500));
+  if (expandSidebar) {
+    await tester.tap(find.byTooltip('Expand sidebar'));
+    // One frame starts the switch, one ends it, and the next drops the rail.
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+  }
 }
 
 void main() {
+  testWidgets('sidebar starts collapsed', (tester) async {
+    await _pumpShell(tester, await _state(), expandSidebar: false);
+    expect(find.byTooltip('Expand sidebar'), findsOneWidget);
+    expect(find.byTooltip('Collapse sidebar'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('floor plan, both floors, both sidebar layouts', (tester) async {
     final state = await _state();
     await _pumpShell(tester, state);

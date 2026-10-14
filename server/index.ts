@@ -1,6 +1,6 @@
 // restoDashboard's own backend.
 //
-// Signs staff in with their own restoAdmin accounts (auth.ts) and
+// Signs devices in with the shared dashboard restoAdmin account (auth.ts) and
 // proxies/bridges everything the browser needs as the signed-in user, so the
 // browser never sees a restoAdmin token and never talks to restoAdmin directly.
 // Stateless by design — which zone is linked to which restoAdmin table is

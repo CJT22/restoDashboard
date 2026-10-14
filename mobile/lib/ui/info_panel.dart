@@ -255,22 +255,34 @@ class _RoomTimersState extends State<_RoomTimers> with _FloorScoped {
                         height: rowH,
                         child: Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 4),
-                          child: Row(children: [
-                            Flexible(
-                              flex: 3,
-                              child: Text(zone.name,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
-                            ),
-                            const SizedBox(width: 6),
-                            Flexible(
-                              child: Text(formatHours(t.hours),
-                                  overflow: TextOverflow.clip, softWrap: false, style: const TextStyle(color: AppColors.slate400)),
-                            ),
-                            const Spacer(),
-                            Text(t.expired ? '+${formatDuration(t.remaining)}' : '${formatDuration(t.remaining)} left',
-                                style: TextStyle(fontWeight: FontWeight.w700, color: timerColor(t), fontFeatures: tabular)),
-                          ]),
+                          // The timer never shrinks for the name, but it's
+                          // capped at the row's width so a narrow column
+                          // (two side by side once the sidebar collapses)
+                          // clips it rather than overflowing.
+                          child: LayoutBuilder(
+                            builder: (context, box) => Row(children: [
+                              Flexible(
+                                flex: 3,
+                                child: Text(zone.name,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.white)),
+                              ),
+                              const SizedBox(width: 6),
+                              Flexible(
+                                child: Text(formatHours(t.hours),
+                                    overflow: TextOverflow.clip, softWrap: false, style: const TextStyle(color: AppColors.slate400)),
+                              ),
+                              const Spacer(),
+                              ConstrainedBox(
+                                constraints: BoxConstraints(maxWidth: math.max(0, box.maxWidth - 6)),
+                                child: Text(
+                                    t.expired ? '+${formatDuration(t.remaining)}' : '${formatDuration(t.remaining)} left',
+                                    softWrap: false,
+                                    overflow: TextOverflow.clip,
+                                    style: TextStyle(fontWeight: FontWeight.w700, color: timerColor(t), fontFeatures: tabular)),
+                              ),
+                            ]),
+                          ),
                         ),
                       ),
                     ),

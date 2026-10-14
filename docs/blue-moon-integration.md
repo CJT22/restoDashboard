@@ -26,7 +26,7 @@ that clone gets replaced by every upstream pull.
 
 ## Architecture
 
-Staff sign in to the dashboard with their own restoAdmin account, but the browser never holds a
+Every device signs in to the dashboard with one shared restoAdmin account, but the browser never holds a
 restoAdmin token. restoDashboard has a small backend of its own that keeps each signed-in user's
 tokens and relays everything the browser needs, as that user:
 
@@ -118,14 +118,17 @@ as direct REST calls. See [order-sync-integration.md](order-sync-integration.md)
 
 ## Signing in
 
-The dashboard opens on a login page. Staff sign in with their own restoAdmin username and password,
-and everything they do (orders, payments) is recorded in restoAdmin under their name.
+The dashboard opens on a login page with one **Quick Login** button and no fields. Every device
+signs in with the same shared restoAdmin account, `bm_dash`, so everything done on the dashboard
+(orders, payments) is recorded in restoAdmin under that account. Its credentials live only on the
+server: `DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` in `.env`, defaulting to `bm_dash` / `12348765`
+when unset, so they never ship in the web bundle or the tablet app.
 
-**Who can sign in:** restoAdmin users whose `BRANCH_ID` is `ADMIN_BRANCH_ID` (Blue Moon, `3`) **and**
-whose `PERMISSIONS` (user role id) is `3`. Anyone else is refused after restoAdmin accepts the
-password, with "This account isn't allowed to use the Blue Moon dashboard". Admins are refused too.
-The role id is `DASHBOARD_PERMISSION_ID` in [server/auth.ts](../server/auth.ts). Accounts are made in
-restoAdmin's **Employees / User Management**; there's nothing to configure on the dashboard's side.
+**Which account works:** a restoAdmin user whose `BRANCH_ID` is `ADMIN_BRANCH_ID` (Blue Moon, `3`)
+**and** whose `PERMISSIONS` (user role id) is `3`. Any other account is refused after restoAdmin
+accepts the password. The role id is `DASHBOARD_PERMISSION_ID` in
+[server/auth.ts](../server/auth.ts). The account is made in restoAdmin's **Employees / User
+Management**.
 
 **How it works:** the backend signs in with restoAdmin's `POST /api/login` (the same call the staff
 app makes), keeps the returned tokens in [sessions.ts](../server/sessions.ts), and gives the browser
@@ -137,7 +140,8 @@ collapsed rail), or until restoAdmin stops accepting the session's tokens. The a
 refreshed automatically, and restoAdmin's refresh token lasts 7 days from its last use, so a
 dashboard used daily stays signed in. Sessions survive a backend restart.
 
-**One session per account.** restoAdmin makes each sign-in the account's only valid session, so:
+**One session per account, so one device at a time.** restoAdmin makes each sign-in the account's
+only valid session, and every device shares the one account, so:
 
 - Signing in to the dashboard signs that account out of the **staff app** (and any other device) on
   its next request. That happens as soon as restoAdmin accepts the password, so it also happens when

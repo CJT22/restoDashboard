@@ -1,5 +1,5 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { Eye, EyeOff, Loader2, LogIn, Info, AlertTriangle, Maximize2, Minimize2, User, Lock } from 'lucide-react';
+import { Loader2, LogIn, Info, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
 import { DashboardUser, signIn } from '../services/auth';
 import { useFullscreen } from '../utils/fullscreen';
 
@@ -9,13 +9,13 @@ interface LoginPageProps {
   notice?: string | null;
 }
 
-// Staff sign in with their own restoAdmin account. Which accounts may sign
-// in (role and branch) is decided by the backend (server/auth.ts); its
-// message is shown as-is when it refuses one.
+// One quick login button, no fields: the backend signs every device in with
+// its shared dashboard account (server/auth.ts), and its message is shown
+// as-is if that fails.
 //
 // Landscape screens get two halves: the Blue Moon brand on the left (logo in
-// its glow, in a quiet night sky) fading into a navy panel with the form on
-// the right. Narrow or portrait screens stack them.
+// its glow, in a quiet night sky) fading into a navy panel with the sign-in
+// on the right. Narrow or portrait screens stack them.
 
 // The same sky as the app's (login_page.dart): a fixed seed and the same
 // generator, so both draw identical stars. Spread across the page, denser on
@@ -70,9 +70,6 @@ const GRAIN =
   "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
 
 export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const fullscreen = useFullscreen();
@@ -128,23 +125,15 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (submitting) return;
-    if (!username.trim() || !password) {
-      setError('Enter your username and password.');
-      return;
-    }
     setSubmitting(true);
     setError(null);
     try {
-      onSignedIn(await signIn(username.trim(), password));
+      onSignedIn(await signIn());
     } catch (err: any) {
       setError(err?.message || 'Sign-in failed. Please try again.');
-      setPassword('');
       setSubmitting(false);
     }
   };
-
-  const inputClasses =
-    'w-full h-[52px] pl-11 pr-4 rounded-xl bg-[#0e0f1a] border border-white/10 text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-400/60 focus:ring-2 focus:ring-indigo-500/20 transition-colors disabled:opacity-60';
 
   return (
     <div ref={pageRef} className="relative min-h-screen w-screen flex flex-col lg:flex-row bg-[#0b0c16] text-slate-100 font-sans overflow-hidden">
@@ -188,7 +177,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
         </div>
       </section>
 
-      {/* Form: a navy panel the brand side's glow fades into, with no hard edge */}
+      {/* Sign-in: a navy panel the brand side's glow fades into, with no hard edge */}
       <section className="relative flex-1 lg:basis-[45%] flex items-center justify-center px-8 py-12 bg-[#141628]">
         <div aria-hidden="true" className="hidden lg:block absolute inset-y-0 -left-80 w-80 bg-gradient-to-r from-transparent to-[#141628] pointer-events-none" />
         <div aria-hidden="true" className="lg:hidden absolute inset-x-0 -top-36 h-36 bg-gradient-to-b from-transparent to-[#141628] pointer-events-none" />
@@ -197,7 +186,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
         <form onSubmit={handleSubmit} noValidate className="login-form-in flex flex-col gap-4">
           <div className="mb-2">
             <h1 className="text-[26px] font-bold text-white tracking-tight">Welcome back</h1>
-            <p className="mt-1 text-sm text-slate-400">Sign in with your restoAdmin account.</p>
+            <p className="mt-1 text-sm text-slate-400">Tap below to open the floor dashboard.</p>
           </div>
 
           {notice && !error && (
@@ -206,55 +195,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
               <span>{notice}</span>
             </div>
           )}
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="login-username" className="text-xs font-semibold text-slate-400">
-              Username
-            </label>
-            <div className="relative">
-              <User className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
-              <input
-                id="login-username"
-                type="text"
-                autoComplete="username"
-                autoCapitalize="none"
-                autoCorrect="off"
-                spellCheck={false}
-                autoFocus
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                disabled={submitting}
-                className={inputClasses}
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <label htmlFor="login-password" className="text-xs font-semibold text-slate-400">
-              Password
-            </label>
-            <div className="relative">
-              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
-              <input
-                id="login-password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                disabled={submitting}
-                className={`${inputClasses} pr-12`}
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((prev) => !prev)}
-                aria-label={showPassword ? 'Hide password' : 'Show password'}
-                title={showPassword ? 'Hide password' : 'Show password'}
-                className="absolute right-1.5 top-1/2 -translate-y-1/2 w-10 h-10 rounded-lg flex items-center justify-center text-slate-500 hover:text-slate-200 hover:bg-white/5 transition-colors"
-              >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-              </button>
-            </div>
-          </div>
 
           {error && (
             <div
@@ -266,18 +206,20 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
             </div>
           )}
 
+          {/* Focused, so Enter signs in on a keyboard too. */}
           <button
             type="submit"
+            autoFocus
             disabled={submitting}
-            className="mt-2 h-[52px] rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/20 hover:from-indigo-500 hover:to-violet-500 active:scale-[0.98] transition-all disabled:opacity-70 disabled:active:scale-100"
+            className="mt-2 h-16 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-base font-bold flex items-center justify-center gap-2.5 shadow-lg shadow-indigo-500/25 hover:from-indigo-500 hover:to-violet-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300/60 active:scale-[0.98] transition-all disabled:opacity-70 disabled:active:scale-100"
           >
-            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <LogIn className="w-4 h-4" />}
-            {submitting ? 'Signing in…' : 'Sign in'}
+            {submitting ? <Loader2 className="w-5 h-5 animate-spin" /> : <LogIn className="w-5 h-5" />}
+            {submitting ? 'Signing in…' : 'Quick Login'}
           </button>
 
           <p className="flex items-start gap-2 text-[11px] leading-snug text-slate-500">
             <Info className="w-3.5 h-3.5 shrink-0 mt-px" />
-            Signing in here signs this account out on any other device.
+            Signing in here signs out any other device using the dashboard.
           </p>
         </form>
         </div>

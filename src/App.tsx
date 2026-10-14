@@ -29,10 +29,10 @@ const LayoutEditor = LAYOUT_EDITOR_ENABLED ? lazy(() => import('./layoutEditor/L
 // written while the editor is enabled.
 const STORAGE_KEY_LAYOUT_DRAFT = 'restaurant_dashboard_layout_draft';
 const STORAGE_KEY_SHOW_INFO_PANELS = 'restaurant_dashboard_show_info_panels';
-const STORAGE_KEY_SIDEBAR_COLLAPSED = 'restaurant_dashboard_sidebar_collapsed';
 
 // Per-device copies of the zone layout, info panels and widget choices from
-// before the layout was fixed in src/data/floorLayout.json. Nothing reads
+// before the layout was fixed in src/data/floorLayout.json, and the
+// remembered sidebar state from before it always started collapsed. Nothing reads
 // them anymore; cleared once on load so old devices don't keep carrying them.
 const LEGACY_STORAGE_KEYS = [
   'restaurant_dashboard_tables_v1',
@@ -40,6 +40,7 @@ const LEGACY_STORAGE_KEYS = [
   'restaurant_dashboard_tables_v3',
   'restaurant_dashboard_info_panels_v1',
   'restaurant_dashboard_sales_period',
+  'restaurant_dashboard_sidebar_collapsed',
 ];
 const LEGACY_STORAGE_PREFIXES = ['restaurant_dashboard_widget_floor:'];
 
@@ -140,22 +141,9 @@ export default function App({ user, onSignOut }: AppProps) {
     }
   }, [showInfoPanels]);
 
-  // Whether this device keeps the sidebar collapsed to its icon rail, giving
-  // the floor plan more room (a per-device view choice, like the info panels).
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem(STORAGE_KEY_SIDEBAR_COLLAPSED) === 'true';
-    } catch {
-      return false;
-    }
-  });
-  useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_SIDEBAR_COLLAPSED, String(sidebarCollapsed));
-    } catch {
-      // Private mode / blocked storage: the toggle still works for this session.
-    }
-  }, [sidebarCollapsed]);
+  // The sidebar starts collapsed to its icon rail on every load, giving the
+  // floor plan the room; staff open it when they need the filters.
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
 
   // Latest tables for the mount-once SSE subscriber below, whose closure
   // would otherwise only ever see the initial state.

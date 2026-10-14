@@ -30,7 +30,6 @@ class DashboardShell extends StatefulWidget {
 
 class _DashboardShellState extends State<DashboardShell> {
   // Per-device view choices, like the web dashboard's localStorage ones.
-  static const _prefsSidebarCollapsed = 'sidebar_collapsed';
   static const _prefsShowInfoPanels = 'show_info_panels';
 
   SharedPreferences? _prefs;
@@ -38,7 +37,9 @@ class _DashboardShellState extends State<DashboardShell> {
   int _floor = 1;
   bool _availableFilter = false;
   bool _occupiedFilter = false;
-  bool _sidebarCollapsed = false;
+  // Starts collapsed to its icon rail every time, giving the floor plan the
+  // room; staff open it when they need the filters.
+  bool _sidebarCollapsed = true;
   bool _showInfoPanels = true;
   // Bumped when a sidebar floor card is tapped, so All Tables & Rooms and
   // Active Orders follow it even when their own floor filter already moved.
@@ -59,7 +60,8 @@ class _DashboardShellState extends State<DashboardShell> {
       if (!mounted) return;
       setState(() {
         _prefs = prefs;
-        _sidebarCollapsed = prefs.getBool(_prefsSidebarCollapsed) ?? false;
+        // Left from when the sidebar's state was remembered.
+        prefs.remove('sidebar_collapsed');
         _showInfoPanels = prefs.getBool(_prefsShowInfoPanels) ?? true;
       });
     });
@@ -67,7 +69,6 @@ class _DashboardShellState extends State<DashboardShell> {
 
   void _toggleSidebar() {
     setState(() => _sidebarCollapsed = !_sidebarCollapsed);
-    _prefs?.setBool(_prefsSidebarCollapsed, _sidebarCollapsed);
   }
 
   // One filter state, shared by the sidebar's tiles and the floor plan's

@@ -7,7 +7,8 @@ screens and actions as the web dashboard and talks to the same dashboard server
 ## How it connects
 
 The app needs one address: the dashboard's **web address**. Each build carries its own (see
-[Builds](#builds)), so staff never type it; the sign-in page shows it read-only.
+[Builds](#builds)), and it can't be changed on the tablet: a different address means a different
+build.
 
 | Where | Address |
 | --- | --- |
@@ -17,14 +18,15 @@ The app needs one address: the dashboard's **web address**. Each build carries i
 That address passes `/api/*` through to the Node server (`:3510`) and serves the floor plan images
 (`/floorplans/*.webp`). The app uses:
 
-- `/api/auth/*` to sign in. The server's `rd_session` cookie is stored on the device and sent with
-  every call.
+- `/api/auth/*` to sign in. The sign-in page has one **Quick Login** button; the server signs in
+  with its shared dashboard account (`bm_dash`, see `DASHBOARD_USERNAME` in `.env.example`). The
+  server's `rd_session` cookie is stored on the device and sent with every call.
 - `/api/layout` for the floor plan (served from `src/data/floorLayout.json`, so tablets always match the
   web version).
 - `/api/admin/*` for tables, orders, menu and sales, and `/api/admin/stream` for live updates.
 
-The sign-in rules are the web dashboard's: a restoAdmin account with role 3 in the Blue Moon branch.
-Signing in on the tablet signs that account out everywhere else, including a browser.
+Every device uses that one account, and restoAdmin allows one session per account, so signing in on
+a tablet signs out whichever device (tablet or browser) was signed in before.
 
 ## Builds
 
@@ -33,16 +35,14 @@ install side by side as separate apps:
 
 | Flavor | App name | Package | Address (`config/…json`) |
 | --- | --- | --- | --- |
-| `prod` | Blue Moon | `com.bluemoon.resto_dashboard` | `prod.json`: empty until production is set up |
-| `dev` | Blue Moon Dev | `….dev` | `dev.json`: `http://45.32.119.62:2520` |
-| `local` | Blue Moon Local | `….local` | `local.json`: `http://192.168.110.26:3500` |
+| `prod` | Blue Moon (Prod) | `com.bluemoon.resto_dashboard` | `prod.json`: **empty, no production address yet** |
+| `dev` | Blue Moon | `….dev` | `dev.json`: `http://45.32.119.62:2520` |
+| `local` | Blue Moon (Local) | `….local` | `local.json`: `http://192.168.110.26:3500` |
 
-A build with an address shows it on the sign-in page and has no address field. A build without one
-(`prod`, until its address is filled in) asks for it on the sign-in page, as before. Non-prod builds
-show a **DEV BUILD** / **LOCAL BUILD** tag there.
-
-**Technician override:** hold the Blue Moon logo on the sign-in page for 3 seconds to point that tablet at
-another address without a new build (**Use built-in** undoes it).
+Dev is the everyday app, so it has the plain name. The sign-in page shows no address and has no way
+to change it. `prod` and `local` show a **PROD BUILD** / **LOCAL BUILD** tag there. A build without
+an address (`prod`, until its address is filled in) can't sign in: its sign-in page says so and its
+Quick Login button is disabled.
 
 ### Releasing to production
 
@@ -60,8 +60,8 @@ another address without a new build (**Use built-in** undoes it).
 4. **Build:** `flutter build apk --release --flavor prod --dart-define-from-file=config/prod.json`.
    The APK is `build/app/outputs/flutter-apk/app-prod-release.apk`.
 5. **Install** on each tablet (`adb install -r <apk>`, or copy the file and open it with "install
-   unknown apps" allowed). It opens in fullscreen on its sign-in page, which shows the server address
-   and has no address field.
+   unknown apps" allowed). It opens in fullscreen on its sign-in page, with the Quick Login
+   button.
 
 The app uses plain `http` (`android:usesCleartextTraffic="true"`), so an `http://` address works. An
 `https://` one does too, if the server has a valid certificate.

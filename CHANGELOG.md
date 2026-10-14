@@ -9,6 +9,14 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.6.0]
+
+### Changed
+- **Sign-in is one Quick Login button.** The dashboard runs on shared tablets and screens, so staff no longer type a username and password: the sign-in page has a single, larger Quick Login button under "Welcome back", and the server signs in with the shared restoAdmin account `bm_dash`. Its credentials stay on the server (`DASHBOARD_USERNAME` / `DASHBOARD_PASSWORD` in `.env`, defaulting to `bm_dash` / `12348765`, so existing local and dev `.env` files need no change), never in the web bundle or the APK, where anyone could read them and use the account on restoAdmin itself. restoAdmin still allows one session per account, so signing in on one device signs out whichever device was signed in before, and the note under the button now says so ([auth.ts](server/auth.ts), [.env.example](.env.example), [LoginPage.tsx](src/components/LoginPage.tsx), [auth.ts](src/services/auth.ts), [login_page.dart](mobile/lib/ui/login_page.dart), [api_client.dart](mobile/lib/api/api_client.dart), [docs/blue-moon-integration.md](docs/blue-moon-integration.md)).
+- **The sidebar starts collapsed every time.** It opens on its icon rail, giving the floor plan the room, on every load and sign-in; staff open it when they need the filters. It's no longer remembered per device, and the old saved setting is cleared. In the app, a room timer in a narrow info panel column (two fit side by side once the plan widens) now clips instead of overflowing the row ([App.tsx](src/App.tsx), [shell.dart](mobile/lib/ui/shell.dart), [info_panel.dart](mobile/lib/ui/info_panel.dart), [screens_test.dart](mobile/test/screens_test.dart)).
+- **The tablet app's address can't be changed on the tablet.** The 3-second hold on the Blue Moon logo, the technician's address dialog and the "Server: …" line under the sign-in button are gone, and any address a tablet saved before is cleared, so each build always uses its own: dev `http://45.32.119.62:2520`, local `http://192.168.110.26:3500`. Prod has no address yet; until it does, its sign-in page says it can't sign in and its button is disabled ([login_page.dart](mobile/lib/ui/login_page.dart), [api_client.dart](mobile/lib/api/api_client.dart), [mobile/README.md](mobile/README.md)).
+- **Dev is now the "Blue Moon" app.** Dev is the build staff use, so it takes the plain name, and the others are marked: "Blue Moon (Prod)" and "Blue Moon (Local)". The sign-in page's build tag follows: PROD BUILD and LOCAL BUILD, none on dev. Package names are unchanged, so installed builds update in place ([build.gradle.kts](mobile/android/app/build.gradle.kts), [login_page.dart](mobile/lib/ui/login_page.dart)).
+
 ## [2.5.2]
 
 ### Changed
