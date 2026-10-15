@@ -9,6 +9,11 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.6.3]
+
+### Changed
+- **The info panels fade in and out with the Info Panels toggle.** They used to pop in and vanish at once, while the Available/Occupied filters fade the zones. Now the panels fade the same way, over 300ms, and a hidden panel lets taps through to the plan. They stay loaded while hidden, so Total Sales no longer flashes "…" while it reloads each time they come back ([FloorPlanMap.tsx](src/components/FloorPlanMap.tsx), [floor_plan.dart](mobile/lib/ui/floor_plan.dart)).
+
 ## [2.6.2]
 
 ### Changed

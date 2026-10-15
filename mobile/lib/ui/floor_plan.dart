@@ -76,7 +76,7 @@ class FloorPlanView extends StatelessWidget {
       for (final s in TableStatus.values)
         if (s == TableStatus.available || s == TableStatus.occupied || statusCounts[s]! > 0) s,
     ];
-    final panels = showInfoPanels ? state.panels.where((p) => p.floor == floor).toList() : <InfoPanel>[];
+    final panels = state.panels.where((p) => p.floor == floor).toList();
 
     // The building, widened to take in any zone or panel placed outside it.
     var b = _content[floor]!;
@@ -88,7 +88,8 @@ class FloorPlanView extends StatelessWidget {
     }
 
     // One shared tick for every room countdown and the panels' timers.
-    final needsTick = zones.any((z) => z.activeOrder != null) || (panels.isNotEmpty && state.zones.any((z) => z.activeOrder != null));
+    final needsTick = zones.any((z) => z.activeOrder != null) ||
+        (showInfoPanels && panels.isNotEmpty && state.zones.any((z) => z.activeOrder != null));
 
     return Container(
       decoration: const BoxDecoration(gradient: workspaceGradient),
@@ -145,31 +146,43 @@ class FloorPlanView extends StatelessWidget {
                           ),
                         for (final p in panels)
                           Positioned(
+                            key: ValueKey(p.id),
                             left: p.x / 100 * planW,
                             top: p.y / 100 * planH,
                             width: p.width / 100 * planW,
                             height: p.height / 100 * planH,
-                            // Opaque, so the plan's lines never show through
-                            // the text, with a crisp edge. No blurred shadow or
-                            // clip: on the tablets those cost ~3ms a frame,
-                            // enough to stutter animations.
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [Color(0xFF1B1E36), Color(0xFF14162A)],
+                            // Stays mounted and fades with the Info Panels
+                            // toggle, like the zones with the filters; hidden,
+                            // it lets taps through to the plan.
+                            child: IgnorePointer(
+                              ignoring: !showInfoPanels,
+                              child: AnimatedOpacity(
+                                duration: const Duration(milliseconds: 300),
+                                curve: Curves.easeOut,
+                                opacity: showInfoPanels ? 1 : 0,
+                                // Opaque, so the plan's lines never show through
+                                // the text, with a crisp edge. No blurred shadow
+                                // or clip: on the tablets those cost ~3ms a
+                                // frame, enough to stutter animations.
+                                child: Container(
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(
+                                      begin: Alignment.topCenter,
+                                      end: Alignment.bottomCenter,
+                                      colors: [Color(0xFF1B1E36), Color(0xFF14162A)],
+                                    ),
+                                    border: Border.all(color: const Color(0x2EFFFFFF)),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: InfoPanelView(
+                                    panel: p,
+                                    state: state,
+                                    now: now,
+                                    widthPx: p.width / 100 * planW,
+                                    heightPx: p.height / 100 * planH,
+                                    onSelectZone: onSelectZone,
+                                  ),
                                 ),
-                                border: Border.all(color: const Color(0x2EFFFFFF)),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: InfoPanelView(
-                                panel: p,
-                                state: state,
-                                now: now,
-                                widthPx: p.width / 100 * planW,
-                                heightPx: p.height / 100 * planH,
-                                onSelectZone: onSelectZone,
                               ),
                             ),
                           ),

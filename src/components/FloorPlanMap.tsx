@@ -593,8 +593,10 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
 
             {/* Info panels - read-only widgets in the plan's free space. Opaque dark
                 cards (no status fill) so they never read as a table or room, and
-                the plan's lines never show through their text. */}
-            {panelsVisible && floorPanels.map((panel) => {
+                the plan's lines never show through their text. They stay mounted
+                and fade in and out with the Info Panels toggle, like the zones do
+                with the filters; hidden ones are inert, so taps reach the plan. */}
+            {floorPanels.map((panel) => {
               // On-screen size decides how many columns fit (see InfoPanelView).
               const panelPx = {
                 widthPx: (panel.width / 100) * canvasPx.width,
@@ -604,7 +606,11 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
                 <div
                   key={panel.id}
                   id={`map-panel-${panel.id}`}
-                  className="absolute rounded-xl border border-white/[0.18] bg-gradient-to-b from-[#1b1e36] to-[#14162a]"
+                  inert={!panelsVisible}
+                  aria-hidden={!panelsVisible}
+                  className={`absolute rounded-xl border border-white/[0.18] bg-gradient-to-b from-[#1b1e36] to-[#14162a] transition-opacity duration-300 ease-out motion-reduce:transition-none ${
+                    panelsVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                  }`}
                   style={{
                     left: `${panel.x}%`,
                     top: `${panel.y}%`,
