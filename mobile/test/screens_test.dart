@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:resto_dashboard/api/api_client.dart';
 import 'package:resto_dashboard/api/models.dart';
-import 'package:resto_dashboard/fullscreen.dart';
 import 'package:resto_dashboard/state/dashboard_state.dart';
 import 'package:resto_dashboard/theme.dart';
 import 'package:resto_dashboard/ui/shell.dart';
@@ -68,7 +67,6 @@ Future<void> _pumpShell(WidgetTester tester, DashboardState state,
     home: DashboardShell(
       state: state,
       user: const DashboardUser(id: 1, username: 'staff', firstName: 'Test', lastName: 'Staff'),
-      fullscreen: FullscreenController(),
       onSignOut: onSignOut ?? () {},
     ),
   ));

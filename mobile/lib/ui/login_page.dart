@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../api/models.dart';
-import '../fullscreen.dart';
 import '../theme.dart';
 import 'common.dart';
 
@@ -15,10 +14,8 @@ import 'common.dart';
 class LoginPage extends StatefulWidget {
   final ApiClient api;
   final String? notice;
-  final FullscreenController fullscreen;
   final Future<void> Function(DashboardUser user) onSignedIn;
-  const LoginPage(
-      {super.key, required this.api, required this.notice, required this.fullscreen, required this.onSignedIn});
+  const LoginPage({super.key, required this.api, required this.notice, required this.onSignedIn});
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -84,10 +81,6 @@ class _LoginPageState extends State<LoginPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bg,
-      // Staff can opt out of fullscreen before signing in; the dashboard's
-      // own toggle shares this setting.
-      floatingActionButton: FullscreenPill(controller: widget.fullscreen),
-      floatingActionButtonLocation: FullscreenPill.location,
       body: Stack(key: _pageKey, children: [
         Positioned.fill(child: _layout()),
         // A quiet night sky across the whole page: plentiful around the moon,

@@ -110,7 +110,7 @@ class FloorPlanView extends StatelessWidget {
                 final top = h / 2 + (_padTop - _padBottom) / 2 - (b.y0 + b.y1) / 200 * planH;
 
                 return Stack(clipBehavior: Clip.none, children: [
-                  // Eases to a new size (sidebar, info panels, fullscreen)
+                  // Eases to a new size (sidebar, info panels)
                   // without re-laying it out every frame; a new floor just
                   // appears at its own size.
                   _PlanRect(
@@ -195,8 +195,8 @@ class FloorPlanView extends StatelessWidget {
               }),
             ),
             // Floating top bar: floor switch + filter badge on the left, the
-            // floor's status counts on the right. Info Panels and Fullscreen
-            // live in the sidebar.
+            // floor's status counts on the right. Info Panels lives in the
+            // sidebar.
             Positioned(
               top: 20,
               left: 20,

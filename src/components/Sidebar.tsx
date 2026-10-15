@@ -14,8 +14,6 @@ import {
   PanelLeftOpen,
   Clock,
   LogOut,
-  Maximize2,
-  Minimize2,
   LayoutDashboard
 } from 'lucide-react';
 import { TableRoom } from '../types';
@@ -23,7 +21,6 @@ import { ConnectionStatus } from '../services/adminSync';
 import { DashboardUser, displayName } from '../services/auth';
 import { getRoomTiming, getTimerTone, formatDuration, formatWait, TIMER_TEXT_CLASS, RoomTiming } from '../utils/roomTimer';
 import { morphLayers } from '../utils/morphLayers';
-import { useFullscreen } from '../utils/fullscreen';
 
 // The sidebar's connection badge, per ConnectionStatus (see adminSync.ts).
 const CONNECTION_BADGE: Record<
@@ -208,7 +205,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
   const badge = CONNECTION_BADGE[connectionStatus];
   const BadgeIcon = badge.icon;
-  const fullscreen = useFullscreen();
   // The filters and Info Panels only change the floor plan, so elsewhere they
   // fade out and stop taking taps.
   const onFloorPlan = activeNav === 'floorplan';
@@ -286,7 +282,6 @@ export const Sidebar: React.FC<SidebarProps> = ({
           showInfoPanels={showInfoPanels}
           onToggleInfoPanels={onToggleInfoPanels}
           onFloorPlan={onFloorPlan}
-          fullscreen={fullscreen}
           attentionCount={attentionRooms.length}
           hasExpired={hasExpired}
           userName={displayName(user)}
@@ -324,24 +319,9 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                   <LogOut className="w-4 h-4" />
                 </button>
-                {/* Sign out stands apart from the two view buttons, behind a
-                    divider, so a missed tap on them doesn't land on it. */}
+                {/* Sign out stands apart from Collapse, behind a divider, so a
+                    missed tap on Collapse doesn't land on it. */}
                 <div className="w-px h-5 mx-1.5 bg-white/10" />
-                {fullscreen.supported && (
-                  <button
-                    id="btn-fullscreen"
-                    onClick={fullscreen.toggle}
-                    title={fullscreen.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-                    aria-label={fullscreen.isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-                    className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 active:scale-95 transition-all"
-                  >
-                    {fullscreen.isFullscreen ? (
-                      <Minimize2 data-morph="fullscreen" className="w-4 h-4" />
-                    ) : (
-                      <Maximize2 data-morph="fullscreen" className="w-4 h-4" />
-                    )}
-                  </button>
-                )}
                 <button
                   id="btn-collapse-sidebar"
                   data-sidebar-toggle
@@ -689,7 +669,6 @@ interface SidebarRailProps {
   showInfoPanels: boolean;
   onToggleInfoPanels: () => void;
   onFloorPlan: boolean;
-  fullscreen: ReturnType<typeof useFullscreen>;
   attentionCount: number;
   hasExpired: boolean;
   userName: string;
@@ -721,7 +700,6 @@ const SidebarRail: React.FC<SidebarRailProps> = ({
   showInfoPanels,
   onToggleInfoPanels,
   onFloorPlan,
-  fullscreen,
   attentionCount,
   hasExpired,
   userName,
@@ -749,25 +727,9 @@ const SidebarRail: React.FC<SidebarRailProps> = ({
         <PanelLeftOpen data-morph="toggle" className="w-5 h-5" />
       </button>
 
-      {/* View controls stay together up here; Sign out sits alone at the
-          bottom, away from anything tapped often. */}
-      {fullscreen.supported && (
-        <button
-          id="btn-rail-fullscreen"
-          onClick={fullscreen.toggle}
-          title={fullscreen.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-          aria-label={fullscreen.isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-          className={`${RAIL_BUTTON_CLASSES} ${RAIL_BUTTON_IDLE}`}
-        >
-          {fullscreen.isFullscreen ? (
-            <Minimize2 data-morph="fullscreen" className="w-5 h-5" />
-          ) : (
-            <Maximize2 data-morph="fullscreen" className="w-5 h-5" />
-          )}
-        </button>
-      )}
-
-      <div className="py-1 text-center font-mono leading-none">
+      {/* Pulled up under Expand: its 44px tap target is mostly empty below
+          the icon, which otherwise leaves the clock adrift. */}
+      <div className="-mt-1 pb-1 text-center font-mono leading-none">
         <div className="text-sm font-bold text-white tabular-nums">{clock.time}</div>
         <div className="mt-0.5 text-[9px] font-semibold tracking-wider text-slate-500">{clock.period}</div>
       </div>

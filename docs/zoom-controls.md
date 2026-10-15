@@ -3,8 +3,8 @@
 The floor plan used to have **zoom in**, **zoom out** and **reset zoom** buttons in its top-right
 bar. They were turned off on request: the default view (the floor plan sized so the building
 itself fills the workspace, with the image's empty margins clipped) is the fixed view for every
-screen. The top-right bar now holds only
-**Info Panels** and **Fullscreen**.
+screen. Info Panels lives in the sidebar, so the top-right bar shows only when a dormant flag is
+on.
 
 The zoom code is still in the repo, in
 [`FloorPlanMap.tsx`](../src/components/FloorPlanMap.tsx), behind one build-time

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 import '../api/live_stream.dart';
 import '../api/models.dart';
-import '../fullscreen.dart';
 import '../state/dashboard_state.dart';
 import '../theme.dart';
 import '../util/format.dart';
@@ -35,7 +34,7 @@ const _badges = {
 };
 
 /// The left sidebar (src/components/Sidebar.tsx): clock, live connection,
-/// fullscreen, navigation, the floor plan's view toggles (two quick filters
+/// navigation, the floor plan's view toggles (two quick filters
 /// and Info Panels), rooms that need attention, and both floors at a glance.
 /// Collapses to a 64px icon rail.
 class Sidebar extends StatefulWidget {
@@ -53,7 +52,6 @@ class Sidebar extends StatefulWidget {
   final VoidCallback onToggleOccupied;
   final bool showInfoPanels;
   final VoidCallback onToggleInfoPanels;
-  final FullscreenController fullscreen;
   final ValueChanged<Zone> onSelectZone;
   final VoidCallback onSignOut;
 
@@ -73,7 +71,6 @@ class Sidebar extends StatefulWidget {
     required this.onToggleOccupied,
     required this.showInfoPanels,
     required this.onToggleInfoPanels,
-    required this.fullscreen,
     required this.onSelectZone,
     required this.onSignOut,
   });
@@ -199,9 +196,6 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
         ),
       );
 
-  Widget _fullscreenButton(Widget Function(bool on) builder) =>
-      ValueListenableBuilder<bool>(valueListenable: widget.fullscreen, builder: (context, on, _) => builder(on));
-
   // ---------------------------------------------------------------- full --
 
   Widget _full(DateTime now) {
@@ -229,9 +223,8 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                           fontSize: 10, fontWeight: FontWeight.w600, letterSpacing: 0.8, color: AppColors.slate500)),
                 ]),
               ),
-              // Sign out stands apart from the two view buttons, behind a
-              // divider, so a missed tap on Fullscreen or Collapse doesn't
-              // land on it.
+              // Sign out stands apart from Collapse, behind a divider, so a
+              // missed tap on Collapse doesn't land on it.
               SquareIconButton(
                 icon: Icons.logout,
                 iconSize: 17,
@@ -240,13 +233,6 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                 onPressed: widget.onSignOut,
               ),
               Container(width: 1, height: 20, margin: const EdgeInsets.symmetric(horizontal: 6), color: AppColors.border),
-              _fullscreenButton((on) => SquareIconButton(
-                    icon: on ? Icons.fullscreen_exit : Icons.fullscreen,
-                    iconSize: 19,
-                    background: Colors.transparent,
-                    tooltip: on ? 'Exit Fullscreen' : 'Fullscreen',
-                    onPressed: widget.fullscreen.toggle,
-                  )),
               SquareIconButton(
                 icon: Icons.keyboard_double_arrow_left,
                 iconSize: 18,
@@ -643,12 +629,10 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
           child: IntrinsicHeight(
             child: Column(children: [
               _railButton(Icons.keyboard_double_arrow_right, 'Expand sidebar', widget.onToggleCollapsed),
-              // View controls stay together up here; Sign out sits alone at the
-              // bottom, away from anything tapped often.
-              _fullscreenButton((on) => _railButton(on ? Icons.fullscreen_exit : Icons.fullscreen,
-                  on ? 'Exit Fullscreen' : 'Fullscreen', widget.fullscreen.toggle)),
+              // Snug under Expand: its 44px tap target is mostly empty below
+              // the icon, which otherwise leaves the clock adrift.
               Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
+                padding: const EdgeInsets.only(bottom: 6),
                 child: Column(children: [
                   Text(time[0],
                       style: const TextStyle(

@@ -60,8 +60,8 @@ Quick Login button is disabled.
 4. **Build:** `flutter build apk --release --flavor prod --dart-define-from-file=config/prod.json`.
    The APK is `build/app/outputs/flutter-apk/app-prod-release.apk`.
 5. **Install** on each tablet (`adb install -r <apk>`, or copy the file and open it with "install
-   unknown apps" allowed). It opens in fullscreen on its sign-in page, with the Quick Login
-   button.
+   unknown apps" allowed). It always runs fullscreen (a swipe from an edge shows Android's
+   bars, which hide again on their own) and opens on its sign-in page, with the Quick Login button.
 
 The app uses plain `http` (`android:usesCleartextTraffic="true"`), so an `http://` address works. An
 `https://` one does too, if the server has a valid certificate.

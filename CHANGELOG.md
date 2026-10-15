@@ -9,6 +9,14 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.6.1]
+
+### Removed
+- **The Fullscreen buttons are gone, from the web version and the tablet app.** They're no longer needed, so the sign-in page's Fullscreen pill, the button beside Collapse in the sidebar header and the one at the top of the collapsed rail are removed. Sign out still sits behind its divider, now apart from Collapse alone. The web version stays as it was, not fullscreen; a browser's own fullscreen (F11) still works. The tablet app is now always fullscreen, with no way to turn it off: a swipe in from an edge shows Android's back/home and status bars over the app, and they hide again on their own after a few seconds, so staff can still leave the app ([Sidebar.tsx](src/components/Sidebar.tsx), [LoginPage.tsx](src/components/LoginPage.tsx), `src/utils/fullscreen.ts` deleted; [fullscreen.dart](mobile/lib/fullscreen.dart), [main.dart](mobile/lib/main.dart), [sidebar.dart](mobile/lib/ui/sidebar.dart), [login_page.dart](mobile/lib/ui/login_page.dart), [shell.dart](mobile/lib/ui/shell.dart)).
+
+### Changed
+- **The collapsed sidebar's clock sits snug under the Expand button.** With Fullscreen gone from the rail, the clock was left floating about 24px below Expand's icon, because that button's 44px tap target is mostly empty space under the icon. The clock now sits 16px below it, so the two read as one group ([Sidebar.tsx](src/components/Sidebar.tsx), [sidebar.dart](mobile/lib/ui/sidebar.dart)).
+
 ## [2.6.0]
 
 ### Changed

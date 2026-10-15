@@ -487,7 +487,7 @@ export const FloorPlanMap: React.FC<FloorPlanMapProps> = ({
         </div>
 
         {/* Tool bar: Edit Zones and zoom, only when their dormant build flags
-            are on. Info Panels and Fullscreen live in the sidebar. */}
+            are on. Info Panels lives in the sidebar. */}
         {(LAYOUT_EDITOR_ENABLED || ZOOM_CONTROLS_ENABLED) && (
         <div className="pointer-events-auto flex items-center gap-1 bg-[#141628]/90 backdrop-blur-md border border-white/10 rounded-2xl p-1.5 shadow-xl">
           {LAYOUT_EDITOR_ENABLED && (

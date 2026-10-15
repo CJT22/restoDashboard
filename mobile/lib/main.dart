@@ -15,17 +15,15 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   // A floor dashboard is a landscape tablet screen, like the web version.
   await SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
-  // Opens in fullscreen every launch, before the first frame shows the bars.
-  final fullscreen = FullscreenController();
-  await fullscreen.apply();
+  // Always fullscreen, from before the first frame shows the bars.
+  await Fullscreen.start();
   final api = await ApiClient.create();
-  runApp(DashboardApp(api: api, fullscreen: fullscreen));
+  runApp(DashboardApp(api: api));
 }
 
 class DashboardApp extends StatelessWidget {
   final ApiClient api;
-  final FullscreenController fullscreen;
-  const DashboardApp({super.key, required this.api, required this.fullscreen});
+  const DashboardApp({super.key, required this.api});
 
   @override
   Widget build(BuildContext context) {
@@ -34,8 +32,8 @@ class DashboardApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       showPerformanceOverlay: const bool.fromEnvironment('PERF_OVERLAY'),
       theme: buildTheme(),
-      home: AuthGate(api: api, fullscreen: fullscreen),
-      builder: (context, child) => FullscreenInsets(controller: fullscreen, child: child!),
+      home: AuthGate(api: api),
+      builder: (context, child) => FullscreenInsets(child: child!),
     );
   }
 }
@@ -60,8 +58,7 @@ class _SignedIn extends _AuthState {
 /// call reports the session is gone, like the web dashboard's AuthGate.
 class AuthGate extends StatefulWidget {
   final ApiClient api;
-  final FullscreenController fullscreen;
-  const AuthGate({super.key, required this.api, required this.fullscreen});
+  const AuthGate({super.key, required this.api});
 
   @override
   State<AuthGate> createState() => _AuthGateState();
@@ -138,9 +135,9 @@ class _AuthGateState extends State<AuthGate> {
           body: Center(child: SizedBox(width: 26, height: 26, child: CircularProgressIndicator(strokeWidth: 2.5))),
         ),
       _SignedOut(:final notice) =>
-        LoginPage(api: api, notice: notice, fullscreen: widget.fullscreen, onSignedIn: _enter),
+        LoginPage(api: api, notice: notice, onSignedIn: _enter),
       _SignedIn(:final user, :final state) =>
-        DashboardShell(state: state, user: user, fullscreen: widget.fullscreen, onSignOut: _signOut),
+        DashboardShell(state: state, user: user, onSignOut: _signOut),
     };
   }
 }

@@ -28,11 +28,11 @@ app", "the web version", a screenshot of one). The user shouldn't have to ask fo
   for each (Tailwind classes on web, widgets in Flutter). Colours that are blended in Dart
   (`Color.alphaBlend`) are written as the resulting hex in Tailwind so both look identical.
 - Only skip the other side for something that can't apply there, and say so in your reply:
-  - App only: Android system bars and insets (`fullscreen.dart`'s inset handling, immersive mode),
+  - App only: Android system bars and insets (`fullscreen.dart`'s always-on immersive mode and inset
+    handling; the app has no fullscreen toggle, and the web has no fullscreen at all),
     the build flavors and their addresses, and GPU performance work specific to Flutter/Impeller.
   - Web only: hover cards (no hover on touch), the dormant layout editor and zoom flags, and
-    browser limits (e.g. the web can't start in fullscreen, since browsers only allow it from a
-    click, so web fullscreen is off by default).
+    browser limits.
 - Verify both: `npx tsc --noEmit -p .` (and `npx vite build` for bigger changes) for web, and
   `flutter analyze` and `flutter test` in `mobile/` for the app.
 - One changelog bullet covers both sides of a change, linking the files touched in each.

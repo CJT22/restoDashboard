@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/models.dart';
-import '../fullscreen.dart';
 import '../state/dashboard_state.dart';
 import 'common.dart';
 import 'directory_view.dart';
@@ -19,10 +18,8 @@ enum NavTab { floorplan, directory, orders }
 class DashboardShell extends StatefulWidget {
   final DashboardState state;
   final DashboardUser user;
-  final FullscreenController fullscreen;
   final VoidCallback onSignOut;
-  const DashboardShell(
-      {super.key, required this.state, required this.user, required this.fullscreen, required this.onSignOut});
+  const DashboardShell({super.key, required this.state, required this.user, required this.onSignOut});
 
   @override
   State<DashboardShell> createState() => _DashboardShellState();
@@ -176,7 +173,6 @@ class _DashboardShellState extends State<DashboardShell> {
                   onToggleOccupied: _toggleOccupied,
                   showInfoPanels: _showInfoPanels,
                   onToggleInfoPanels: _toggleInfoPanels,
-                  fullscreen: widget.fullscreen,
                   onSelectZone: _openZone,
                   onSignOut: _confirmSignOut,
                 ),

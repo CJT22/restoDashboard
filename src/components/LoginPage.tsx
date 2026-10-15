@@ -1,7 +1,6 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
-import { Loader2, LogIn, Info, AlertTriangle, Maximize2, Minimize2 } from 'lucide-react';
+import { Loader2, LogIn, Info, AlertTriangle } from 'lucide-react';
 import { DashboardUser, signIn } from '../services/auth';
-import { useFullscreen } from '../utils/fullscreen';
 
 interface LoginPageProps {
   onSignedIn: (user: DashboardUser) => void;
@@ -72,7 +71,6 @@ const GRAIN =
 export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const fullscreen = useFullscreen();
 
   // Where the form and the logo block sit on the page, so the night sky
   // keeps clear of them. Measured from wrappers outside their entrance
@@ -103,7 +101,7 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
       setSky({ width: p.width, height: p.height, keepOut: [...boxOf(formRef.current, 28), ...boxOf(brandRef.current, 10)] });
     };
     // Things can move without anything observed changing size (the window
-    // or fullscreen resizing the page, web fonts arriving), so re-measure on
+    // resizing the page, web fonts arriving), so re-measure on
     // those too, a moment later so layout has settled.
     let timer: ReturnType<typeof setTimeout> | undefined;
     const remeasure = () => {
@@ -137,19 +135,6 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onSignedIn, notice }) => {
 
   return (
     <div ref={pageRef} className="relative min-h-screen w-screen flex flex-col lg:flex-row bg-[#0b0c16] text-slate-100 font-sans overflow-hidden">
-      {/* Fullscreen before signing in; the sidebar's toggle shares it. Off
-          until tapped: browsers only allow it from a click. */}
-      {fullscreen.supported && (
-        <button
-          type="button"
-          onClick={fullscreen.toggle}
-          className="absolute z-10 top-4 right-4 h-10 pl-[11px] pr-3.5 rounded-xl bg-[#141628]/90 border border-white/10 flex items-center gap-2 text-[13px] font-bold text-slate-300 hover:text-white hover:bg-white/10 transition-colors"
-        >
-          {fullscreen.isFullscreen ? <Minimize2 className="w-4 h-4 text-slate-400" /> : <Maximize2 className="w-4 h-4 text-slate-400" />}
-          {fullscreen.isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
-        </button>
-      )}
-
       {/* Brand */}
       <section className="relative lg:basis-[55%] min-h-[44vh] lg:min-h-screen flex flex-col items-center justify-center px-8 pt-16 pb-14 lg:py-0 overflow-hidden">
         {/* The moon's glow */}
