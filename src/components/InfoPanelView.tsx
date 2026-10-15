@@ -148,7 +148,9 @@ const rowButtonClass = (interactive: boolean) =>
   `min-w-0 flex items-center gap-1.5 rounded-md text-left ${interactive ? 'hover:bg-white/10 cursor-pointer' : 'pointer-events-none'}`;
 
 // Segmented picker styled like the Total Sales period row; shared by that
-// and the floor toggles so they read as one control.
+// and the floor toggles so they read as one control. Each option starts at
+// its label's width and shares out what's left (flex-auto), so "Today" and
+// "Month" don't get cut short in a narrow panel the way equal quarters did.
 function SegmentedToggle<T extends string | number>({
   options,
   value,
@@ -171,7 +173,7 @@ function SegmentedToggle<T extends string | number>({
             key={option.value}
             onClick={() => onChange(option.value)}
             aria-pressed={active}
-            className={`flex-1 min-w-0 truncate px-1 py-0.5 rounded-md text-[10px] font-semibold ${
+            className={`flex-auto min-w-0 truncate px-0.5 py-0.5 rounded-md text-[10px] font-semibold ${
               active ? 'bg-indigo-600 text-white' : 'text-slate-300'
             } ${interactive ? (active ? '' : 'hover:bg-white/10 cursor-pointer') : 'pointer-events-none'}`}
           >

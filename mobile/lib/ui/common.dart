@@ -309,6 +309,12 @@ class Segmented<T> extends StatelessWidget {
   final bool dense;
   const Segmented({super.key, required this.options, required this.value, required this.onChanged, this.dense = false});
 
+  TextStyle _labelStyle(bool selected) => TextStyle(
+        fontSize: dense ? 10 : 12,
+        fontWeight: FontWeight.w700,
+        color: selected ? Colors.white : (dense ? AppColors.slate300 : AppColors.slate400),
+      );
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -318,38 +324,66 @@ class Segmented<T> extends StatelessWidget {
         border: Border.all(color: dense ? const Color(0x14FFFFFF) : AppColors.border),
         borderRadius: BorderRadius.circular(dense ? 8 : 14),
       ),
-      child: Row(mainAxisSize: dense ? MainAxisSize.max : MainAxisSize.min, children: [
-        for (final (v, label) in options)
-          _wrap(
-            dense,
-            GestureDetector(
-              behavior: HitTestBehavior.opaque,
-              onTap: () => onChanged(v),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                margin: EdgeInsets.symmetric(horizontal: dense ? 1 : 2),
-                padding: EdgeInsets.symmetric(horizontal: dense ? 4 : 12, vertical: dense ? 3 : 8),
-                decoration: BoxDecoration(
-                  color: v == value ? AppColors.indigo600 : Colors.transparent,
-                  borderRadius: BorderRadius.circular(dense ? 6 : 10),
-                ),
-                alignment: Alignment.center,
-                child: Text(label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: dense ? 10 : 12,
-                      fontWeight: FontWeight.w700,
-                      color: v == value ? Colors.white : (dense ? AppColors.slate300 : AppColors.slate400),
-                    )),
-              ),
-            ),
-          ),
-      ]),
+      child: dense
+          ? LayoutBuilder(
+              builder: (context, c) {
+                final widths = _denseWidths(context, c.maxWidth);
+                // The last takes what's left, so rounding never overflows.
+                return Row(children: [
+                  for (var i = 0; i < options.length - 1; i++) SizedBox(width: widths[i], child: _segment(options[i])),
+                  Expanded(child: _segment(options.last)),
+                ]);
+              },
+            )
+          : Row(mainAxisSize: MainAxisSize.min, children: [for (final o in options) _segment(o)]),
     );
   }
 
-  Widget _wrap(bool dense, Widget child) => dense ? Expanded(child: child) : child;
+  // Each segment gets its label's width plus an equal share of what's left
+  // (like CSS `flex: auto` on the web), so longer labels like "Today" and
+  // "Month" still fit when equal quarters would cut them short. Only if
+  // the labels can't all fit do they shrink, in proportion.
+  List<double> _denseWidths(BuildContext context, double available) {
+    final natural = [
+      for (final (_, label) in options)
+        () {
+          final painter = TextPainter(
+            text: TextSpan(text: label, style: _labelStyle(false)),
+            textDirection: TextDirection.ltr,
+            textScaler: MediaQuery.textScalerOf(context),
+            maxLines: 1,
+          )..layout();
+          final width = painter.width.ceilToDouble() + 6; // + padding 2+2, margin 1+1
+          painter.dispose();
+          return width;
+        }(),
+    ];
+    final total = natural.fold<double>(0, (a, b) => a + b);
+    if (total <= available) {
+      final extra = (available - total) / natural.length;
+      return [for (final w in natural) w + extra];
+    }
+    return [for (final w in natural) w * available / total];
+  }
+
+  Widget _segment((T, String) option) {
+    final (v, label) = option;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => onChanged(v),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        margin: EdgeInsets.symmetric(horizontal: dense ? 1 : 2),
+        padding: EdgeInsets.symmetric(horizontal: dense ? 2 : 12, vertical: dense ? 3 : 8),
+        decoration: BoxDecoration(
+          color: v == value ? AppColors.indigo600 : Colors.transparent,
+          borderRadius: BorderRadius.circular(dense ? 6 : 10),
+        ),
+        alignment: Alignment.center,
+        child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: _labelStyle(v == value)),
+      ),
+    );
+  }
 }
 
 /// Best-selling everyday drinks one tap away, for a table's next round.

@@ -9,6 +9,12 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.6.2]
+
+### Changed
+- **Total Sales' period tabs no longer cut off "Today" and "Month".** Each tab took an equal quarter of the row, so in a narrow info panel (as on the tablets) the longer labels showed as "Tod…" and "Mo…" while "Yest." and "Week" had room to spare. Each tab now starts at its label's width and shares out the rest, with less padding beside the label, so all four read in full; the info panels' 1F/2F/All toggles size the same way ([InfoPanelView.tsx](src/components/InfoPanelView.tsx), [common.dart](mobile/lib/ui/common.dart)).
+- **The 1F info panel with Occupancy and Total Sales is taller, so nothing in it is cut off.** On the tablets it was about 20dp too short for its two cards, so the bottom of Total Sales (its period tabs) sat clipped against the panel's edge, and while rooms were running Occupancy's two extra rows pushed it about 40dp further out of view. The panel now starts higher, just below the Family Room, with room for both cards even with rooms running. The layout is shared, so the web version's panel grows too ([floorLayout.json](src/data/floorLayout.json)).
+
 ## [2.6.1]
 
 ### Removed
