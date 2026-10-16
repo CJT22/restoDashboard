@@ -9,6 +9,11 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.7.0]
+
+### Changed
+- **The 1st floor plan shows Blue Moon's new dining-room layout.** The restaurant rearranged the middle dining area from rows of 4, 4 and 5 tables into rows of 5, 5 and 4, including a new long table, M14. The floor plan image now matches the room as it is today. The rest of the floor (Outside, On Air, P1–P4, the Bar, the Family Room and Take Out) is unchanged. Tablets load the image from the server, so they get it without a new app build ([first_floor.webp](public/floorplans/first_floor.webp)). *The zones for M1–M14 are being re-laid out to match.*
+
 ## [2.6.3]
 
 ### Changed
