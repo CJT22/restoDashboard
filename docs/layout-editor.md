@@ -29,7 +29,7 @@ linked 1:1 to restoAdmin's 36 Blue Moon tables.
 - **`zones`** — one entry per table or room:
   - `id`: the zone id. Only the dashboard uses it (restoAdmin doesn't know about zones), but keep it
     stable for an existing zone anyway.
-  - `name`, `code`, `type`, `floor`, `capacity`.
+  - `name`, `code`, `type`, `floor`.
   - `adminTableId`: restoAdmin's `restaurant_tables.IDNo`. This is what makes orders and status
     sync, and it's the **only** record of the link: restoAdmin itself stores nothing about zones.
   - `adminTableName`: restoAdmin's `TABLE_NUMBER` at the time of linking. The startup check uses it
@@ -52,7 +52,7 @@ until the page reloads, then go back to what `floorLayout.json` says. That keeps
 the same view.
 
 Small tweaks can be made by hand-editing `floorLayout.json`, without the editor. Examples: a widget's
-starting floor, a widget's order, a zone's capacity or display name.
+starting floor, a widget's order, a zone's code or display name.
 
 ## How the on/off switch works
 
@@ -97,7 +97,7 @@ Open the floor plan and click **Edit Zones**. The editor can:
 
 - **Move** a zone or panel: drag it.
 - **Resize** one: drag a corner or edge handle (they show on hover).
-- **Edit a zone:** click it (or its ✎ button). You can change its name, code and capacity, and
+- **Edit a zone:** click it (or its ✎ button). You can change its name and code, and
   **link it to a Blue Moon table**.
 - **Edit a panel:** click it to pick its widgets, their order, and the layout.
 - **Draw** something new: choose **Draw: Zone** or **Draw: Info panel** in the editor bar, then

@@ -33,7 +33,6 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
 
   const [name, setName] = useState(table?.name || '');
   const [code, setCode] = useState(table?.code || '');
-  const [capacity, setCapacity] = useState<number>(table?.capacity || 4);
   const [status, setStatus] = useState<TableStatus>(table?.status || 'available');
 
   const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
@@ -52,7 +51,6 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
     if (table) {
       setName(table.name);
       setCode(table.code);
-      setCapacity(table.capacity);
       setStatus(table.status);
       setSelectedAdminTableId(table.adminTableId ?? null);
     } else {
@@ -60,7 +58,6 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
       const randomNum = Math.floor(10 + Math.random() * 89);
       setName(`Table ${randomNum}`);
       setCode(`T-${randomNum}`);
-      setCapacity(4);
       setStatus('available');
       setSelectedAdminTableId(null);
     }
@@ -109,7 +106,6 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
         ...table,
         name: name.trim(),
         code: code.trim() || name.slice(0, 5).toUpperCase(),
-        capacity: Number(capacity) || 4,
         status: finalStatus,
         adminTableId: selectedAdminTableId ?? undefined,
         adminTableName: linkedAdminTable?.tableNumber ?? undefined,
@@ -122,7 +118,6 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
         code: code.trim() || name.slice(0, 5).toUpperCase(),
         type: 'table',
         floor: currentFloor,
-        capacity: Number(capacity) || 4,
         status,
         x: newRect.x,
         y: newRect.y,
@@ -185,35 +180,18 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">
-                Short Code / Tag
-              </label>
-              <input
-                id="input-new-table-code"
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="e.g. T-15"
-                className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="text-xs font-semibold text-slate-300 block mb-1">
-                Seating Capacity
-              </label>
-              <input
-                id="input-new-table-capacity"
-                type="number"
-                min="1"
-                max="50"
-                value={capacity}
-                onChange={(e) => setCapacity(parseInt(e.target.value) || 1)}
-                className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white focus:outline-none focus:border-indigo-500 font-mono"
-              />
-            </div>
+          <div>
+            <label className="text-xs font-semibold text-slate-300 block mb-1">
+              Short Code / Tag
+            </label>
+            <input
+              id="input-new-table-code"
+              type="text"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="e.g. T-15"
+              className="w-full px-3.5 py-2.5 rounded-xl bg-white/5 border border-white/10 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono"
+            />
           </div>
 
           {selectedAdminTableId == null ? (
@@ -280,8 +258,8 @@ export const EditTableModal: React.FC<EditTableModalProps> = ({
                       )
                       .map((t) => (
                         <option key={t.id} value={t.id} className="bg-[#1a1c30] text-white">
-                          {t.tableNumber} (Cap {t.capacity}
-                          {t.floor ? `, ${t.floor.toUpperCase()}` : ''})
+                          {t.tableNumber}
+                          {t.floor ? ` (${t.floor.toUpperCase()})` : ''}
                         </option>
                       ))}
                   </select>

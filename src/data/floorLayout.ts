@@ -30,8 +30,8 @@ export function zonesFromLayout(zones: LayoutZone[]): TableRoom[] {
 // copied draft can be pasted straight over floorLayout.json.
 export function toFloorLayout(tables: TableRoom[], panels: InfoPanel[]): FloorLayout {
   return {
-    zones: tables.map(({ id, name, code, type, floor, capacity, adminTableId, adminTableName, x, y, width, height }) => ({
-      id, name, code, type, floor, capacity, adminTableId, adminTableName, x, y, width, height,
+    zones: tables.map(({ id, name, code, type, floor, adminTableId, adminTableName, x, y, width, height }) => ({
+      id, name, code, type, floor, adminTableId, adminTableName, x, y, width, height,
     })),
     panels,
   };

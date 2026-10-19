@@ -18,7 +18,6 @@ export interface AdminTable {
   branchId: number | null;
   tableNumber: string;
   floor: 'gf' | '2f' | null;
-  capacity: number;
   roomCharge: number | null;
   status: number;
 }

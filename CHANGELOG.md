@@ -9,10 +9,18 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.7.1]
+
+### Changed
+- **M14 and the two outside zones have proper codes.** M14 and Outside Zone 2 were saved with the layout editor's random placeholder codes ("T-78", "T-85"). Those codes showed in the table details screen and were what the directory search matched. They are now "M14" and "OS2", and Outside Zone 1 is "OS1" to pair with it. The layout is shared, so web and tablets both pick this up without an app build ([floorLayout.json](src/data/floorLayout.json)).
+
+### Removed
+- **Zones no longer carry a seat capacity.** Each zone stored a seat count, but nothing ever showed or used it. The web app and the tablets never displayed it, the tablet app never even read it, and restoAdmin records 0 seats for every Blue Moon table. Several numbers had also gone stale after the re-layout, such as Outside Zone 1 still having the 20 seats of the old single Outside zone. The field is gone from the layout and the zone type, along with the layout editor's "Seating Capacity" input. The editor's restoAdmin link picker no longer reads restoAdmin's capacity, so it shows "M 14 (GF)" instead of "M 14 (Cap 0, GF)". Staff see no difference on either the web app or the tablets ([floorLayout.json](src/data/floorLayout.json), [types.ts](src/types.ts), [floorLayout.ts](src/data/floorLayout.ts), [EditTableModal.tsx](src/layoutEditor/EditTableModal.tsx), [adminSync.ts](src/services/adminSync.ts), [adminClient.ts](server/adminClient.ts), [layout-editor.md](docs/layout-editor.md)).
+
 ## [2.7.0]
 
 ### Changed
-- **The 1st floor plan shows Blue Moon's new dining-room layout.** The restaurant rearranged the middle dining area from rows of 4, 4 and 5 tables into rows of 5, 5 and 4, including a new long table, M14. The floor plan image now matches the room as it is today. The rest of the floor (Outside, On Air, P1–P4, the Bar, the Family Room and Take Out) is unchanged. Tablets load the image from the server, so they get it without a new app build ([first_floor.webp](public/floorplans/first_floor.webp)). *The zones for M1–M14 are being re-laid out to match.*
+- **The 1st floor plan shows Blue Moon's new dining-room layout.** The restaurant rearranged the middle dining area from rows of 4, 4 and 5 tables into rows of 5, 5 and 4, including a new long table, M14. The floor plan image now matches the room as it is today. The rest of the floor (Outside, On Air, P1–P4, the Bar, the Family Room and Take Out) is unchanged. Tablets load the image from the server, so they get it without a new app build ([first_floor.webp](public/floorplans/first_floor.webp)).
 
 ## [2.6.3]
 

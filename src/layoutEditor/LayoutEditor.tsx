@@ -15,7 +15,7 @@ import { InfoPanelModal } from './InfoPanelModal';
 // transparent layer over the zones and info panels it already draws. This
 // layer catches every pointer event, so the map itself stays read-only:
 //   - drag a zone/panel to move it, or a corner/edge handle to resize it
-//   - click one to edit it (zone name/capacity/restoAdmin link; panel widgets)
+//   - click one to edit it (zone name/code/restoAdmin link; panel widgets)
 //   - press on blank canvas and drag to draw a new zone or info panel
 // Changes apply to App's tables/infoPanels state straight away; App keeps a
 // draft of them in this browser (see docs/layout-editor.md for turning a

@@ -28,7 +28,6 @@ export interface AdminTable {
   branchId: number | null;
   tableNumber: string;
   floor: 'gf' | '2f' | null;
-  capacity: number;
   roomCharge: number | null;
   status: number;
 }
@@ -250,7 +249,6 @@ function mapAdminRow(row: any): AdminTable {
     branchId: row.BRANCH_ID != null ? Number(row.BRANCH_ID) : null,
     tableNumber: String(row.TABLE_NUMBER ?? ''),
     floor: row.FLOOR === 'gf' || row.FLOOR === '2f' ? row.FLOOR : null,
-    capacity: Number(row.CAPACITY ?? 0),
     roomCharge: row.ROOM_CHARGE != null ? Number(row.ROOM_CHARGE) : null,
     status: Number(row.STATUS ?? 0),
   };

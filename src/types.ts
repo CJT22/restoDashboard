@@ -48,7 +48,6 @@ export interface TableRoom {
   code: string; // e.g. "T-01", "KTV-A"
   type: TableType;
   floor: 1 | 2;
-  capacity: number;
   status: TableStatus;
   serverName?: string;
   // This zone's real, admin-sourced active order (undefined = no open order).
