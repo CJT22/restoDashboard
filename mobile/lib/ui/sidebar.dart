@@ -613,7 +613,8 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
   }
 
   // Order changes saved on this tablet (state/offline_queue.dart), oldest
-  // first: what each is, Sync now, and Retry/Discard for one restoAdmin refused.
+  // first: what each is, and Retry/Discard for one restoAdmin refused. The
+  // rest need no button: they're sent as soon as the connection is back.
   Widget _unsyncedCard() {
     final state = widget.state;
     final actions = state.offline.actions;
@@ -659,7 +660,6 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
           Expanded(
             child: Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.slate200)),
           ),
-          smallButton('Sync now', state.syncing || !state.offline.hasSendable ? null : state.syncNow),
         ]),
         Padding(
           padding: const EdgeInsets.only(top: 2, bottom: 4, right: 6),

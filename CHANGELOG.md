@@ -9,6 +9,11 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.9.1]
+
+### Removed
+- **The sidebar's Sync now button for saved offline changes.** It did nothing the app doesn't already do by itself: saved changes are sent the moment the connection is back, and again every 15 seconds while it's up, and the connection is retried every 3 seconds. The list of waiting changes stays, as do **Retry** and **Discard** for one restoAdmin refused, since those never go out on their own. App only, like the offline queue. Ships in tablet app 0.3.1 (build 4) ([sidebar.dart](mobile/lib/ui/sidebar.dart), [pubspec.yaml](mobile/pubspec.yaml), [order-sync-integration.md](docs/order-sync-integration.md)).
+
 ## [2.9.0]
 
 ### Added

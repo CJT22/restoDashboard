@@ -220,8 +220,9 @@ unreachable, or the server can't reach restoAdmin). It's modelled on the staff a
   folded into its create, so there are no temporary ids to map. [dashboard_state.dart](../mobile/lib/state/dashboard_state.dart)
   keeps restoAdmin's last-known state per zone and draws the queue on top of it, so a resync or
   live event never wipes a queued change.
-- **When it's sent:** the moment the stream goes live, every 15 s while the connection is up, and
-  from the sidebar's **Sync now**. Oldest first; a network failure stops the pass, and a refusal
+- **When it's sent:** the moment the stream goes live, and every 15 s while the connection is up.
+  There's no manual sync button: the stream reconnects every 3 s, so one would rarely beat it.
+  Oldest first; a network failure stops the pass, and a refusal
   (e.g. not enough stock) is kept with its reason for **Retry** / **Discard**.
 - **Why replays are safe:** the app sends `createdAt` with every create. With it,
   `POST /api/admin/orders` runs `createOrderAt` ([adminClient.ts](../server/adminClient.ts)), which
