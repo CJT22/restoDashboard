@@ -4,9 +4,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
+import '../api/app_update.dart';
 import '../api/models.dart';
 import '../theme.dart';
 import 'common.dart';
+import 'update_dialog.dart';
 
 /// One quick login button, no fields, like the web dashboard: the server
 /// signs every device in with its shared dashboard account. The server's
@@ -30,6 +32,7 @@ class _LoginPageState extends State<LoginPage> {
   final _pageKey = GlobalKey();
   final _formKey = GlobalKey();
   final _brandKey = GlobalKey();
+  final _updateKey = GlobalKey();
   final _keepOut = ValueNotifier<List<Rect>>(const []);
 
   // Measured after every layout (the form grows with a notice or an error).
@@ -46,7 +49,7 @@ class _LoginPageState extends State<LoginPage> {
       return (box.localToGlobal(Offset.zero, ancestor: page) & box.size).inflate(clearance);
     }
 
-    final rects = [?rectOf(_formKey, 28), ?rectOf(_brandKey, 10)];
+    final rects = [?rectOf(_formKey, 28), ?rectOf(_brandKey, 10), ?rectOf(_updateKey, 12)];
     if (!listEquals(rects, _keepOut.value)) _keepOut.value = rects;
   }
 
@@ -102,6 +105,8 @@ class _LoginPageState extends State<LoginPage> {
                 excludeFromSemantics: true),
           ),
         ),
+        // App only: the web dashboard updates itself on reload.
+        Positioned(top: 16, right: 16, child: _updateButton()),
       ]),
     );
   }
@@ -223,6 +228,28 @@ class _LoginPageState extends State<LoginPage> {
               style: const TextStyle(fontSize: 11, color: AppColors.slate600)),
         ),
     ]);
+  }
+
+  Widget _updateButton() {
+    return Material(
+      key: _updateKey,
+      color: AppColors.subtle,
+      shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12), side: const BorderSide(color: AppColors.border)),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: ApiClient.hasBuiltInBaseUrl ? () => showUpdateDialog(context, AppUpdates(widget.api)) : null,
+        child: const Padding(
+          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(Icons.system_update, size: 17, color: AppColors.slate300),
+            SizedBox(width: 8),
+            Text('Check for updates',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.slate300)),
+          ]),
+        ),
+      ),
+    );
   }
 
   Widget _formPanel() {

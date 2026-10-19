@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'api/api_client.dart';
+import 'api/app_update.dart';
 import 'api/models.dart';
 import 'fullscreen.dart';
 import 'state/dashboard_state.dart';
 import 'theme.dart';
 import 'ui/login_page.dart';
 import 'ui/shell.dart';
+import 'ui/update_dialog.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -77,6 +79,16 @@ class _AuthGateState extends State<AuthGate> {
       if (_auth is _SignedIn) _toSignedOut(signedOutMessages[reason]);
     });
     _restore();
+    _checkForUpdate();
+  }
+
+  // Once per launch, offers a newer release if the server has one. Quiet
+  // when there's none or the server can't be reached. Signed-in use has no
+  // update features beyond this; the sign-in page has the manual check.
+  Future<void> _checkForUpdate() async {
+    final updates = AppUpdates(api);
+    final found = await updates.checkQuietly();
+    if (found != null && mounted) await showUpdateDialog(context, updates, found: found);
   }
 
   Future<void> _restore() async {

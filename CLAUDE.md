@@ -58,11 +58,42 @@ built in, so staff never type it. Full setup and the production release checklis
   API port: it proxies `/api` and serves `/floorplans/*.webp`.
 - The address can't be changed on the tablet (no address field, no technician override). A build
   with an empty address (prod today) can't sign in until it's rebuilt with one.
-- Release builds are still signed with the debug key ([build.gradle.kts](mobile/android/app/build.gradle.kts)).
-  Before shipping prod to real tablets, a release keystore must be set up; flag this if asked to
-  build a prod release, since an APK signed with a different key can't update an installed one.
+- Release builds are signed with the release keystore named in `mobile/android/key.properties`
+  (gitignored; the keystore is outside the repo). Never sign a release with another key or commit
+  either file: tablets refuse an update signed with a different key.
 - Judge smoothness only on `--profile`/`--release`
   builds (debug is much slower); `--dart-define=PERF_OVERLAY=true` shows frame-time graphs.
+
+### Shipping an app update
+
+Tablets update themselves: the sign-in page's "Check for updates" button and a check at app startup
+ask the flavor's dashboard server for a newer release ([appReleases.ts](server/appReleases.ts),
+[app_update.dart](mobile/lib/api/app_update.dart)). Shipping a version means publishing it there.
+Publishing reaches real tablets, so do it only when the user asks, never as a side effect of a
+code change.
+
+1. **Check the flavor's server is ready.** It needs a dashboard version with `/api/app` deployed,
+   and `APP_RELEASE_TOKEN` in its `.env` matching the one in this PC's `.env`.
+   `curl <address>/api/app/version/<flavor>` should answer `{"success":true,…}`. A 404 means the
+   server's code is older.
+2. **Bump the version** in [mobile/pubspec.yaml](mobile/pubspec.yaml): `version: x.y.z+N`. `N` (the
+   Android versionCode) must be above the published one, or tablets won't install it. Raise `x.y.z`
+   to match the size of the change.
+3. **Verify the app:** `flutter analyze` and `flutter test` in `mobile/`.
+4. **Publish** from the repo root, with notes written for staff (they're shown in the update modal):
+   `npm run release:app -- dev --notes "What changed"`. The script refuses a stale build number
+   before building, builds the signed release APK with the right `--flavor` and config, and uploads
+   it. `--skip-build` re-uploads the APK already built for that flavor.
+5. **Confirm** that `curl <address>/api/app/version/<flavor>` shows the new version. Tablets pick it
+   up at their next start or "Check for updates".
+
+- Never publish an APK built without `key.properties` or signed with another key: it can't install
+  over the tablets' app.
+- Releases are per flavor and per server: publishing `dev` touches only the dev server's `dev`
+  channel. Prod has no address yet, so `prod` can't be published until `config/prod.json` has one.
+- The server keeps the latest release and the one before it in `releases/<flavor>/` (gitignored).
+  A new tablet can get the app from `<address>/api/app/download/<flavor>` in its browser.
+- Mention the new app version in that change's changelog bullet.
 
 ## restoAdmin is read-only
 

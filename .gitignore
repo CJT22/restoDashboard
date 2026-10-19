@@ -9,3 +9,6 @@ coverage/
 
 # Signed-in dashboard sessions (hold restoAdmin refresh tokens)
 .data/
+
+# Tablet app releases (published by npm run release:app, served for in-app updates)
+/releases/

@@ -9,6 +9,15 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.8.0]
+
+### Added
+- **The tablet app updates itself, with no cable.** A new version used to mean plugging every tablet into a computer to reinstall it. Now the sign-in page has a **Check for updates** button (top right), and the app also checks each time it starts. If the dashboard server has a newer release, a modal shows the version and its notes and asks "Update now?". **Yes, update** downloads the APK with a progress bar and opens Android's installer. Android still asks staff to confirm the install, and the first time it also asks to allow installs from Blue Moon. When the app is up to date, the modal says so. Once signed in, the app does no update checks, so nothing interrupts a shift. Each flavor has its own release channel on its own server, so a dev build never offers a prod APK. A new tablet can get the latest app by opening `<address>/api/app/download/<flavor>` in its browser. This is app only: the web dashboard already updates on reload ([app_update.dart](mobile/lib/api/app_update.dart), [update_dialog.dart](mobile/lib/ui/update_dialog.dart), [login_page.dart](mobile/lib/ui/login_page.dart), [main.dart](mobile/lib/main.dart), [AndroidManifest.xml](mobile/android/app/src/main/AndroidManifest.xml), [appReleases.ts](server/appReleases.ts), [index.ts](server/index.ts)).
+- **`npm run release:app -- <flavor> --notes "…"` publishes a tablet release in one step.** It checks that the build number in `pubspec.yaml` was raised, builds the flavor's signed release APK, and uploads it to that flavor's server with the `APP_RELEASE_TOKEN` from `.env`. The server keeps the latest release and the one before it in `releases/<flavor>/`, which is gitignored ([release-app.mjs](scripts/release-app.mjs), [package.json](package.json), [.env.example](.env.example), [mobile/README.md](mobile/README.md)).
+
+### Changed
+- **Tablet releases are signed with a Blue Moon release key instead of this PC's debug key.** An update only installs over an app signed with the same key. With the debug key, releases could only be built on this one PC, and losing it would have stranded every tablet. The keystore lives outside the repo, and a release build without it now stops instead of signing with another key. Because of the switch, tablets with an older build need the app uninstalled and the 0.2.0 build installed once. After that they update in-app ([build.gradle.kts](mobile/android/app/build.gradle.kts), [pubspec.yaml](mobile/pubspec.yaml)).
+
 ## [2.7.1]
 
 ### Changed

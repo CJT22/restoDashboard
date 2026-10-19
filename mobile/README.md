@@ -44,24 +44,52 @@ to change it. `prod` and `local` show a **PROD BUILD** / **LOCAL BUILD** tag the
 an address (`prod`, until its address is filled in) can't sign in: its sign-in page says so and its
 Quick Login button is disabled.
 
+### Release signing
+
+Every release build is signed with the Blue Moon release key, and every update must be: Android
+only installs an update signed with the same key as the installed app. The key lives outside the
+repo:
+
+- `C:/Users/Chester/keystores/blue-moon-dashboard-release.jks`, the keystore;
+- `android/key.properties` (gitignored), which names the keystore and holds its passwords.
+
+A release build without `key.properties` stops with an error instead of signing with another key.
+**Back up both files together**, in at least two places (a password manager's file attachment and
+an offline USB drive, say), never in git. To build on another PC, copy both there and fix
+`storeFile` in `key.properties`. A lost key means no tablet can update again: each would need the
+app uninstalled and a newly signed one installed by hand.
+
+### Publishing an update (in-app updates)
+
+Tablets update themselves: the sign-in page's **Check for updates** button (top right) and a check
+each time the app starts ask the dashboard server for a newer release of their flavor. If there is
+one, staff tap **Yes, update**, the APK downloads, and Android asks to install it. The first time,
+Android also asks to allow installs from Blue Moon. Once signed in, the app doesn't check.
+
+1. **Bump the version** in `pubspec.yaml` (`version: x.y.z+N`). The build number `N` must go up
+   every release: tablets only install a higher one.
+2. **Publish** from the repo root:
+   `npm run release:app -- dev --notes "What changed, for staff"`. This builds the flavor's release
+   APK and uploads it to that flavor's server (the address in `config/<flavor>.json`). It stops
+   early if `N` isn't above the published release.
+
+Publishing needs `APP_RELEASE_TOKEN` in the `.env` of both this PC and that server (the same value;
+see `.env.example`), and the server running a dashboard version with `/api/app`. The server keeps
+releases in `releases/<flavor>/` (gitignored). A new tablet can get the latest app without a cable
+by opening `<address>/api/app/download/<flavor>` in its browser and installing the download.
+
 ### Releasing to production
 
 1. **Set the address.** Put the production dashboard's web address in `config/prod.json`, e.g.
    `"DASHBOARD_URL": "http://<server>:2520"` (the Vite frontend's port under PM2, not the API's).
    Open it in a browser first: the sign-in page should load, and `/floorplans/first_floor.webp`
    should show the 1st floor image.
-2. **Set up release signing (once).** Release builds are still signed with the debug key
-   (`android/app/build.gradle.kts`). Create a release keystore, keep it and its passwords somewhere
-   safe outside the repo, and point the `release` build type at it. Every future update must be
-   signed with that same key: Android refuses to install an update signed with a different one, so
-   a lost key means uninstalling the app on every tablet.
-3. **Bump the version** in `pubspec.yaml` (`version: x.y.z+N`; raise `N` every release), or Android
-   won't install the APK over an older one.
-4. **Build:** `flutter build apk --release --flavor prod --dart-define-from-file=config/prod.json`.
-   The APK is `build/app/outputs/flutter-apk/app-prod-release.apk`.
-5. **Install** on each tablet (`adb install -r <apk>`, or copy the file and open it with "install
-   unknown apps" allowed). It always runs fullscreen (a swipe from an edge shows Android's
-   bars, which hide again on their own) and opens on its sign-in page, with the Quick Login button.
+2. **Set `APP_RELEASE_TOKEN`** in the production server's `.env`.
+3. **Bump the version and publish:** `npm run release:app -- prod --notes "…"`.
+4. **First install** on each tablet: open `<address>/api/app/download/prod` in the tablet's browser
+   (or `adb install` the APK from `build/app/outputs/flutter-apk/`). From then on, tablets update
+   in-app. It always runs fullscreen (a swipe from an edge shows Android's bars, which hide again on
+   their own) and opens on its sign-in page, with the Quick Login button.
 
 The app uses plain `http` (`android:usesCleartextTraffic="true"`), so an `http://` address works. An
 `https://` one does too, if the server has a valid certificate.

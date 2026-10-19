@@ -29,6 +29,7 @@ import {
 import { connectSocketBridge, tableEvents, orderEvents, bridgeEvents, isBridgeConnected, type TableUpdatedEvent, type OrderEvent } from './socketBridge.js';
 import { authRouter, requireSession, sendIfSessionEnded, sessionOf } from './auth.js';
 import { sessionEvents, type SessionEndReason } from './sessions.js';
+import { appReleasesRouter } from './appReleases.js';
 
 const app = express();
 // Trust X-Forwarded-Proto from a reverse proxy on this machine, so the
@@ -37,6 +38,8 @@ app.set('trust proxy', 'loopback');
 app.use(express.json());
 
 app.use('/api/auth', authRouter);
+// The tablet app's releases, for its "Check for updates" button (appReleases.ts).
+app.use('/api/app', appReleasesRouter);
 
 // The fixed floor plan (src/data/floorLayout.json) for clients that don't
 // bundle it, i.e. the Flutter tablet app in mobile/. Read per request so the
