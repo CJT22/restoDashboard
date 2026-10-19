@@ -51,9 +51,9 @@ class _AddItemsScreenState extends State<AddItemsScreen> with MenuCatalogLoader 
       _insufficient = null;
     });
     try {
-      final r = await widget.state.api.addItems(widget.order.id, _cart.payload());
+      // Saved on this tablet instead when restoAdmin can't be reached.
+      final r = await widget.state.addItems(widget.zone, widget.order, _cart.items);
       if (r.ok) {
-        await widget.state.refreshOrder(widget.zone).catchError((_) {});
         if (mounted) Navigator.of(context).pop();
         return;
       }
@@ -77,6 +77,16 @@ class _AddItemsScreenState extends State<AddItemsScreen> with MenuCatalogLoader 
     final aside = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Expanded(
         child: ListView(padding: const EdgeInsets.all(16), children: [
+          ListenableBuilder(
+            listenable: widget.state,
+            builder: (context, _) => widget.state.online
+                ? const SizedBox.shrink()
+                : const Padding(
+                    padding: EdgeInsets.only(bottom: 16),
+                    child: OfflineNotice('Offline. These items will be saved on this tablet and sent to restoAdmin '
+                        'when the connection is back.'),
+                  ),
+          ),
           if (existing.isNotEmpty) ...[
             FaintCard(
               padding: EdgeInsets.zero,

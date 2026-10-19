@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'api/api_client.dart';
 import 'api/app_update.dart';
+import 'api/floor_images.dart';
 import 'api/models.dart';
 import 'fullscreen.dart';
 import 'state/dashboard_state.dart';
@@ -19,6 +20,7 @@ Future<void> main() async {
   await SystemChrome.setPreferredOrientations([DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight]);
   // Always fullscreen, from before the first frame shows the bars.
   await Fullscreen.start();
+  await FloorImages.init();
   final api = await ApiClient.create();
   runApp(DashboardApp(api: api));
 }
@@ -104,6 +106,15 @@ class _AuthGateState extends State<AuthGate> {
         await _enter(user);
       }
     } catch (e) {
+      // No connection: start on what this tablet saw last, so orders can be
+      // taken offline. The session is checked once the server answers.
+      final cached = api.cachedUser;
+      if (e is ApiException && e.network && cached != null) {
+        try {
+          await _enter(cached);
+          return;
+        } catch (_) {}
+      }
       setState(() => _auth = _SignedOut(e.toString()));
     }
   }

@@ -240,6 +240,45 @@ class StatusBadge extends StatelessWidget {
   }
 }
 
+/// "NOT SYNCED", beside a zone's status: something for it is saved on this
+/// tablet and hasn't reached restoAdmin yet (state/offline_queue.dart).
+/// Indigo, since amber already means Occupied.
+class UnsyncedBadge extends StatelessWidget {
+  const UnsyncedBadge({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: 'Saved on this tablet. It goes to restoAdmin when the connection is back.',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+        decoration: BoxDecoration(
+          color: AppColors.indigo500.withValues(alpha: 0.15),
+          border: Border.all(color: AppColors.indigo400),
+          borderRadius: BorderRadius.circular(99),
+        ),
+        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.cloud_off, size: 12, color: AppColors.indigo300),
+          SizedBox(width: 4),
+          Text('NOT SYNCED',
+              style: TextStyle(color: AppColors.indigo300, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.3)),
+        ]),
+      ),
+    );
+  }
+}
+
+/// What still works with no connection, on the order screens and a zone's
+/// detail.
+class OfflineNotice extends StatelessWidget {
+  final String text;
+  const OfflineNotice(this.text, {super.key});
+
+  @override
+  Widget build(BuildContext context) =>
+      NoticeBox(color: AppColors.indigo500, textColor: AppColors.indigo300, icon: Icons.cloud_off, child: Text(text));
+}
+
 /// The − ₱amount + control shared by the room-charge row and order item
 /// rows. The trailing slot holds a trash (remove) or reset button, and is
 /// always reserved so rows line up.
@@ -599,6 +638,8 @@ class CancelOrderControl extends StatelessWidget {
   final VoidCallback onConfirm;
   final VoidCallback onDismiss;
   final bool expand;
+  // False with no connection (or for an order not in restoAdmin yet).
+  final bool enabled;
   const CancelOrderControl({
     super.key,
     required this.confirming,
@@ -609,11 +650,12 @@ class CancelOrderControl extends StatelessWidget {
     this.prompt = 'Cancel this order?',
     this.buttonLabel = 'Cancel Order',
     this.expand = false,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
-    if (!confirming) {
+    if (!confirming || !enabled) {
       return PillButton(
         label: buttonLabel,
         color: AppColors.rose500.withValues(alpha: 0.12),
@@ -622,7 +664,7 @@ class CancelOrderControl extends StatelessWidget {
         height: 38,
         fontSize: 12,
         expand: expand,
-        onPressed: onAsk,
+        onPressed: enabled ? onAsk : null,
       );
     }
     return Row(mainAxisSize: MainAxisSize.min, children: [

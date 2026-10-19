@@ -30,7 +30,9 @@ app", "the web version", a screenshot of one). The user shouldn't have to ask fo
 - Only skip the other side for something that can't apply there, and say so in your reply:
   - App only: Android system bars and insets (`fullscreen.dart`'s always-on immersive mode and inset
     handling; the app has no fullscreen toggle, and the web has no fullscreen at all),
-    the build flavors and their addresses, and GPU performance work specific to Flutter/Impeller.
+    the build flavors and their addresses, GPU performance work specific to Flutter/Impeller, and
+    the offline order queue (`offline_queue.dart`; offline, the web turns its order buttons off
+    with `OfflineNotice.tsx` instead).
   - Web only: hover cards (no hover on touch), the dormant layout editor and zoom flags, and
     browser limits.
 - Verify both: `npx tsc --noEmit -p .` (and `npx vite build` for bigger changes) for web, and

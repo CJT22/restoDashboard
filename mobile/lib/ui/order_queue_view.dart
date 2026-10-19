@@ -229,6 +229,8 @@ class _OrderQueueViewState extends State<OrderQueueView> {
     final start = _start(z);
     final rows = _receipt(order, roomRate);
     final confirming = _confirmingCancelId == z.id;
+    // These need restoAdmin, and an order saved on this tablet isn't there yet.
+    final canChange = state.online && !order.isLocal;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -314,7 +316,7 @@ class _OrderQueueViewState extends State<OrderQueueView> {
         const SizedBox(height: 16),
         // Cancel and the next step side by side across the card; while
         // confirming a cancel, its prompt takes the row.
-        if (confirming)
+        if (confirming && canChange)
           CancelOrderControl(
             confirming: true,
             busy: busy,
@@ -331,6 +333,7 @@ class _OrderQueueViewState extends State<OrderQueueView> {
                 busy: busy,
                 buttonLabel: 'Cancel',
                 expand: true,
+                enabled: canChange,
                 onAsk: () => setState(() => _confirmingCancelId = z.id),
                 onConfirm: () => _cancel(z),
                 onDismiss: () {},
@@ -347,7 +350,7 @@ class _OrderQueueViewState extends State<OrderQueueView> {
                     height: 38,
                     fontSize: 12,
                     expand: true,
-                    onPressed: busy ? null : () => _confirm(z)),
+                    onPressed: busy || !canChange ? null : () => _confirm(z)),
               ),
             ],
             if (order.status == 2) ...[
@@ -360,7 +363,7 @@ class _OrderQueueViewState extends State<OrderQueueView> {
                     height: 38,
                     fontSize: 12,
                     expand: true,
-                    onPressed: () => _settle(z)),
+                    onPressed: canChange ? () => _settle(z) : null),
               ),
             ],
           ]),

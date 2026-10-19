@@ -17,7 +17,10 @@ const signedOutMessages = {
 
 class ApiException implements Exception {
   final String message;
-  ApiException(this.message);
+  // The server couldn't be reached (or didn't answer), as opposed to
+  // answering with an error.
+  final bool network;
+  ApiException(this.message, {this.network = false});
   @override
   String toString() => message;
 }
@@ -40,6 +43,12 @@ class ApiClient {
   static const _legacyPrefs = ['dashboard_base_url', 'dashboard_base_url_override'];
   static const _prefsSession = 'dashboard_session';
   static const _cookieName = 'rd_session';
+  // Last good copies of what the app needs to start and take orders with no
+  // connection (see offline_queue.dart).
+  static const _prefsCachedUser = 'cached_user';
+  static const _prefsCachedLayout = 'cached_layout';
+  static const _prefsCachedMenu = 'cached_menu';
+  static const _prefsCachedPopularity = 'cached_menu_popularity';
 
   /// The build's address, from `--dart-define-from-file=config/<flavor>.json`.
   static final builtInBaseUrl = cleanBaseUrl(const String.fromEnvironment('DASHBOARD_URL'));
@@ -70,6 +79,9 @@ class ApiClient {
 
   String get baseUrl => builtInBaseUrl;
   bool get hasSession => _sessionId != null;
+
+  /// For the app's other saved state (offline_queue.dart, the floor's copy).
+  SharedPreferences get prefs => _prefs;
 
   static String cleanBaseUrl(String url) {
     var cleaned = url.trim();
@@ -128,9 +140,9 @@ class ApiClient {
     try {
       res = await http.Response.fromStream(await _http.send(req).timeout(const Duration(seconds: 20)));
     } on TimeoutException {
-      throw ApiException("The dashboard server didn't answer. Check the connection and try again.");
+      throw ApiException("The dashboard server didn't answer. Check the connection and try again.", network: true);
     } catch (_) {
-      throw ApiException("Can't reach the dashboard server. Check the connection and try again.");
+      throw ApiException("Can't reach the dashboard server. Check the connection and try again.", network: true);
     }
     _captureCookie(res);
     Map<String, dynamic> json = {};
@@ -146,16 +158,36 @@ class ApiClient {
   Future<dynamic> _getData(String path, String fallbackMessage) async {
     final (status, json) = await _send('GET', path);
     if (status < 200 || status >= 300 || json['success'] == false) {
-      throw ApiException((json['error'] ?? json['message'] ?? fallbackMessage).toString());
+      throw ApiException((json['error'] ?? json['message'] ?? fallbackMessage).toString(),
+          network: status >= 502 && status <= 504);
     }
     return json['data'];
   }
 
   // For order mutations, whose answers are the flat {ok, kind, message} shape.
+  // A 401, a 502-504 (the server couldn't reach restoAdmin) or an answer
+  // with no body is marked transient: it may work if sent again later.
   Future<MutationResult> _mutate(String method, String path, [Object? body]) async {
-    final (_, json) = await _send(method, path, body: body);
-    if (json.isEmpty) return const MutationResult(ok: false, message: 'No answer from the dashboard server');
-    return MutationResult.fromJson(json);
+    final (status, json) = await _send(method, path, body: body);
+    final transient = status == 401 || (status >= 502 && status <= 504);
+    if (json.isEmpty) {
+      return MutationResult(ok: false, message: 'No answer from the dashboard server', transient: transient || status >= 500);
+    }
+    return MutationResult.fromJson(json, transient: transient);
+  }
+
+  // A read that falls back to its last good copy when the server can't be
+  // reached; any other failure still throws.
+  Future<T> _cachedRead<T>(String key, Future<dynamic> Function() fetch, T Function(dynamic data) parse) async {
+    try {
+      final data = await fetch();
+      _prefs.setString(key, jsonEncode(data));
+      return parse(data);
+    } on ApiException catch (e) {
+      final saved = _prefs.getString(key);
+      if (!e.network || saved == null) rethrow;
+      return parse(jsonDecode(saved));
+    }
   }
 
   // ---- Auth (server/auth.ts) ----
@@ -165,14 +197,31 @@ class ApiClient {
     if (_sessionId == null) return null;
     final (status, json) = await _send('GET', '/api/auth/me');
     if (status != 200 || json['success'] != true) {
-      throw ApiException((json['error'] ?? "Can't reach the dashboard server.").toString());
+      throw ApiException((json['error'] ?? "Can't reach the dashboard server.").toString(), network: status >= 502);
     }
     final data = json['data'];
     if (data == null) {
       clearSession();
       return null;
     }
-    return DashboardUser.fromJson(Map<String, dynamic>.from(data));
+    return _keepUser(Map<String, dynamic>.from(data));
+  }
+
+  /// Who was signed in when the server last answered, for starting with no
+  /// connection. The session itself is checked once the server is back.
+  DashboardUser? get cachedUser {
+    final saved = _prefs.getString(_prefsCachedUser);
+    if (_sessionId == null || saved == null) return null;
+    try {
+      return DashboardUser.fromJson(Map<String, dynamic>.from(jsonDecode(saved)));
+    } catch (_) {
+      return null;
+    }
+  }
+
+  DashboardUser _keepUser(Map<String, dynamic> data) {
+    _prefs.setString(_prefsCachedUser, jsonEncode(data));
+    return DashboardUser.fromJson(data);
   }
 
   /// Quick login: the server signs in with the shared dashboard account,
@@ -182,7 +231,7 @@ class ApiClient {
     if (status != 200 || json['success'] != true) {
       throw ApiException((json['error'] ?? 'Sign-in failed. Please try again.').toString());
     }
-    return DashboardUser.fromJson(Map<String, dynamic>.from(json['data']));
+    return _keepUser(Map<String, dynamic>.from(json['data']));
   }
 
   Future<void> signOut() async {
@@ -190,12 +239,13 @@ class ApiClient {
       await _send('POST', '/api/auth/logout');
     } catch (_) {}
     clearSession();
+    _prefs.remove(_prefsCachedUser);
   }
 
   // ---- Floor layout ----
 
-  Future<FloorLayout> layout() async =>
-      FloorLayout.fromJson(Map<String, dynamic>.from(await _getData('/api/layout', 'Failed to load the floor plan')));
+  Future<FloorLayout> layout() => _cachedRead(_prefsCachedLayout, () => _getData('/api/layout', 'Failed to load the floor plan'),
+      (data) => FloorLayout.fromJson(Map<String, dynamic>.from(data)));
 
   String floorPlanImageUrl(int floor) => '$baseUrl/floorplans/${floor == 1 ? 'first' : 'second'}_floor.webp';
 
@@ -231,25 +281,33 @@ class ApiClient {
     return result;
   }
 
-  Future<List<MenuItem>> menu() async {
-    final data = await _getData('/api/admin/menu', 'Failed to load the menu from restoAdmin');
-    return (data as List? ?? []).map((e) => MenuItem.fromJson(Map<String, dynamic>.from(e))).toList();
-  }
+  // Both fall back to the last menu fetched, so orders can be taken offline.
+  Future<List<MenuItem>> menu() => _cachedRead(
+      _prefsCachedMenu,
+      () => _getData('/api/admin/menu', 'Failed to load the menu from restoAdmin'),
+      (data) => (data as List? ?? []).map((e) => MenuItem.fromJson(Map<String, dynamic>.from(e))).toList());
 
-  Future<List<MenuPopularity>> menuPopularity() async {
-    final data = await _getData('/api/admin/menu/popularity', 'Failed to load top revenue items from restoAdmin');
-    return (data as List? ?? []).map((e) => MenuPopularity.fromJson(Map<String, dynamic>.from(e))).toList();
-  }
+  Future<List<MenuPopularity>> menuPopularity() => _cachedRead(
+      _prefsCachedPopularity,
+      () => _getData('/api/admin/menu/popularity', 'Failed to load top revenue items from restoAdmin'),
+      (data) => (data as List? ?? []).map((e) => MenuPopularity.fromJson(Map<String, dynamic>.from(e))).toList());
 
   Future<SalesSummary> sales(String period) async => SalesSummary.fromJson(
       Map<String, dynamic>.from(await _getData('/api/admin/sales?period=$period', 'Failed to load sales from restoAdmin')));
 
-  Future<MutationResult> createOrder(int adminTableId, String orderType, List<Map<String, num>> items, double? roomChargeQty) =>
+  /// [createdAt] (when the order was taken) makes the create safe to send
+  /// again: the server derives the order number from it, so a repeat finds
+  /// the order it already made. [mergeOnConflict] adds the items to the
+  /// table's open order if it has one (for orders saved while offline).
+  Future<MutationResult> createOrder(int adminTableId, String orderType, List<Map<String, num>> items, double? roomChargeQty,
+          {required DateTime createdAt, bool mergeOnConflict = false}) =>
       _mutate('POST', '/api/admin/orders', {
         'tableId': adminTableId,
         'orderType': orderType,
         'items': items,
         'roomChargeQty': ?roomChargeQty,
+        'createdAt': createdAt.toUtc().toIso8601String(),
+        if (mergeOnConflict) 'mergeOnConflict': true,
       });
 
   Future<MutationResult> addItems(int orderId, List<Map<String, num>> items) =>

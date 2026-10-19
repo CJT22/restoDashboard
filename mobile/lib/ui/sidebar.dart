@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../api/live_stream.dart';
 import '../api/models.dart';
 import '../state/dashboard_state.dart';
+import '../state/offline_queue.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import '../util/room_timer.dart';
@@ -303,6 +304,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                 ),
               ),
             ]),
+            if (!state.offline.isEmpty) ...[const SizedBox(height: 10), _unsyncedCard()],
           ]),
         ),
       ),
@@ -610,6 +612,104 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
     );
   }
 
+  // Order changes saved on this tablet (state/offline_queue.dart), oldest
+  // first: what each is, Sync now, and Retry/Discard for one restoAdmin refused.
+  Widget _unsyncedCard() {
+    final state = widget.state;
+    final actions = state.offline.actions;
+    final count = actions.length;
+    final title = state.syncing
+        ? 'Sending $count saved change${count == 1 ? '' : 's'}…'
+        : '$count change${count == 1 ? '' : 's'} saved on this tablet';
+
+    String describe(OfflineAction a) {
+      final units = a.items.fold<int>(0, (s, i) => s + i.qty);
+      return switch (a.type) {
+        OfflineActionType.createOrder => 'New order · ${units == 1 ? '1 item' : '$units items'}'
+            '${(a.roomChargeQty ?? 1) > 1 ? ' · ${formatQty(a.roomChargeQty!)}h room' : ''}',
+        OfflineActionType.addItems => '+${units == 1 ? '1 item' : '$units items'}',
+        OfflineActionType.roomCharge => 'Room hours: ${formatQty(a.roomChargeQty ?? 1)}h',
+      };
+    }
+
+    Widget smallButton(String label, VoidCallback? onTap, {Color color = AppColors.indigo300}) => InkWell(
+          borderRadius: BorderRadius.circular(8),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            child: Text(label,
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: onTap == null ? AppColors.slate500 : color)),
+          ),
+        );
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+      decoration: BoxDecoration(
+        color: AppColors.indigo500.withValues(alpha: 0.1),
+        border: Border.all(color: AppColors.indigo500.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Row(children: [
+          state.syncing
+              ? const SizedBox(
+                  width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.indigo300))
+              : const Icon(Icons.cloud_off, size: 15, color: AppColors.indigo300),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(title, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.slate200)),
+          ),
+          smallButton('Sync now', state.syncing || !state.offline.hasSendable ? null : state.syncNow),
+        ]),
+        Padding(
+          padding: const EdgeInsets.only(top: 2, bottom: 4, right: 6),
+          child: Text(
+              state.online
+                  ? 'Sending them to restoAdmin.'
+                  : 'They go to restoAdmin by themselves when the connection is back.',
+              style: const TextStyle(fontSize: 10, color: AppColors.slate400)),
+        ),
+        for (final a in actions)
+          Padding(
+            padding: const EdgeInsets.only(top: 4, right: 6),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text.rich(
+                TextSpan(children: [
+                  TextSpan(
+                      text: '${state.zoneForAction(a)?.name ?? 'Table'}  ',
+                      style: const TextStyle(fontWeight: FontWeight.w700, color: Colors.white)),
+                  TextSpan(text: describe(a)),
+                ]),
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 11, color: AppColors.slate300),
+              ),
+              if (a.failed) ...[
+                Text(a.error!, style: const TextStyle(fontSize: 10, color: AppColors.rose300)),
+                Row(children: [
+                  smallButton('Retry', state.syncing ? null : () => state.retry(a)),
+                  smallButton('Discard', state.syncing ? null : () => _confirmDiscard(a), color: AppColors.rose300),
+                ]),
+              ],
+            ]),
+          ),
+      ]),
+    );
+  }
+
+  Future<void> _confirmDiscard(OfflineAction a) async {
+    final zone = widget.state.zoneForAction(a);
+    final confirmed = await confirmDialog(
+      context,
+      title: 'Discard this change?',
+      description: '${zone?.name ?? 'This table'}: it was saved on this tablet but never reached restoAdmin. '
+          'Discarding it can\'t be undone.',
+      confirmText: 'Discard',
+      confirmIcon: Icons.delete_outline,
+      icon: Icons.cloud_off,
+    );
+    if (confirmed) widget.state.discard(a);
+  }
+
   // ---------------------------------------------------------------- rail --
 
   Widget _rail(DateTime now) {
@@ -658,6 +758,27 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                   Positioned(top: 6, right: 6, child: _Dot(color: badge.color)),
                 ]),
               ),
+              // Saved changes: opens the sidebar on their list.
+              if (!state.offline.isEmpty)
+                Tooltip(
+                  message: '${state.offline.actions.length} change${state.offline.actions.length == 1 ? '' : 's'} '
+                      'saved on this tablet',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: widget.onToggleCollapsed,
+                    child: SizedBox(
+                      width: 44,
+                      height: 30,
+                      child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                        Icon(Icons.cloud_off,
+                            size: 15, color: state.offline.failedCount > 0 ? AppColors.rose400 : AppColors.indigo300),
+                        const SizedBox(width: 3),
+                        Text('${state.offline.actions.length}',
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.indigo300)),
+                      ]),
+                    ),
+                  ),
+                ),
               const _RailDivider(),
               _railNav(NavTab.floorplan, Icons.grid_view_rounded, 'Floor Plan', AppColors.indigo400),
               _railNav(NavTab.directory, Icons.layers_outlined, 'All Tables & Rooms (${state.zones.length})',

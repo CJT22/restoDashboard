@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
+import '../api/api_client.dart';
 import '../api/models.dart';
 import '../state/dashboard_state.dart';
 import '../state/menu_catalog.dart';
+import '../state/offline_queue.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import '../util/room_timer.dart';
@@ -69,13 +71,14 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
     state.addListener(_onStateChanged);
     final adminId = zone.adminTableId;
     if (adminId != null) {
-      // Fresh copy on open; live events keep it current after that.
+      // Fresh copy on open; live events keep it current after that. Offline,
+      // the last copy stays (and the notice says so).
       state.refreshOrder(zone).catchError((Object e) {
-        if (mounted) setState(() => _error = e.toString());
+        if (mounted && !(e is ApiException && e.network)) setState(() => _error = e.toString());
       });
-      state.api.roomChargeRate(adminId).then((r) {
+      state.roomRate(zone).then((r) {
         if (mounted) setState(() => _roomRate = r);
-      }).catchError((_) {});
+      });
     }
     loadMenuCatalog(state.api).then((c) {
       if (mounted) setState(() => _catalog = c);
@@ -133,12 +136,9 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
     if (order == null || _roomRate <= 0 || _roomSaving) return;
     setState(() => _roomSaving = true);
     await _run(() async {
-      final r = await state.api.updateRoomCharge(order.id, _roundToHalf(qty < 1 ? 1 : qty));
-      if (r.ok) {
-        await state.refreshOrder(zone);
-      } else {
-        _fail(r, 'Failed to update room charge');
-      }
+      // Saved on this tablet instead when restoAdmin can't be reached.
+      final r = await state.updateRoomCharge(zone, order, _roundToHalf(qty < 1 ? 1 : qty));
+      if (!r.ok) _fail(r, 'Failed to update room charge');
     });
     if (mounted) setState(() => _roomSaving = false);
   }
@@ -186,7 +186,15 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
     if (mounted) setState(() => _savingItemId = null);
   }
 
-  // A drink already on the order goes on its row like that row's +.
+  // Settling, cancelling and editing items need restoAdmin, and an order
+  // that's still saved on this tablet has nothing there to change yet.
+  bool _canChange(OrderSummary order) => state.online && !order.isLocal;
+
+  // A row can be edited once all of its lines are in restoAdmin.
+  bool _canEditRow(OrderSummary order, OrderLineGroup row) => _canChange(order) && !row.lines.any((l) => l.isLocal);
+
+  // A drink already on the order goes on its row like that row's +; with no
+  // connection it's added as a new line instead (saved on this tablet).
   Future<void> _quickDrink(CatalogItem drink) async {
     final order = zone.activeOrder;
     if (order == null || _savingDrinkId != null || _savingItemId != null) return;
@@ -194,19 +202,13 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
     await _run(() async {
       final rows = groupOrderLines(order.items);
       for (final row in rows) {
-        if (row.menuId == drink.id) {
+        if (row.menuId == drink.id && _canEditRow(order, row)) {
           await _stepRow(row, 1);
           return;
         }
       }
-      final r = await state.api.addItems(order.id, [
-        {'menuId': drink.id, 'qty': 1, 'unitPrice': drink.price},
-      ]);
-      if (r.ok) {
-        await state.refreshOrder(zone);
-      } else {
-        _fail(r, 'Failed to add ${drink.name}');
-      }
+      final r = await state.addItems(zone, order, [QueuedItem(menuId: drink.id, name: drink.name, unitPrice: drink.price, qty: 1)]);
+      if (!r.ok) _fail(r, 'Failed to add ${drink.name}');
     });
     if (mounted) setState(() => _savingDrinkId = null);
   }
@@ -285,6 +287,15 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
                   child: Text("This zone isn't linked to a restoAdmin table, so orders can't be placed from here. "
                       'Please let a developer know.'),
                 ),
+                const SizedBox(height: 12),
+              ],
+              if (order != null && !state.online) ...[
+                const OfflineNotice('Offline. Added items and room hours are saved on this tablet and sent to '
+                    'restoAdmin when the connection is back. Settling, cancelling and editing items need a connection.'),
+                const SizedBox(height: 12),
+              ] else if (order != null && order.isLocal) ...[
+                const OfflineNotice('This order is saved on this tablet and is being sent to restoAdmin. '
+                    'Settling, cancelling and editing items wait until it has arrived.'),
                 const SizedBox(height: 12),
               ],
               if (_error != null) ...[NoticeBox.error(_error!), const SizedBox(height: 12)],
@@ -371,9 +382,10 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
                           ),
                           QtyStepper(
                             amount: peso(row.lineTotal),
-                            onDecrement: busyRow || row.quantity <= 1 ? null : () => _rowStep(row, -1),
-                            onIncrement: busyRow ? null : () => _rowStep(row, 1),
-                            onRemove: () => _deleteRow(row),
+                            onDecrement:
+                                busyRow || row.quantity <= 1 || !_canEditRow(order, row) ? null : () => _rowStep(row, -1),
+                            onIncrement: busyRow || !_canEditRow(order, row) ? null : () => _rowStep(row, 1),
+                            onRemove: _canEditRow(order, row) ? () => _deleteRow(row) : null,
                           ),
                         ]),
                       ),
@@ -433,6 +445,7 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
                 ),
                 const SizedBox(width: 8),
                 StatusBadge(zone.status, withIcon: true),
+                if (zone.unsynced) ...[const SizedBox(width: 6), const UnsyncedBadge()],
               ]),
               const SizedBox(height: 2),
               Text('Floor ${zone.floor} • ${zoneKindLabel(zone, _roomRate)}',
@@ -461,6 +474,7 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
             CancelOrderControl(
               confirming: _confirmingCancel,
               busy: _actionBusy,
+              enabled: _canChange(order),
               onAsk: () => setState(() => _confirmingCancel = true),
               onConfirm: _cancel,
               onDismiss: () => setState(() => _confirmingCancel = false),
@@ -469,7 +483,12 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
             // a Pending order that came from restoAdmin.
             if (order.status == 3) ...[
               const SizedBox(width: 8),
-              PillButton(label: 'Confirm', icon: Icons.check, height: 38, fontSize: 12, onPressed: _actionBusy ? null : _confirm),
+              PillButton(
+                  label: 'Confirm',
+                  icon: Icons.check,
+                  height: 38,
+                  fontSize: 12,
+                  onPressed: _actionBusy || !_canChange(order) ? null : _confirm),
             ],
             if (order.status == 2) ...[
               const SizedBox(width: 8),
@@ -479,7 +498,7 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
                   color: AppColors.emerald600,
                   height: 38,
                   fontSize: 12,
-                  onPressed: _settle),
+                  onPressed: _canChange(order) ? _settle : null),
             ],
             const SizedBox(width: 8),
           ],

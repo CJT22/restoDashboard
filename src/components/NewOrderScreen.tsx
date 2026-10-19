@@ -6,6 +6,7 @@ import { formatZoneSubtitle } from '../utils/zoneLabels';
 import { QtyStepper } from './QtyStepper';
 import { QuickAddDrinks } from './QuickAddDrinks';
 import { OrderScreen, CartLineList, InsufficientAlert, useOrderCart, useMenuCatalog } from './OrderScreen';
+import { NEEDS_CONNECTION_TEXT, OfflineNotice, useOnline } from './OfflineNotice';
 
 const roundToHalf = (v: number) => Math.round(v * 2) / 2;
 
@@ -20,6 +21,8 @@ interface NewOrderScreenProps {
 export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, onOrderChanged }) => {
   const { catalog, error: catalogError } = useMenuCatalog();
   const cart = useOrderCart();
+  // Offline, the cart can still be built; sending it waits for the connection.
+  const online = useOnline();
   const [orderType, setOrderType] = useState('DINE_IN');
 
   // This table's hourly room-charge rate (0 = no room charge on this table),
@@ -123,6 +126,7 @@ export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, 
   const aside = (
     <>
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 space-y-4">
+        {!online && <OfflineNotice>{NEEDS_CONNECTION_TEXT}</OfflineNotice>}
         {/* No Order No field: restoAdmin still gets a unique order number,
             but the backend generates it (server/adminClient.ts) and the
             dashboard never shows it. */}
@@ -203,7 +207,7 @@ export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, 
         {conflict ? (
           <button
             onClick={handleAddToExisting}
-            disabled={submitting || cart.lines.length === 0}
+            disabled={!online || submitting || cart.lines.length === 0}
             className="w-full h-11 rounded-xl bg-amber-600 hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-bold"
           >
             {submitting ? 'Adding…' : 'Add Items to Existing Order'}
@@ -211,7 +215,7 @@ export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, 
         ) : (
           <button
             onClick={handleSubmit}
-            disabled={submitting || (cart.lines.length === 0 && !hasRoomCharge)}
+            disabled={!online || submitting || (cart.lines.length === 0 && !hasRoomCharge)}
             className="w-full h-11 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-bold shadow-lg shadow-indigo-600/20"
           >
             {submitting ? 'Creating…' : 'Create Order'}

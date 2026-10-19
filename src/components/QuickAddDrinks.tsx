@@ -14,6 +14,8 @@ interface QuickAddDrinksProps {
   onDecrement?: (item: CatalogItem) => void;
   // The drink whose tap is being saved, if any; disables every card meanwhile.
   busyId?: number | null;
+  // Every card off, e.g. while offline (see OfflineNotice.tsx).
+  disabled?: boolean;
   defaultExpanded?: boolean;
 }
 
@@ -26,6 +28,7 @@ export const QuickAddDrinks: React.FC<QuickAddDrinksProps> = ({
   onAdd,
   onDecrement,
   busyId = null,
+  disabled = false,
   defaultExpanded = true,
 }) => {
   const [expanded, setExpanded] = useState(defaultExpanded);
@@ -89,7 +92,7 @@ export const QuickAddDrinks: React.FC<QuickAddDrinksProps> = ({
                   <button
                     type="button"
                     onClick={() => onAdd(d)}
-                    disabled={busyId != null}
+                    disabled={disabled || busyId != null}
                     className="h-7 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white text-[11px] font-semibold flex items-center justify-center gap-1"
                   >
                     {busyId === d.id ? 'Adding…' : (

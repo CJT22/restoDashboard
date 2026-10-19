@@ -5,6 +5,7 @@ import { addItemsToOrder, groupOrderLines } from '../services/orderSync';
 import { formatZoneSubtitle } from '../utils/zoneLabels';
 import { QuickAddDrinks } from './QuickAddDrinks';
 import { OrderScreen, CartLineList, InsufficientAlert, useOrderCart, useMenuCatalog } from './OrderScreen';
+import { NEEDS_CONNECTION_TEXT, OfflineNotice, useOnline } from './OfflineNotice';
 
 interface AddItemsScreenProps {
   table: TableRoom;
@@ -21,6 +22,7 @@ interface AddItemsScreenProps {
 export const AddItemsScreen: React.FC<AddItemsScreenProps> = ({ table, order, onClose, onAdded }) => {
   const { catalog, error: catalogError } = useMenuCatalog();
   const cart = useOrderCart();
+  const online = useOnline();
   const [showExisting, setShowExisting] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -56,6 +58,7 @@ export const AddItemsScreen: React.FC<AddItemsScreenProps> = ({ table, order, on
   const aside = (
     <>
       <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 space-y-4">
+        {!online && <OfflineNotice>{NEEDS_CONNECTION_TEXT}</OfflineNotice>}
         {order.items.length > 0 && (
           <div className="rounded-2xl bg-white/[0.02] border border-white/5">
             <button
@@ -119,7 +122,7 @@ export const AddItemsScreen: React.FC<AddItemsScreenProps> = ({ table, order, on
         </div>
         <button
           onClick={handleSubmit}
-          disabled={submitting || cart.lines.length === 0}
+          disabled={!online || submitting || cart.lines.length === 0}
           className="w-full h-11 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-bold shadow-lg shadow-indigo-600/20"
         >
           {submitting ? 'Adding…' : 'Add to Order'}

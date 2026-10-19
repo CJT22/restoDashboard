@@ -38,9 +38,9 @@ class _NewOrderScreenState extends State<NewOrderScreen> with MenuCatalogLoader 
     super.initState();
     loadCatalog(widget.state.api);
     _cart.addListener(_changed);
-    widget.state.api.roomChargeRate(zone.adminTableId!).then((rate) {
+    widget.state.roomRate(zone).then((rate) {
       if (mounted) setState(() => _roomRate = rate);
-    }).catchError((_) {});
+    });
   }
 
   void _changed() => setState(() {});
@@ -55,13 +55,15 @@ class _NewOrderScreenState extends State<NewOrderScreen> with MenuCatalogLoader 
   bool get _hasRoom => _roomRate > 0;
   double get _roomTotal => _hasRoom ? _roomQty * _roomRate : 0;
 
-  // After a create/add: fetch the order so the detail view opens on it.
+  // After adding to the existing order: fetch it so the detail view opens on it.
   Future<void> _finish() async {
     final fresh = await widget.state.api.activeOrderForTable(zone.adminTableId!);
     widget.state.orderChanged(zone, fresh);
     if (mounted) Navigator.of(context).pop(fresh != null);
   }
 
+  // Sent, or saved on this tablet when restoAdmin can't be reached; the
+  // zone shows it either way, and the detail view opens on it.
   Future<void> _submit() async {
     if (_cart.isEmpty && !_hasRoom) return;
     setState(() {
@@ -70,10 +72,9 @@ class _NewOrderScreenState extends State<NewOrderScreen> with MenuCatalogLoader 
       _insufficient = null;
     });
     try {
-      final r = await widget.state.api
-          .createOrder(zone.adminTableId!, _orderType, _cart.payload(), _hasRoom ? _roomQty : null);
+      final r = await widget.state.createOrder(zone, _orderType, _cart.items, _hasRoom ? _roomQty : null);
       if (r.ok) {
-        await _finish();
+        if (mounted) Navigator.of(context).pop(zone.activeOrder != null);
         return;
       }
       if (r.kind == 'conflict') {
@@ -122,6 +123,16 @@ class _NewOrderScreenState extends State<NewOrderScreen> with MenuCatalogLoader 
     final aside = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Expanded(
         child: ListView(padding: const EdgeInsets.all(16), children: [
+          ListenableBuilder(
+            listenable: widget.state,
+            builder: (context, _) => widget.state.online
+                ? const SizedBox.shrink()
+                : const Padding(
+                    padding: EdgeInsets.only(bottom: 16),
+                    child: OfflineNotice('Offline. This order will be saved on this tablet and sent to restoAdmin '
+                        'when the connection is back.'),
+                  ),
+          ),
           const FieldLabel('Order Type'),
           Row(children: [
             for (final (value, label) in orderTypes) ...[

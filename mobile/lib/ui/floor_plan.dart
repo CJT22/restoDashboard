@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../api/floor_images.dart';
 import '../api/models.dart';
 import '../state/dashboard_state.dart';
 import '../theme.dart';
@@ -131,7 +132,13 @@ class FloorPlanView extends StatelessWidget {
                               // (medium) filtering only adds GPU work.
                               filterQuality: FilterQuality.low,
                               gaplessPlayback: true,
-                              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                              // No connection: the copy saved on this tablet.
+                              errorBuilder: (_, _, _) {
+                                final saved = FloorImages.cached(floor);
+                                return saved == null
+                                    ? const SizedBox.shrink()
+                                    : Image.file(saved, fit: BoxFit.fill, filterQuality: FilterQuality.low, gaplessPlayback: true);
+                              },
                             ),
                           ),
                         ),
@@ -556,6 +563,17 @@ class _ZoneTile extends StatelessWidget {
               ]),
             ),
           ),
+          // Saved on this tablet, not in restoAdmin yet.
+          if (zone.unsynced)
+            Positioned(
+              top: l.inset - 2,
+              right: l.inset - 2,
+              child: Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(color: const Color(0xA6000000), borderRadius: BorderRadius.circular(6)),
+                child: Icon(Icons.cloud_off, size: l.fontSize + 2, color: AppColors.indigo300),
+              ),
+            ),
         ]),
       ),
     );

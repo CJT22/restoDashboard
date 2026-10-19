@@ -119,7 +119,10 @@ class ZoneCardHeader extends StatelessWidget {
         ),
       ),
       const SizedBox(width: 12),
-      StatusBadge(zone.status),
+      Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+        StatusBadge(zone.status),
+        if (zone.unsynced) ...[const SizedBox(height: 4), const UnsyncedBadge()],
+      ]),
     ]);
   }
 }

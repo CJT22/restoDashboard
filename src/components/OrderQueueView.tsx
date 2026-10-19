@@ -20,6 +20,7 @@ import {
   TIMER_TEXT_CLASS,
 } from '../utils/roomTimer';
 import { SettlePaymentModal } from './SettlePaymentModal';
+import { useOnline } from './OfflineNotice';
 import { UtensilsCrossed, Check, Ban, Wallet, CheckCircle2 } from 'lucide-react';
 
 interface OrderQueueViewProps {
@@ -117,6 +118,8 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
   const [cancelConfirmId, setCancelConfirmId] = useState<string | null>(null);
   const [settlingTable, setSettlingTable] = useState<TableRoom | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Offline, the cards' actions wait for the connection.
+  const online = useOnline();
 
   const allActive = tables.filter(hasActiveOrder);
   const countOnFloor = (floor: FloorFilter) =>
@@ -259,7 +262,7 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
             and the next step side by side; while confirming a cancel, its
             prompt takes the row. */}
         <div className="mt-auto pt-4 flex items-center gap-2">
-          {cancelConfirmId === table.id ? (
+          {cancelConfirmId === table.id && online ? (
             <>
               <span className="text-xs text-rose-300">Cancel order?</span>
               <button
@@ -280,7 +283,8 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
             <>
               <button
                 onClick={() => setCancelConfirmId(table.id)}
-                className="flex-1 h-[38px] rounded-xl bg-rose-500/[0.12] hover:bg-rose-500/20 border border-rose-500/30 text-rose-300 text-xs font-bold"
+                disabled={!online}
+                className="flex-1 h-[38px] rounded-xl bg-rose-500/[0.12] hover:bg-rose-500/20 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-500/[0.12] border border-rose-500/30 text-rose-300 text-xs font-bold"
               >
                 Cancel
               </button>
@@ -289,7 +293,7 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
               {order.status === 3 && (
                 <button
                   onClick={() => handleConfirm(table)}
-                  disabled={isLoading}
+                  disabled={!online || isLoading}
                   className="flex-1 h-[38px] rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-bold flex items-center justify-center gap-1.5"
                 >
                   <Check className="w-3.5 h-3.5" /> Confirm
@@ -299,7 +303,8 @@ export const OrderQueueView: React.FC<OrderQueueViewProps> = ({
               {order.status === 2 && (
                 <button
                   onClick={() => setSettlingTable(table)}
-                  className="flex-1 h-[38px] rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center justify-center gap-1.5"
+                  disabled={!online}
+                  className="flex-1 h-[38px] rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-600 text-white text-xs font-bold flex items-center justify-center gap-1.5"
                 >
                   <Wallet className="w-3.5 h-3.5" /> Settle
                 </button>

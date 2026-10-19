@@ -70,6 +70,14 @@ class OrderLineItem {
         unitPrice: _d(row['UNIT_PRICE']),
         lineTotal: _d(row['LINE_TOTAL']),
       );
+
+  /// The fromApi shape, for the saved copy of the floor.
+  Map<String, dynamic> toJson() =>
+      {'id': id, 'menuId': menuId, 'menuName': name, 'qty': quantity, 'unitPrice': unitPrice, 'lineTotal': lineTotal};
+
+  /// Saved on this tablet but not in restoAdmin yet (offline_queue.dart), so
+  /// it has no restoAdmin id to edit.
+  bool get isLocal => id < 0;
 }
 
 /// A zone's open order, from restoAdmin. Status: 3=Pending, 2=Confirmed,
@@ -116,20 +124,40 @@ class OrderSummary {
             : const [],
       );
 
-  OrderSummary copyWith({int? status, double? roomRate}) => OrderSummary(
+  OrderSummary copyWith({int? status, double? roomRate, double? serviceCharge, double? grandTotal, List<OrderLineItem>? items}) =>
+      OrderSummary(
         id: id,
         orderNo: orderNo,
         orderType: orderType,
         status: status ?? this.status,
-        subtotal: subtotal,
-        serviceCharge: serviceCharge,
+        subtotal: items == null ? subtotal : items.fold(0, (s, i) => s + i.lineTotal),
+        serviceCharge: serviceCharge ?? this.serviceCharge,
         createdAt: createdAt,
         roomRate: roomRate ?? this.roomRate,
-        grandTotal: grandTotal,
-        items: items,
+        grandTotal: grandTotal ?? this.grandTotal,
+        items: items ?? this.items,
       );
 
   bool get isActive => status == 2 || status == 3;
+
+  /// Saved on this tablet while offline and not in restoAdmin yet (a
+  /// negative id, see offline_queue.dart). Settling, cancelling and editing
+  /// its items wait until it has synced.
+  bool get isLocal => id < 0;
+
+  /// The fromApi shape, for the saved copy of the floor.
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'orderNo': orderNo,
+        'orderType': orderType,
+        'status': status,
+        'subtotal': subtotal,
+        'serviceCharge': serviceCharge,
+        'createdAt': createdAt,
+        'roomRate': roomRate,
+        'grandTotal': grandTotal,
+        'items': [for (final i in items) i.toJson()],
+      };
 }
 
 /// A table or room on the floor plan: its fixed geometry and restoAdmin link
@@ -147,6 +175,9 @@ class Zone {
   TableStatus status;
   OrderSummary? activeOrder;
   double? adminRoomCharge;
+  // Something for this table is saved on this tablet, waiting to reach
+  // restoAdmin (kept by DashboardState from offline_queue.dart).
+  bool unsynced = false;
 
   Zone({
     required this.id,
@@ -338,19 +369,42 @@ class MutationResult {
   final bool ok;
   final String? kind; // conflict | insufficient | error
   final String? message;
+  final int? id; // the order, for a create
   final int? existingOrderId;
   final List<Map<String, dynamic>> insufficient;
+  // A create's items went onto the table's already-open order.
+  final bool merged;
+  // Failed for want of a connection (or a session), not because restoAdmin
+  // refused it, so worth sending again later. See ApiClient._mutate.
+  final bool transient;
+  // Not sent: saved on this tablet until the connection is back.
+  final bool queued;
 
-  const MutationResult({required this.ok, this.kind, this.message, this.existingOrderId, this.insufficient = const []});
+  const MutationResult({
+    required this.ok,
+    this.kind,
+    this.message,
+    this.id,
+    this.existingOrderId,
+    this.insufficient = const [],
+    this.merged = false,
+    this.transient = false,
+    this.queued = false,
+  });
 
-  factory MutationResult.fromJson(Map<String, dynamic> j) => MutationResult(
+  const MutationResult.queued() : this(ok: true, queued: true);
+
+  factory MutationResult.fromJson(Map<String, dynamic> j, {bool transient = false}) => MutationResult(
         ok: j['ok'] == true,
         kind: j['kind']?.toString(),
         message: (j['message'] ?? j['error'])?.toString(),
+        id: j['id'] == null ? null : _i(j['id']),
         existingOrderId: j['existingOrderId'] == null ? null : _i(j['existingOrderId']),
         insufficient: (j['insufficient'] is List)
             ? (j['insufficient'] as List).map((e) => Map<String, dynamic>.from(e as Map)).toList()
             : const [],
+        merged: j['merged'] == true,
+        transient: transient && j['ok'] != true,
       );
 }
 

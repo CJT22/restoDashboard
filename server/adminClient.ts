@@ -421,7 +421,7 @@ function formatOrderNo(date: Date): string {
 // collision has to be resolved here instead of surfacing as an error.
 const ORDER_NO_ATTEMPTS = 5;
 
-export async function createOrder(session: AdminSession, params: {
+export interface CreateOrderParams {
   tableId: number;
   orderType: string;
   items: CreateOrderItemInput[];
@@ -430,7 +430,144 @@ export async function createOrder(session: AdminSession, params: {
   // Anything beyond 1 is billed as additional SERVICE_CHARGE here. Omit/1 for
   // a table with no room charge, or when the caller doesn't need to adjust it.
   roomChargeQty?: number;
-}): Promise<CreateOrderResult> {
+}
+
+// The SERVICE_CHARGE to send for the hours beyond the base one restoAdmin
+// adds by itself.
+async function extraRoomCharge(session: AdminSession, tableId: number, roomChargeQty: number | undefined): Promise<number> {
+  const qty = Math.max(1, Number(roomChargeQty) || 1);
+  if (qty <= 1) return 0;
+  const tables = await getBlueMoonTables(session);
+  const rate = tables.find((t) => t.id === tableId)?.roomCharge || 0;
+  return (qty - 1) * rate;
+}
+
+// Dashboard orders skip the Pending step and go straight to Confirmed.
+// This goes through restoAdmin's status endpoint rather than POSTing
+// STATUS: 2 because confirming is what deducts inventory
+// (InventoryDeductionService.deductOnOrderConfirmed) — a create alone
+// never would. If the confirm fails, cancel the just-created order so
+// the table isn't left holding a half-made one.
+async function confirmNewOrder(session: AdminSession, id: number, orderNo: string): Promise<CreateOrderResult> {
+  const confirmed = await updateOrderStatus(session, id, 2).catch((err: any) => ({ ok: false, message: err?.message }));
+  if (!confirmed.ok) {
+    await updateOrderStatus(session, id, -1).catch(() => undefined);
+    return { ok: false, kind: 'error', message: confirmed.message || 'Order was created but could not be confirmed, so it was cancelled.' };
+  }
+  return { ok: true, id, orderNo };
+}
+
+// An instant as Asia/Manila wall-clock parts, the time zone restoAdmin reads
+// a naive ENCODED_DT in (see encodedDtToIso).
+function manilaParts(date: Date) {
+  const d = new Date(date.getTime() + 8 * 3600_000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return {
+    ymd: `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}`,
+    date: `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`,
+    hms: `${pad(d.getUTCHours())}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())}`,
+    time: `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}:${pad(d.getUTCSeconds())}`,
+  };
+}
+
+export interface CreateOrderAtResult extends CreateOrderResult {
+  // The items went onto the table's already-open order instead (mergeOnConflict).
+  merged?: boolean;
+}
+
+// Creates an order taken at `createdAt`, safely repeatable: the tablet app
+// uses it for every order, so one it saved while offline (or whose answer
+// was lost) can be sent again without making a second order.
+//
+// It goes through restoAdmin's staff-app endpoint, POST /api/orders, not
+// the admin POST /orders that createOrder uses, because only that one
+// keeps the given ENCODED_DT (so the room timer starts when the order was
+// really taken) and answers a repeated ORDER_NO with the order it already
+// made (`already_exists`) instead of an error. The number is derived from
+// `createdAt`, so every retry of one order sends the same number. If that
+// number belongs to another table's order (two orders in the same second),
+// it steps a second forward, as createOrder does.
+//
+// With `mergeOnConflict`, a table that already has an open order (someone
+// opened one while this order waited offline) gets these items added to it
+// instead; the room hours are left as that order has them.
+export async function createOrderAt(
+  session: AdminSession,
+  params: CreateOrderParams & { createdAt: string; mergeOnConflict?: boolean }
+): Promise<CreateOrderAtResult> {
+  const createdAt = new Date(params.createdAt);
+  if (Number.isNaN(createdAt.getTime())) {
+    return { ok: false, kind: 'error', message: 'Invalid order time' };
+  }
+  const subtotal = params.items.reduce((sum, it) => sum + it.qty * it.unitPrice, 0);
+  const serviceCharge = await extraRoomCharge(session, params.tableId, params.roomChargeQty);
+  const { date, time } = manilaParts(createdAt);
+
+  const postOrder = (orderNo: string) =>
+    authedFetch(session, '/api/orders', {
+      method: 'POST',
+      body: JSON.stringify({
+        branch_id: ADMIN_BRANCH_ID,
+        order_no: orderNo,
+        table_id: params.tableId,
+        order_type: params.orderType,
+        subtotal,
+        tax_amount: 0,
+        service_charge: serviceCharge,
+        discount_amount: 0,
+        grand_total: subtotal + serviceCharge,
+        items: params.items.map((it) => ({ menu_id: it.menuId, qty: it.qty, unit_price: it.unitPrice, status: 3 })),
+        encoded_dt: `${date} ${time}`,
+      }),
+    });
+
+  let res!: Response;
+  let json: any;
+  for (let attempt = 0; attempt < ORDER_NO_ATTEMPTS; attempt++) {
+    const { ymd, hms } = manilaParts(new Date(createdAt.getTime() + attempt * 1000));
+    res = await postOrder(`ORD-${ymd}-${hms}`);
+    json = await res.json().catch(() => ({}));
+    const takenByAnotherTable =
+      res.ok && json?.data?.already_exists === true && Number(json.data.table_id) !== params.tableId;
+    if (!takenByAnotherTable) break;
+  }
+
+  if (res.ok && json?.success !== false && json?.data?.order_id != null) {
+    const id = Number(json.data.order_id);
+    const orderNo = String(json.data.order_no);
+    // Already made by an earlier try: confirm it only if that try stopped
+    // short of it. Settled or cancelled since then also counts as done.
+    if (json.data.already_exists === true && Number(json.data.status) !== 3) {
+      return { ok: true, id, orderNo };
+    }
+    return confirmNewOrder(session, id, orderNo);
+  }
+  if (res.status === 409 && json?.code === 'ACTIVE_ORDER_EXISTS') {
+    const existingOrderId = Number(json.existing_order_id);
+    if (params.mergeOnConflict) {
+      if (params.items.length === 0) {
+        // Nothing to add: the open order already bills the room.
+        return { ok: true, id: existingOrderId, orderNo: String(json.existing_order_no), merged: true };
+      }
+      const added = await addItemsToOrder(session, existingOrderId, params.items);
+      if (!added.ok) return { ok: false, kind: added.kind, insufficient: added.insufficient, message: added.message };
+      return { ok: true, id: existingOrderId, orderNo: String(json.existing_order_no), merged: true };
+    }
+    return {
+      ok: false,
+      kind: 'conflict',
+      existingOrderId,
+      existingOrderNo: String(json.existing_order_no),
+      message: 'This table already has an active order.',
+    };
+  }
+  if (Array.isArray(json?.insufficient) && json.insufficient.length) {
+    return { ok: false, kind: 'insufficient', insufficient: json.insufficient, message: json.error || 'Insufficient inventory' };
+  }
+  return { ok: false, kind: 'error', message: json?.error || json?.message || `Failed to create order (${res.status})` };
+}
+
+export async function createOrder(session: AdminSession, params: CreateOrderParams): Promise<CreateOrderResult> {
   const subtotal = params.items.reduce((sum, it) => sum + it.qty * it.unitPrice, 0);
   const orderItems = params.items.map((it) => ({
     menu_id: it.menuId,
@@ -440,13 +577,7 @@ export async function createOrder(session: AdminSession, params: {
     status: 3,
   }));
 
-  let serviceCharge = 0;
-  const roomChargeQty = Math.max(1, Number(params.roomChargeQty) || 1);
-  if (roomChargeQty > 1) {
-    const tables = await getBlueMoonTables(session);
-    const rate = tables.find((t) => t.id === params.tableId)?.roomCharge || 0;
-    serviceCharge = (roomChargeQty - 1) * rate;
-  }
+  const serviceCharge = await extraRoomCharge(session, params.tableId, params.roomChargeQty);
 
   // OrderController.create ignores BRANCH_ID in the body for a non-admin
   // caller and resolves the branch from the user's own token instead (then
@@ -484,19 +615,7 @@ export async function createOrder(session: AdminSession, params: {
   }
 
   if (res.ok && json?.success !== false) {
-    const id = Number(json.data.id);
-    // Dashboard orders skip the Pending step and go straight to Confirmed.
-    // This goes through restoAdmin's status endpoint rather than POSTing
-    // STATUS: 2 because confirming is what deducts inventory
-    // (InventoryDeductionService.deductOnOrderConfirmed) — a create alone
-    // never would. If the confirm fails, cancel the just-created order so
-    // the table isn't left holding a half-made one.
-    const confirmed = await updateOrderStatus(session, id, 2).catch((err: any) => ({ ok: false, message: err?.message }));
-    if (!confirmed.ok) {
-      await updateOrderStatus(session, id, -1).catch(() => undefined);
-      return { ok: false, kind: 'error', message: confirmed.message || 'Order was created but could not be confirmed, so it was cancelled.' };
-    }
-    return { ok: true, id, orderNo: String(json.data.order_no) };
+    return confirmNewOrder(session, Number(json.data.id), String(json.data.order_no));
   }
   if (res.status === 409 && json?.code === 'ACTIVE_ORDER_EXISTS') {
     return {

@@ -25,6 +25,7 @@ import { useMenuCatalog } from './OrderScreen';
 import { CatalogItem } from '../services/menuCatalog';
 import { SettlePaymentModal } from './SettlePaymentModal';
 import { QtyStepper } from './QtyStepper';
+import { NEEDS_CONNECTION_TEXT, OfflineNotice, useOnline } from './OfflineNotice';
 import {
   X,
   Check,
@@ -71,6 +72,8 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   const [actionLoading, setActionLoading] = useState(false);
 
   const { catalog } = useMenuCatalog();
+  // Offline, every order change here waits for the connection.
+  const online = useOnline();
   const [showAddItems, setShowAddItems] = useState(false);
   // The Quick Add Drinks tap being saved, so repeat taps can't race it.
   const [savingDrinkId, setSavingDrinkId] = useState<number | null>(null);
@@ -407,6 +410,8 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
               </div>
             )}
 
+            {activeOrder && !online && <OfflineNotice>{NEEDS_CONNECTION_TEXT}</OfflineNotice>}
+
             {orderError && (
               <div className="p-3 rounded-2xl bg-rose-950/30 border border-rose-500/30 text-xs text-rose-200">
                 {orderError}
@@ -436,10 +441,10 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                       amount={`₱${(roomChargeQty * roomChargeRate).toFixed(2)}`}
                       onDecrement={() => handleRoomChargeChange(roomChargeQty - 0.5)}
                       onIncrement={() => handleRoomChargeChange(roomChargeQty + 0.5)}
-                      decrementDisabled={roomChargeSaving || roomChargeQty <= 1}
-                      incrementDisabled={roomChargeSaving}
+                      decrementDisabled={!online || roomChargeSaving || roomChargeQty <= 1}
+                      incrementDisabled={!online || roomChargeSaving}
                       onReset={() => handleRoomChargeChange(1)}
-                      resetDisabled={roomChargeSaving || roomChargeQty <= 1}
+                      resetDisabled={!online || roomChargeSaving || roomChargeQty <= 1}
                       resetLabel="Reset to 1 hour"
                     />
                   </div>
@@ -479,9 +484,9 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                           amount={`₱${item.lineTotal.toFixed(2)}`}
                           onDecrement={() => handleRowStep(item, -1)}
                           onIncrement={() => handleRowStep(item, 1)}
-                          decrementDisabled={savingItemId != null || item.quantity <= 1}
-                          incrementDisabled={savingItemId != null}
-                          onRemove={() => handleDeleteRow(item)}
+                          decrementDisabled={!online || savingItemId != null || item.quantity <= 1}
+                          incrementDisabled={!online || savingItemId != null}
+                          onRemove={online ? () => handleDeleteRow(item) : undefined}
                         />
                       </div>
                     ))}
@@ -491,7 +496,8 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowAddItems(true)}
-                  className="w-full h-11 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-semibold flex items-center justify-center gap-1.5"
+                  disabled={!online}
+                  className="w-full h-11 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-600 text-white text-sm font-semibold flex items-center justify-center gap-1.5"
                 >
                   <Plus className="w-4 h-4" /> Add Items
                 </button>
@@ -502,6 +508,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                     qtyOf={(menuId) => orderRows.find((row) => row.menuId === menuId)?.quantity ?? 0}
                     onAdd={handleQuickDrink}
                     busyId={savingDrinkId}
+                    disabled={!online}
                   />
                 )}
               </>
@@ -518,7 +525,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
           <div className="flex items-center gap-2">
             {activeOrder && (
               <>
-                {isConfirmingCancel ? (
+                {isConfirmingCancel && online ? (
                   <>
                     <span className="text-xs text-rose-300">Cancel this order?</span>
                     <button
@@ -538,7 +545,8 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                 ) : (
                   <button
                     onClick={() => setIsConfirmingCancel(true)}
-                    className="px-3 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 border border-rose-500/30 text-rose-300 text-xs font-semibold"
+                    disabled={!online}
+                    className="px-3 py-2 rounded-xl bg-rose-950/40 hover:bg-rose-900/60 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs font-semibold"
                   >
                     Cancel Order
                   </button>
@@ -549,7 +557,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                 {activeOrder.status === 3 && (
                   <button
                     onClick={handleConfirm}
-                    disabled={actionLoading}
+                    disabled={!online || actionLoading}
                     className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 text-white text-xs font-bold flex items-center gap-1.5"
                   >
                     <Check className="w-3.5 h-3.5" /> Confirm
@@ -559,7 +567,8 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                 {activeOrder.status === 2 && (
                   <button
                     onClick={() => setShowSettleModal(true)}
-                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
+                    disabled={!online}
+                    className="px-3 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-600 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
                   >
                     <Wallet className="w-3.5 h-3.5" /> Settle
                   </button>

@@ -1,6 +1,9 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../api/floor_images.dart';
 import '../api/models.dart';
 import '../state/dashboard_state.dart';
 import 'common.dart';
@@ -41,6 +44,7 @@ class _DashboardShellState extends State<DashboardShell> {
   // Bumped when a sidebar floor card is tapped, so All Tables & Rooms and
   // Active Orders follow it even when their own floor filter already moved.
   int _floorRequest = 0;
+  StreamSubscription<String>? _noticeSub;
 
   @override
   void initState() {
@@ -53,6 +57,17 @@ class _DashboardShellState extends State<DashboardShell> {
         precacheImage(NetworkImage(widget.state.api.floorPlanImageUrl(floor)), context, onError: (_, _) {});
       }
     });
+    // And keep a copy on disk for starting with no connection.
+    FloorImages.refresh(widget.state.api);
+    _noticeSub = widget.state.notices.listen((message) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 8),
+        behavior: SnackBarBehavior.floating,
+        width: 520,
+      ));
+    });
     SharedPreferences.getInstance().then((prefs) {
       if (!mounted) return;
       setState(() {
@@ -62,6 +77,12 @@ class _DashboardShellState extends State<DashboardShell> {
         _showInfoPanels = prefs.getBool(_prefsShowInfoPanels) ?? true;
       });
     });
+  }
+
+  @override
+  void dispose() {
+    _noticeSub?.cancel();
+    super.dispose();
   }
 
   void _toggleSidebar() {
@@ -82,10 +103,13 @@ class _DashboardShellState extends State<DashboardShell> {
 
   // Sign out sits among everyday buttons, so a stray tap asks first.
   Future<void> _confirmSignOut() async {
+    final unsent = widget.state.offline.actions.length;
     final confirmed = await confirmDialog(
       context,
       title: 'Sign out ${widget.user.displayName}?',
-      description: 'This tablet goes back to the sign-in page, and live updates stop until someone signs in again.',
+      description: 'This tablet goes back to the sign-in page, and live updates stop until someone signs in again.'
+          '${unsent == 0 ? '' : ' ${unsent == 1 ? '1 change is' : '$unsent changes are'} still saved on this tablet; '
+              'they are sent after the next sign-in.'}',
       confirmText: 'Sign out',
       confirmIcon: Icons.logout,
       icon: Icons.logout,

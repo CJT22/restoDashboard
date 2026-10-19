@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../api/api_client.dart';
 import '../state/menu_catalog.dart';
+import '../state/offline_queue.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import 'common.dart';
@@ -87,6 +88,11 @@ class OrderCart extends ChangeNotifier {
 
   List<Map<String, num>> payload() =>
       [for (final l in lines) {'menuId': l.menuId, 'qty': l.qty, 'unitPrice': l.unitPrice}];
+
+  /// The lines as DashboardState's order changes take them (they're kept
+  /// with names, in case they're saved for later).
+  List<QueuedItem> get items =>
+      [for (final l in lines) QueuedItem(menuId: l.menuId, name: l.name, unitPrice: l.unitPrice, qty: l.qty)];
 }
 
 class CartLineList extends StatelessWidget {

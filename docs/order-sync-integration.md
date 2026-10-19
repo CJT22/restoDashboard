@@ -204,6 +204,47 @@ signed in to the dashboard (see [blue-moon-integration.md](blue-moon-integration
 No admin-role elevation is needed: `PUT /billing/:id` (like every other endpoint used
 here) only requires being authenticated, not an admin permission level.
 
+## Offline orders (tablet app only)
+
+The tablet app keeps taking orders when it can't reach restoAdmin (its dashboard server is
+unreachable, or the server can't reach restoAdmin). It's modelled on the staff app's offline mode
+(`restoapp-bluemoon`'s `offline_sync_service.dart`), cut down to what the dashboard does.
+
+- **What works offline:** new orders, Add Items / Quick Add Drinks, and room hours. Settle,
+  cancel, confirm and item edits need a connection. Billing's `PUT /billing/:id` adds to the amount
+  paid, so a retried settle could count a payment twice, and items on an order that hasn't synced
+  have no restoAdmin ids to edit.
+- **Where it's kept:** [offline_queue.dart](../mobile/lib/state/offline_queue.dart), in shared
+  preferences, so it survives closing the app and signing out. Each tablet keeps its own queue;
+  tablets don't see each other's unsynced orders. Changes to an order that's itself still queued are
+  folded into its create, so there are no temporary ids to map. [dashboard_state.dart](../mobile/lib/state/dashboard_state.dart)
+  keeps restoAdmin's last-known state per zone and draws the queue on top of it, so a resync or
+  live event never wipes a queued change.
+- **When it's sent:** the moment the stream goes live, every 15 s while the connection is up, and
+  from the sidebar's **Sync now**. Oldest first; a network failure stops the pass, and a refusal
+  (e.g. not enough stock) is kept with its reason for **Retry** / **Discard**.
+- **Why replays are safe:** the app sends `createdAt` with every create. With it,
+  `POST /api/admin/orders` runs `createOrderAt` ([adminClient.ts](../server/adminClient.ts)), which
+  goes through restoAdmin's staff-app `POST /api/orders` instead of the admin `POST /orders`. That
+  endpoint stores the given `encoded_dt`, so the room timer starts when the order was taken, and it
+  answers a repeated `order_no` with the existing order (`already_exists`) instead of an error. The
+  order number is derived from `createdAt` (Manila time), so every retry of one order sends the same
+  number. A number that belongs to another table's order steps a second forward. An order whose
+  confirm never went through (`already_exists` with status 3) is confirmed on the retry.
+- **Conflicts:** a queued create sent with `mergeOnConflict` to a table that got an order meanwhile
+  (409 `ACTIVE_ORDER_EXISTS`) has its items added to that order; its room hours are left as that
+  order has them, and staff get a notice.
+- **Starting offline:** the last sign-in, layout, menu and floor are saved, and the floor plan
+  images are kept on disk ([floor_images.dart](../mobile/lib/api/floor_images.dart)), so the app
+  opens with no connection and checks the session once the server answers.
+- **Known gap:** an add-items request whose answer was lost (it reached restoAdmin, but the
+  connection dropped before the reply) is sent again and adds the items twice. restoAdmin's
+  `POST /orders/:id/items` has no way to recognise a repeat. A dropped room-hours change is harmless
+  to resend, since it sets the hours rather than adding them.
+
+The web dashboard doesn't queue: offline, its order buttons turn off and a notice asks for the
+connection ([OfflineNotice.tsx](../src/components/OfflineNotice.tsx)).
+
 ## Known limitations / explicitly out of scope
 
 - **Blue Moon only**, same as the table sync — inherits `ADMIN_BRANCH_ID`.
@@ -214,8 +255,9 @@ here) only requires being authenticated, not an admin permission level.
   (never Occupied) — so they never satisfy the "active order" (Pending/Confirmed) condition in the
   first place. There's no origin flag or special-casing; this is a natural consequence of how those
   two flows already behaved before this integration existed.
-- **No retry queue** — a failed order-related call surfaces an error in the UI but there's no
-  automatic retry or offline queueing, same tradeoff as the table sync.
+- **No retry queue on the web** — a failed order-related call surfaces an error in the UI, and
+  offline the order buttons are off. Only the tablet app queues (see
+  [Offline orders](#offline-orders-tablet-app-only)).
 - **Settling from a still-Pending order isn't exposed in the UI** even though the underlying
   `PUT /billing/:id` call would technically accept it — the Settle button only appears once an order
   is Confirmed, to match restoAdmin's own workflow (its Billing screen only lists Confirmed/Settled
