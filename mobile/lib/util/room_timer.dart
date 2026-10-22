@@ -21,12 +21,14 @@ const endingSoon = Duration(minutes: 15);
 
 RoomTiming? getRoomTiming(OrderSummary? order, DateTime now, {double fallbackRate = 0}) {
   final rate = (order?.roomRate ?? 0) > 0 ? order!.roomRate! : fallbackRate;
-  // Without SERVICE_CHARGE the booked hours are unknown: show nothing rather
-  // than a countdown that might be wrong.
-  if (order?.createdAt == null || rate <= 0 || order!.serviceCharge == null) return null;
-  final start = DateTime.tryParse(order.createdAt!);
+  // The current room's clock: when the order moved into it, else when the
+  // order was created. Without its hours the booking is unknown: show nothing
+  // rather than a countdown that might be wrong.
+  final startAt = order?.roomStartedAt ?? order?.createdAt;
+  if (startAt == null || rate <= 0 || (order!.roomHours == null && order.serviceCharge == null)) return null;
+  final start = DateTime.tryParse(startAt);
   if (start == null) return null;
-  final hours = bookedHours(order.serviceCharge!, rate);
+  final hours = roomHoursOf(order, rate);
   // A waived room (0 hours) has no booking to count down.
   if (hours <= 0) return null;
   final end = start.add(Duration(milliseconds: (hours * 3600000).round()));
@@ -39,6 +41,14 @@ double bookedHours(double serviceCharge, double rate) {
   if (rate <= 0) return 0;
   final hours = ((serviceCharge / rate) * 2).round() / 2;
   return hours < 0 ? 0 : hours;
+}
+
+/// Hours the room an order is in now is booked for: restoAdmin's room history
+/// when known (right for an order that moved rooms, whose service charge also
+/// holds the earlier rooms), else derived from the service charge.
+double roomHoursOf(OrderSummary? order, double rate) {
+  if (rate <= 0) return 0;
+  return order?.roomHours ?? bookedHours(order?.serviceCharge ?? 0, rate);
 }
 
 enum TimerTone { normal, endingSoon, expired }

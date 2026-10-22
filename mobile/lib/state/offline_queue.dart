@@ -315,9 +315,13 @@ class OfflineQueue extends ChangeNotifier {
     double? service = server.serviceCharge;
     final rate = (server.roomRate ?? 0) > 0 ? server.roomRate! : roomRate;
     if (roomQty != null && rate > 0) {
-      service = roomQty * rate;
+      // Only the current room's hours change; earlier rooms of a moved order
+      // (the rest of the service charge) stay as they were.
+      final current = server.roomHours;
+      service = current != null ? (server.serviceCharge ?? 0) + (roomQty - current) * rate : roomQty * rate;
       grandTotal += service - (server.serviceCharge ?? 0);
     }
-    return server.copyWith(items: [...server.items, ...added], serviceCharge: service, grandTotal: grandTotal);
+    return server.copyWith(
+        items: [...server.items, ...added], serviceCharge: service, roomHours: roomQty, grandTotal: grandTotal);
   }
 }

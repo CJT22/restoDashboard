@@ -93,6 +93,11 @@ class OrderSummary {
   final String? createdAt;
   // The table's hourly ROOM_CHARGE at fetch time (0/null = not an hourly room).
   final double? roomRate;
+  // The room the order is in now, from restoAdmin's room history: its hours
+  // and when its clock started. Null when unknown; then hours come from
+  // serviceCharge / roomRate and the clock from createdAt (util/room_timer.dart).
+  final double? roomHours;
+  final String? roomStartedAt;
   final double grandTotal;
   final List<OrderLineItem> items;
 
@@ -105,6 +110,8 @@ class OrderSummary {
     required this.serviceCharge,
     required this.createdAt,
     required this.roomRate,
+    this.roomHours,
+    this.roomStartedAt,
     required this.grandTotal,
     required this.items,
   });
@@ -118,13 +125,21 @@ class OrderSummary {
         serviceCharge: _dOrNull(row['serviceCharge']),
         createdAt: row['createdAt']?.toString(),
         roomRate: _dOrNull(row['roomRate']),
+        roomHours: _dOrNull(row['roomHours']),
+        roomStartedAt: row['roomStartedAt']?.toString(),
         grandTotal: _d(row['grandTotal']),
         items: (row['items'] is List)
             ? (row['items'] as List).map((e) => OrderLineItem.fromApi(Map<String, dynamic>.from(e))).toList()
             : const [],
       );
 
-  OrderSummary copyWith({int? status, double? roomRate, double? serviceCharge, double? grandTotal, List<OrderLineItem>? items}) =>
+  OrderSummary copyWith(
+          {int? status,
+          double? roomRate,
+          double? serviceCharge,
+          double? roomHours,
+          double? grandTotal,
+          List<OrderLineItem>? items}) =>
       OrderSummary(
         id: id,
         orderNo: orderNo,
@@ -134,6 +149,8 @@ class OrderSummary {
         serviceCharge: serviceCharge ?? this.serviceCharge,
         createdAt: createdAt,
         roomRate: roomRate ?? this.roomRate,
+        roomHours: roomHours ?? this.roomHours,
+        roomStartedAt: roomStartedAt,
         grandTotal: grandTotal ?? this.grandTotal,
         items: items ?? this.items,
       );
@@ -155,6 +172,8 @@ class OrderSummary {
         'serviceCharge': serviceCharge,
         'createdAt': createdAt,
         'roomRate': roomRate,
+        'roomHours': roomHours,
+        'roomStartedAt': roomStartedAt,
         'grandTotal': grandTotal,
         'items': [for (final i in items) i.toJson()],
       };
@@ -418,6 +437,10 @@ class OrderEvent {
   final double? serviceCharge;
   final double? roomRate;
   final String? createdAt;
+  // The current room's hours and clock start, when the event carries the
+  // order's room history (see OrderSummary.roomHours). Null otherwise.
+  final double? roomHours;
+  final String? roomStartedAt;
   final List<OrderLineItem> items;
 
   const OrderEvent({
@@ -429,6 +452,8 @@ class OrderEvent {
     required this.serviceCharge,
     required this.roomRate,
     required this.createdAt,
+    this.roomHours,
+    this.roomStartedAt,
     required this.items,
   });
 
@@ -441,6 +466,8 @@ class OrderEvent {
         serviceCharge: _dOrNull(j['serviceCharge']),
         roomRate: _dOrNull(j['roomRate']),
         createdAt: j['createdAt']?.toString(),
+        roomHours: _dOrNull(j['roomHours']),
+        roomStartedAt: j['roomStartedAt']?.toString(),
         items: (j['items'] is List)
             ? (j['items'] as List).map((e) => OrderLineItem.fromEvent(Map<String, dynamic>.from(e))).toList()
             : const [],

@@ -36,6 +36,12 @@ export interface AdminOrderSummary {
   // The linked table's hourly ROOM_CHARGE at fetch time (0/undefined = not an
   // hourly room). Booked hours = serviceCharge / roomRate.
   roomRate?: number;
+  // The room the order is in now, from restoAdmin's room history: its hours
+  // and when its clock started (see server/adminClient.ts AdminOrder). When
+  // unknown, hours come from serviceCharge / roomRate and the clock from
+  // createdAt (src/utils/roomTimer.ts).
+  roomHours?: number;
+  roomStartedAt?: string;
   grandTotal: number;
   items: AdminOrderLineItem[];
 }

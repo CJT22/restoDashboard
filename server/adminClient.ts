@@ -65,7 +65,36 @@ export interface AdminOrder {
   // The linked table's hourly ROOM_CHARGE (null/0 = not an hourly room).
   // Only GET /orders/data rows carry it; null from getOrderById.
   roomRate: number | null;
+  // The room the order is billed in now, from restoAdmin's room-charge
+  // history (order_room_charges): its hours and when its clock started.
+  // That's what the staff app's room timer and hours stepper read, and what
+  // extend-room-charge changes. Differs from serviceCharge / roomRate once an
+  // order has moved rooms (serviceCharge then also holds the earlier rooms).
+  // Null when the history doesn't cover the order (see getCurrentRooms).
+  roomHours: number | null;
+  roomStartedAt: string | null;
   items: AdminOrderItem[];
+}
+
+export interface CurrentRoom {
+  rate: number;
+  hours: number;
+  startedAt: string | null;
+}
+
+// The room an order is in now, from a staff-API `room_charges` list (GET
+// /api/waiter/orders rows and order_updated events both carry one). The
+// open row is the current room; null for a table with no room charge.
+export function currentRoomOf(roomCharges: unknown): CurrentRoom | null {
+  if (!Array.isArray(roomCharges)) return null;
+  const active = roomCharges.filter((r: any) => r?.active).pop();
+  if (!active) return null;
+  return {
+    rate: Number(active.rate) || 0,
+    hours: Math.max(0, Number(active.hours) || 0),
+    // started_at is Manila wall-clock time, like ENCODED_DT.
+    startedAt: encodedDtToIso(active.started_at),
+  };
 }
 
 // Normalizes orders.ENCODED_DT to an ISO instant the same way restoAdmin's own
@@ -290,8 +319,37 @@ function mapAdminOrder(row: any, items: AdminOrderItem[]): AdminOrder {
     grandTotal: Number(row.GRAND_TOTAL ?? 0),
     createdAt: encodedDtToIso(row.ENCODED_DT),
     roomRate: row.ROOM_CHARGE != null ? Number(row.ROOM_CHARGE) : null,
+    roomHours: null,
+    roomStartedAt: null,
     items,
   };
+}
+
+function withCurrentRoom(order: AdminOrder, room: CurrentRoom | undefined): AdminOrder {
+  if (!room) return order;
+  return { ...order, roomHours: room.hours, roomStartedAt: room.startedAt, roomRate: room.rate || order.roomRate };
+}
+
+// Each open order's current room, keyed by order id, from the staff app's own
+// order list (GET /api/waiter/orders: the business day's orders with their
+// room history; restoAdmin exposes the history nowhere else). Best-effort:
+// an order it doesn't cover (none yet for a room no staff-app action has
+// touched, or one opened before the business day) keeps roomHours null.
+async function getCurrentRooms(session: AdminSession): Promise<Map<number, CurrentRoom>> {
+  const rooms = new Map<number, CurrentRoom>();
+  try {
+    const res = await authedFetch(session, `/api/waiter/orders?branch_id=${ADMIN_BRANCH_ID}`);
+    const json: any = await res.json().catch(() => ({}));
+    if (!res.ok || json?.success === false) return rooms;
+    for (const row of Array.isArray(json.data) ? json.data : []) {
+      const room = currentRoomOf(row?.room_charges);
+      if (room) rooms.set(Number(row.order_id), room);
+    }
+  } catch (err: any) {
+    if (err instanceof SessionEndedError) throw err;
+    console.warn('[adminClient] room history unavailable', err?.message || err);
+  }
+  return rooms;
 }
 
 // Order statuses that count as "active" for the one-order-per-table
@@ -377,10 +435,11 @@ async function getOrderItems(session: AdminSession, orderId: number): Promise<Ad
 // branch's order list — the same data OrderModel's own 409-guard query
 // resolves server-side, just without a dedicated route.
 export async function getActiveOrderForTable(session: AdminSession, tableId: number): Promise<AdminOrder | null> {
-  const rows = await getActiveOrderRows(session);
+  const [rows, rooms] = await Promise.all([getActiveOrderRows(session), getCurrentRooms(session)]);
   const match = rows.find((row: any) => Number(row.TABLE_ID) === tableId);
   if (!match) return null;
-  return mapAdminOrder(match, await getOrderItems(session, Number(match.IDNo)));
+  const order = mapAdminOrder(match, await getOrderItems(session, Number(match.IDNo)));
+  return withCurrentRoom(order, rooms.get(order.id));
 }
 
 // Batched equivalent of calling getActiveOrderForTable once per table: one
@@ -389,8 +448,12 @@ export async function getActiveOrderForTable(session: AdminSession, tableId: num
 // each table's order detail are already populated on a fresh load, not just
 // their Available/Occupied status.
 export async function getActiveOrdersForBranch(session: AdminSession): Promise<AdminOrder[]> {
-  const rows = await getActiveOrderRows(session);
-  return Promise.all(rows.map(async (row: any) => mapAdminOrder(row, await getOrderItems(session, Number(row.IDNo)))));
+  const [rows, rooms] = await Promise.all([getActiveOrderRows(session), getCurrentRooms(session)]);
+  return Promise.all(
+    rows.map(async (row: any) =>
+      withCurrentRoom(mapAdminOrder(row, await getOrderItems(session, Number(row.IDNo))), rooms.get(Number(row.IDNo)))
+    )
+  );
 }
 
 // The order's current row (without createdAt/roomRate — GET /orders/:id
@@ -686,43 +749,19 @@ export async function updateOrderStatus(session: AdminSession, orderId: number, 
   return { ok: false, message: json?.error || json?.message || `Failed to update order status (${res.status})` };
 }
 
-// Adjusts how many hours a room's booking is billed for, on an already-open
-// (Pending/Confirmed) order — the dashboard equivalent of restoAdmin's own
-// order-detail room-charge stepper (Orders.tsx's saveDetailRoomChargeQty).
-// Re-fetches the order for its current TABLE_ID/ORDER_TYPE/STATUS/SUBTOTAL/
-// TAX_AMOUNT/DISCOUNT_AMOUNT since restoAdmin's PUT /orders/:id replaces the
-// whole payload rather than patching just SERVICE_CHARGE.
+// Sets how many hours the room an open (Pending/Confirmed) order is in now is
+// billed for: 0 waives it. Goes through the staff app's own endpoint, which
+// keeps restoAdmin's room-charge history (order_room_charges) in step,
+// recomputes SERVICE_CHARGE from it (earlier rooms of a moved order stay as
+// they were), logs it in the Activity tab and broadcasts the change. A plain
+// PUT /orders/:id would change SERVICE_CHARGE behind the history's back: the
+// staff app would keep timing the old hours, and its next extend would bill
+// the difference a second time.
 export async function updateOrderRoomCharge(session: AdminSession, orderId: number, roomChargeQty: number): Promise<{ ok: boolean; message?: string }> {
-  const order = await getOrderById(session, orderId);
-  if (!order) {
-    return { ok: false, message: 'Order not found' };
-  }
-  if (order.tableId == null) {
-    return { ok: false, message: 'This order has no table assigned' };
-  }
-  const tables = await getBlueMoonTables(session);
-  const rate = tables.find((t) => t.id === order.tableId)?.roomCharge || 0;
-  if (rate <= 0) {
-    return { ok: false, message: 'This table has no room charge' };
-  }
-
-  // 0 waives it: -rate cancels the base hour restoAdmin re-adds on save.
-  const clampedQty = Math.max(0, roomChargeQty);
-  const explicitServiceCharge = (clampedQty - 1) * rate;
-  const grandTotal = order.subtotal + order.taxAmount + explicitServiceCharge - order.discountAmount;
-
-  const res = await authedFetch(session, `/orders/${orderId}`, {
-    method: 'PUT',
-    body: JSON.stringify({
-      TABLE_ID: order.tableId,
-      ORDER_TYPE: order.orderType,
-      STATUS: order.status,
-      SUBTOTAL: order.subtotal,
-      TAX_AMOUNT: order.taxAmount,
-      SERVICE_CHARGE: explicitServiceCharge,
-      DISCOUNT_AMOUNT: order.discountAmount,
-      GRAND_TOTAL: grandTotal,
-    }),
+  const sessions = Math.round(Math.max(0, roomChargeQty) * 2) / 2;
+  const res = await authedFetch(session, `/api/waiter/orders/${orderId}/extend-room-charge?branch_id=${ADMIN_BRANCH_ID}`, {
+    method: 'POST',
+    body: JSON.stringify({ sessions }),
   });
   const json: any = await res.json().catch(() => ({}));
   if (res.ok && json?.success !== false) {

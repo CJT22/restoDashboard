@@ -9,7 +9,7 @@
 
 import { EventEmitter } from 'events';
 import { io as ioClient, type Socket } from 'socket.io-client';
-import { ADMIN_API_BASE_URL, ADMIN_BRANCH_ID, encodedDtToIso, getBlueMoonTables, getOrderById, SessionEndedError } from './adminClient.js';
+import { ADMIN_API_BASE_URL, ADMIN_BRANCH_ID, currentRoomOf, encodedDtToIso, getBlueMoonTables, getOrderById, SessionEndedError } from './adminClient.js';
 import { anySessions } from './sessions.js';
 
 // Socket.IO's default path. Only needs overriding when restoAdmin sits behind
@@ -42,6 +42,11 @@ export interface OrderEvent {
   serviceCharge: number | null;
   roomRate: number | null;
   createdAt: string | null;
+  // The current room's hours and clock start (see AdminOrder.roomHours), when
+  // the event carries the order's room history: the staff app's room-charge
+  // and transfer events do. Null otherwise.
+  roomHours: number | null;
+  roomStartedAt: string | null;
   items: any[];
 }
 
@@ -95,6 +100,24 @@ async function withRoomTimerFields(event: OrderEvent): Promise<OrderEvent> {
   return event;
 }
 
+// restoAdmin's admin endpoints send an event's items as order_items rows
+// (IDNo, MENU_NAME, QTY, …), but the staff-app endpoints (room hours,
+// confirm/cancel/settle, transfers, orders from the tablets) send the same
+// fields in snake case (item_id, menu_name, qty, …). The browser and the
+// tablet read the first shape, so every item goes out in it; otherwise an
+// event from the staff-app side showed the order's items nameless at ₱0.
+function normalizeEventItem(item: any): any {
+  return {
+    ...item,
+    IDNo: item?.IDNo ?? item?.item_id,
+    MENU_ID: item?.MENU_ID ?? item?.menu_id,
+    MENU_NAME: item?.MENU_NAME ?? item?.menu_name,
+    QTY: item?.QTY ?? item?.qty,
+    UNIT_PRICE: item?.UNIT_PRICE ?? item?.unit_price,
+    LINE_TOTAL: item?.LINE_TOTAL ?? item?.line_total,
+  };
+}
+
 // Order events are enriched one at a time, in arrival order, so a slow
 // lookup can't let an older event overtake a newer one for the same order
 // (e.g. a stale Pending landing after Confirmed).
@@ -138,6 +161,7 @@ export function connectSocketBridge(): void {
     const order = payload?.order || {};
     const orderId = Number(payload?.order_id ?? order.order_id);
     if (!Number.isFinite(orderId)) return;
+    const room = currentRoomOf(order.room_charges);
 
     const event: OrderEvent = {
       orderId,
@@ -149,7 +173,9 @@ export function connectSocketBridge(): void {
       serviceCharge: order.service_charge != null ? Number(order.service_charge) : null,
       roomRate: order.room_charge != null ? Number(order.room_charge) : null,
       createdAt: encodedDtToIso(order.encoded_dt),
-      items: Array.isArray(order.items) ? order.items : [],
+      roomHours: room?.hours ?? null,
+      roomStartedAt: room?.startedAt ?? null,
+      items: Array.isArray(order.items) ? order.items.map(normalizeEventItem) : [],
     };
     orderEventQueue = orderEventQueue
       .then(() => withRoomTimerFields(event))

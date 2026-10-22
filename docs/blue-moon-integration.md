@@ -69,7 +69,8 @@ All stock restoAdmin endpoints and events:
 | Sign in / refresh | `POST /api/login`, `POST /api/refresh` |
 | Tables (status, name, room charge) | `GET /restaurant_tables?branch_id=` |
 | Menu | `GET /menus?branch_id=` |
-| Orders | `GET /orders/data?branch_id=`, `GET /orders/:id`, `GET /orders/:id/items`, `POST /orders`, `PUT /orders/:id`, `PATCH /orders/:id/status`, `POST /orders/:id/items`, `PUT`/`DELETE /order_items/:id` |
+| Orders | `GET /orders/data?branch_id=`, `GET /orders/:id`, `GET /orders/:id/items`, `POST /orders`, `PATCH /orders/:id/status`, `POST /orders/:id/items`, `PUT`/`DELETE /order_items/:id` |
+| Staff-app endpoints (the ones restoapp uses, which keep its room history and Activity tab in step) | `POST /api/orders` (tablet orders), `GET /api/waiter/orders` (each open order's current room from `room_charges`), `POST /api/waiter/orders/:id/extend-room-charge` (room hours, 0 = waived) |
 | Billing / sales | `GET /billing/:orderId`, `PUT /billing/:orderId`, `GET /billing/data` |
 | Live updates | Socket.IO: `join_kitchen` / `join_cashier` / `join_waiter` rooms; `table_updated`, `order_created`, `order_updated` events |
 

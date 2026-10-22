@@ -17,7 +17,7 @@ import {
 import { getAdminTables } from '../services/adminSync';
 import { getStatusColors } from '../utils/statusColors';
 import { zoneKindLabel } from '../utils/zoneLabels';
-import { bookedHours, getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, getTimerTone, TIMER_TEXT_CLASS, TimerTone } from '../utils/roomTimer';
+import { roomHoursOf, getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, getTimerTone, TIMER_TEXT_CLASS, TimerTone } from '../utils/roomTimer';
 import { NewOrderScreen } from './NewOrderScreen';
 import { AddItemsScreen } from './AddItemsScreen';
 import { QuickAddDrinks } from './QuickAddDrinks';
@@ -136,11 +136,10 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   const orderRows = groupOrderLines(orderItems);
   const tableId = table.id;
 
-  // Derived from the order's current SERVICE_CHARGE (which already includes
-  // the room charge — see AdminOrderSummary.serviceCharge) and this table's
-  // rate; re-derives automatically whenever the order refreshes.
-  // 0 = waived.
-  const roomChargeQty = bookedHours(activeOrder?.serviceCharge ?? 0, roomChargeRate);
+  // The hours the room the order is in now is booked for (restoAdmin's room
+  // history, else derived from SERVICE_CHARGE and this table's rate); 0 =
+  // waived. Re-derives whenever the order refreshes.
+  const roomChargeQty = roomHoursOf(activeOrder, roomChargeRate);
 
   // Hourly room countdown, same as the map zone's (src/utils/roomTimer.ts).
   // Falls back to this modal's own fetched rate if the order doesn't carry one.

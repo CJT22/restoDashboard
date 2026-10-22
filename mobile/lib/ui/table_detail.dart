@@ -255,7 +255,8 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
   Widget build(BuildContext context) {
     final order = zone.activeOrder;
     final rows = groupOrderLines(order?.items ?? const []);
-    final roomQty = _roomRate > 0 ? bookedHours(order?.serviceCharge ?? 0, _roomRate) : 0.0;
+    // The current room's hours; 0 = waived.
+    final roomQty = roomHoursOf(order, _roomRate);
     final busyRow = _savingItemId != null;
 
     return Dialog(

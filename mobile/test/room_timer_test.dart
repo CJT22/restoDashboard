@@ -34,4 +34,31 @@ void main() {
     expect(t?.hours, 1);
     expect(t?.expired, isFalse);
   });
+
+  test("a moved order times its current room, not the earlier rooms' charge", () {
+    // ₱1,100 billed in the room it left, then 1h here at ₱1,500, starting 20 minutes ago.
+    final movedAt = DateTime.now().subtract(const Duration(minutes: 20));
+    final order = OrderSummary(
+      id: 1,
+      orderNo: 'ORD-1',
+      orderType: 'DINE_IN',
+      status: 2,
+      subtotal: 0,
+      serviceCharge: 2600,
+      createdAt: DateTime.now().subtract(const Duration(hours: 2)).toUtc().toIso8601String(),
+      roomRate: 1500,
+      roomHours: 1,
+      roomStartedAt: movedAt.toUtc().toIso8601String(),
+      grandTotal: 2600,
+      items: const [],
+    );
+    expect(roomHoursOf(order, 1500), 1);
+    final t = getRoomTiming(order, DateTime.now())!;
+    expect(t.expired, isFalse);
+    expect(t.remaining.inMinutes, inInclusiveRange(39, 40));
+  });
+
+  test('without room history, hours come from the service charge', () {
+    expect(roomHoursOf(_order(3000), 1500), 2);
+  });
 }

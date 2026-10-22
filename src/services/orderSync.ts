@@ -165,6 +165,8 @@ export function mapAdminOrder(row: any): AdminOrderSummary {
     serviceCharge: row.serviceCharge != null ? Number(row.serviceCharge) : undefined,
     createdAt: row.createdAt ?? undefined,
     roomRate: row.roomRate != null ? Number(row.roomRate) : undefined,
+    roomHours: row.roomHours != null ? Number(row.roomHours) : undefined,
+    roomStartedAt: row.roomStartedAt ?? undefined,
     grandTotal: Number(row.grandTotal ?? 0),
     items: Array.isArray(row.items) ? row.items.map(mapAdminOrderItem) : [],
   };
@@ -312,6 +314,10 @@ export interface RemoteOrderUpdate {
   serviceCharge: number | null;
   roomRate: number | null;
   createdAt: string | null;
+  // The current room's hours and clock start, when the event carries the
+  // order's room history (see AdminOrderSummary.roomHours).
+  roomHours: number | null;
+  roomStartedAt: string | null;
   items: AdminOrderLineItem[];
 }
 
@@ -331,6 +337,8 @@ export function subscribeToOrderUpdates(onUpdate: (event: RemoteOrderUpdate) => 
         serviceCharge: payload.serviceCharge != null ? Number(payload.serviceCharge) : null,
         roomRate: payload.roomRate != null ? Number(payload.roomRate) : null,
         createdAt: payload.createdAt ?? null,
+        roomHours: payload.roomHours != null ? Number(payload.roomHours) : null,
+        roomStartedAt: payload.roomStartedAt ?? null,
         items: Array.isArray(payload.items)
           ? payload.items.map((row: any) => ({
               id: Number(row.IDNo),

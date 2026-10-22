@@ -201,6 +201,9 @@ class DashboardState extends ChangeNotifier {
     // what the zone already knew about the same order.
     final prev = _serverOrders[zone.id];
     final known = prev != null && prev.id == event.orderId ? prev : null;
+    // The current room's hours from before still hold if the charge didn't
+    // change; otherwise they're re-derived from it, unless the event says.
+    final sameCharge = event.serviceCharge == null || event.serviceCharge == known?.serviceCharge;
     final order = OrderSummary(
       id: event.orderId,
       orderNo: event.orderNo ?? '',
@@ -210,6 +213,8 @@ class DashboardState extends ChangeNotifier {
       serviceCharge: event.serviceCharge ?? known?.serviceCharge,
       roomRate: event.roomRate ?? known?.roomRate,
       createdAt: event.createdAt ?? known?.createdAt,
+      roomHours: event.roomHours ?? (sameCharge ? known?.roomHours : null),
+      roomStartedAt: event.roomStartedAt ?? known?.roomStartedAt,
       grandTotal: event.grandTotal ?? known?.grandTotal ?? 0,
       items: event.items,
     );

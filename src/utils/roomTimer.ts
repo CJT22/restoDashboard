@@ -22,13 +22,16 @@ const HOUR_MS = 60 * 60 * 1000;
 
 export function getRoomTiming(order: AdminOrderSummary | undefined, nowMs: number): RoomTiming | null {
   const rate = order?.roomRate ?? 0;
-  // Without SERVICE_CHARGE the booked hours are unknown — show nothing
-  // rather than a countdown that might be wrong.
-  if (!order?.createdAt || rate <= 0 || order.serviceCharge == null) return null;
-  const startMs = Date.parse(order.createdAt);
+  // The current room's clock: when the order moved into it, else when the
+  // order was created.
+  const start = order?.roomStartedAt ?? order?.createdAt;
+  // Without its hours the booking is unknown — show nothing rather than a
+  // countdown that might be wrong.
+  if (!start || rate <= 0 || (order.roomHours == null && order.serviceCharge == null)) return null;
+  const startMs = Date.parse(start);
   if (!Number.isFinite(startMs)) return null;
 
-  const hours = bookedHours(order.serviceCharge, rate);
+  const hours = roomHoursOf(order, rate);
   if (hours <= 0) return null;
   const endMs = startMs + hours * HOUR_MS;
   const remainingMs = endMs - nowMs;
@@ -40,6 +43,14 @@ export function getRoomTiming(order: AdminOrderSummary | undefined, nowMs: numbe
 export function bookedHours(serviceCharge: number, rate: number): number {
   if (rate <= 0) return 0;
   return Math.max(0, Math.round((serviceCharge / rate) * 2) / 2);
+}
+
+// Hours the room an order is in now is booked for: restoAdmin's room history
+// when known (right for an order that moved rooms, whose service charge also
+// holds the earlier rooms), else derived from the service charge.
+export function roomHoursOf(order: AdminOrderSummary | undefined, rate: number): number {
+  if (rate <= 0) return 0;
+  return order?.roomHours ?? bookedHours(order?.serviceCharge ?? 0, rate);
 }
 
 // How urgent a running room looks everywhere its timer is shown (zone label,

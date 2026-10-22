@@ -303,6 +303,9 @@ export default function App({ user, onSignOut }: AppProps) {
       const adminTableId = event.tableId;
       const prev = tablesRef.current.find((t) => t.adminTableId === adminTableId)?.activeOrder;
       const known = prev && prev.id === event.orderId ? prev : undefined;
+      // The current room's hours from before still hold if the charge didn't
+      // change; otherwise they're re-derived from it, unless the event says.
+      const sameCharge = event.serviceCharge == null || event.serviceCharge === known?.serviceCharge;
       const order: AdminOrderSummary = {
         id: event.orderId,
         orderNo: event.orderNo ?? '',
@@ -312,6 +315,8 @@ export default function App({ user, onSignOut }: AppProps) {
         serviceCharge: event.serviceCharge ?? known?.serviceCharge,
         roomRate: event.roomRate ?? known?.roomRate,
         createdAt: event.createdAt ?? known?.createdAt,
+        roomHours: event.roomHours ?? (sameCharge ? known?.roomHours : undefined),
+        roomStartedAt: event.roomStartedAt ?? known?.roomStartedAt,
         grandTotal: event.grandTotal ?? known?.grandTotal ?? 0,
         items: event.items,
       };
