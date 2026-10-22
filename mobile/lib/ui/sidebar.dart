@@ -379,7 +379,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                 child: _ViewTile(
                   on: widget.showInfoPanels,
                   onTap: widget.onToggleInfoPanels,
-                  icon: Icons.dashboard_outlined,
+                  icon: Icons.info_outline_rounded,
                   label: 'Info Panels',
                   tooltip: widget.showInfoPanels ? 'Hide info panels' : 'Show info panels',
                   colors: const [AppColors.indigo600, Color(0xFF7C3AED)],
@@ -799,7 +799,7 @@ class _SidebarState extends State<Sidebar> with SingleTickerProviderStateMixin {
                     const [AppColors.emerald600, AppColors.teal600], AppColors.emerald400),
                 _railFilter(widget.occupiedFilter, widget.onToggleOccupied, Icons.people_alt_outlined,
                     'Occupied Zones', const [AppColors.amber500, AppColors.orange500], AppColors.amber400),
-                _railFilter(widget.showInfoPanels, widget.onToggleInfoPanels, Icons.dashboard_outlined, 'Info Panels',
+                _railFilter(widget.showInfoPanels, widget.onToggleInfoPanels, Icons.info_outline_rounded, 'Info Panels',
                     const [AppColors.indigo600, Color(0xFF7C3AED)], AppColors.indigo400),
               ])),
               const _RailDivider(),

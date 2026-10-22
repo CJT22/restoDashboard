@@ -9,6 +9,11 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.11.1]
+
+### Changed
+- **Info Panels has an "i" icon instead of a dashboard-style grid.** Its old four-tile icon looked almost the same as Floor Plan's grid right above it, so the two were easy to mix up. It's now the usual "i" in a circle, in the sidebar and in the collapsed rail. Ships in tablet app 0.5.1 (build 7) ([pubspec.yaml](mobile/pubspec.yaml), [Sidebar.tsx](src/components/Sidebar.tsx), [InfoPanelModal.tsx](src/layoutEditor/InfoPanelModal.tsx); app: [sidebar.dart](mobile/lib/ui/sidebar.dart)).
+
 ## [2.11.0]
 
 ### Added

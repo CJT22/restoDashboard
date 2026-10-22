@@ -14,7 +14,7 @@ import {
   PanelLeftOpen,
   Clock,
   LogOut,
-  LayoutDashboard
+  Info
 } from 'lucide-react';
 import { TableRoom } from '../types';
 import { ConnectionStatus } from '../services/adminSync';
@@ -491,7 +491,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 id="btn-toggle-info-panels"
                 on={showInfoPanels}
                 onClick={onToggleInfoPanels}
-                icon={<LayoutDashboard data-morph="info-panels" className="w-5 h-5" />}
+                icon={<Info data-morph="info-panels" className="w-5 h-5" />}
                 label="Info Panels"
                 title={showInfoPanels ? 'Hide info panels' : 'Show info panels'}
                 onClass="bg-gradient-to-r from-indigo-600 to-violet-600 shadow-lg shadow-indigo-600/25"
@@ -835,7 +835,7 @@ const SidebarRail: React.FC<SidebarRailProps> = ({
             : 'text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20'
         }`}
       >
-        <LayoutDashboard data-morph="info-panels" className="w-5 h-5" />
+        <Info data-morph="info-panels" className="w-5 h-5" />
       </button>
       </div>
 

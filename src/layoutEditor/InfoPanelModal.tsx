@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { X, Check, Trash2, LayoutDashboard, ArrowUp, ArrowDown, Plus, Minus } from 'lucide-react';
+import { X, Check, Trash2, Info, ArrowUp, ArrowDown, Plus, Minus } from 'lucide-react';
 import { InfoPanel, InfoPanelLayout, InfoWidgetType } from '../types';
 import { INFO_WIDGET_META, INFO_WIDGET_ORDER } from '../data/infoPanels';
 import { isCompactPanel, maxPanelColumns } from '../components/InfoPanelView';
@@ -63,7 +63,7 @@ export const InfoPanelModal: React.FC<InfoPanelModalProps> = ({ panel, panelSize
         <div className="p-5 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center">
-              <LayoutDashboard className="w-5 h-5" />
+              <Info className="w-5 h-5" />
             </div>
             <div>
               <h3 className="font-bold text-white text-base">Info Panel</h3>
