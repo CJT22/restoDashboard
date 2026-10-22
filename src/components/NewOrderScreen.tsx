@@ -58,6 +58,13 @@ export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, 
   const roomChargeTotal = hasRoomCharge ? roomChargeQty * roomChargeRate : 0;
   const total = cart.subtotal + roomChargeTotal;
 
+  // Extra guests in a room. A plain cart line (it's also in Extras), so it's
+  // sent and totalled as usual, but like Room Charge it isn't listed under
+  // Order Items: its stepper is the one place to change it.
+  const paxItem = hasRoomCharge ? (catalog?.paxItem ?? null) : null;
+  const paxQty = paxItem ? cart.qtyOf(paxItem.id) : 0;
+  const itemCount = cart.unitCount - paxQty;
+
   const resetAlerts = () => {
     setError(null);
     setInsufficient(null);
@@ -171,11 +178,32 @@ export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, 
           </div>
         )}
 
+        {paxItem && (
+          <div>
+            <label className="text-xs font-semibold text-slate-300 block mb-1.5">Additional Pax</label>
+            <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between gap-2">
+              <div className="text-sm text-white">
+                {paxQty} × ₱{paxItem.price.toLocaleString()}
+                <span className="block text-slate-500 text-[11px]">Per extra guest</span>
+              </div>
+              <QtyStepper
+                amount={`₱${(paxQty * paxItem.price).toFixed(2)}`}
+                onDecrement={() => cart.decrement(paxItem.id)}
+                onIncrement={() => cart.add(paxItem)}
+                decrementDisabled={paxQty <= 0}
+                onReset={() => cart.remove(paxItem.id)}
+                resetDisabled={paxQty <= 0}
+                resetLabel="Clear additional pax"
+              />
+            </div>
+          </div>
+        )}
+
         <div>
           <label className="text-xs font-semibold text-slate-300 block mb-1.5">
-            Order Items{cart.unitCount > 0 && <span className="text-slate-500 font-normal"> · {cart.unitCount}</span>}
+            Order Items{itemCount > 0 && <span className="text-slate-500 font-normal"> · {itemCount}</span>}
           </label>
-          <CartLineList cart={cart} emptyText="Tap items on the menu to add them." />
+          <CartLineList cart={cart} emptyText="Tap items on the menu to add them." hideMenuId={paxItem?.id} />
         </div>
 
         {insufficient && insufficient.length > 0 && <InsufficientAlert items={insufficient} />}

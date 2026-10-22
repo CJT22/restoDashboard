@@ -119,6 +119,12 @@ class _NewOrderScreenState extends State<NewOrderScreen> with MenuCatalogLoader 
   Widget build(BuildContext context) {
     final total = _cart.subtotal + _roomTotal;
     final conflict = _conflictOrderId != null;
+    // Extra guests in a room. A plain cart line (it's also in Extras), so it's
+    // sent and totalled as usual, but like Room Charge it isn't listed under
+    // Order Items: its stepper is the one place to change it.
+    final pax = _hasRoom ? catalog?.paxItem : null;
+    final paxQty = pax == null ? 0.0 : _cart.qtyOf(pax.id);
+    final itemCount = _cart.unitCount - paxQty.toInt();
 
     final aside = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Expanded(
@@ -173,9 +179,32 @@ class _NewOrderScreenState extends State<NewOrderScreen> with MenuCatalogLoader 
               ]),
             ),
           ],
+          if (pax != null) ...[
+            const SizedBox(height: 16),
+            const FieldLabel('Additional Pax'),
+            FaintCard(
+              padding: const EdgeInsets.fromLTRB(12, 8, 6, 8),
+              child: Row(children: [
+                Expanded(
+                  child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text('${formatQty(paxQty)} × ${pesoShort(pax.price)}',
+                        style: const TextStyle(fontSize: 13, color: Colors.white)),
+                    const Text('Per extra guest', style: TextStyle(fontSize: 11, color: AppColors.slate500)),
+                  ]),
+                ),
+                QtyStepper(
+                  amount: peso(paxQty * pax.price),
+                  onDecrement: paxQty <= 0 ? null : () => _cart.decrement(pax.id),
+                  onIncrement: () => _cart.add(pax),
+                  onReset: paxQty <= 0 ? null : () => _cart.remove(pax.id),
+                  resetLabel: 'Clear additional pax',
+                ),
+              ]),
+            ),
+          ],
           const SizedBox(height: 16),
-          FieldLabel('Order Items', suffix: _cart.unitCount > 0 ? '${_cart.unitCount}' : null),
-          CartLineList(cart: _cart, emptyText: 'Tap items on the menu to add them.'),
+          FieldLabel('Order Items', suffix: itemCount > 0 ? '$itemCount' : null),
+          CartLineList(cart: _cart, emptyText: 'Tap items on the menu to add them.', hideMenuId: pax?.id),
           if (_insufficient != null && _insufficient!.isNotEmpty) ...[
             const SizedBox(height: 12),
             InsufficientNotice(_insufficient!),

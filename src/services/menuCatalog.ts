@@ -4,6 +4,8 @@
 // Groups are built from restoAdmin's own category names (not item-name
 // matching like the staff app's), so every item lands in exactly one group.
 // A category not listed here falls into Extras rather than disappearing.
+// Old names are kept next to the current ones (restoAdmin renames categories),
+// so a rename doesn't silently move a category into Extras.
 
 import { AdminMenuItem, getMenu, getMenuPopularity } from './orderSync';
 
@@ -15,7 +17,12 @@ export interface MenuGroup {
 }
 
 export const MENU_GROUPS: MenuGroup[] = [
-  { id: 'sizzling', label: 'Sizzling & Pulutan', categories: ['filipino food', 'platter', 'fries', 'shrimp'] },
+  {
+    id: 'sizzling',
+    label: 'Sizzling & Pulutan',
+    // "Other Foods" is restoAdmin's Korean pulutan (Takoyaki, Tteokbokki, …).
+    categories: ['filipino food', 'platter', 'fries', 'shrimp', 'other foods'],
+  },
   { id: 'chicken', label: 'Chicken & Wings', categories: ['chicken'] },
   {
     id: 'mains',
@@ -26,23 +33,37 @@ export const MENU_GROUPS: MenuGroup[] = [
   {
     id: 'liquor',
     label: 'Cocktails & Liquor',
-    categories: ['cocktail menu', 'liquor per shot', 'whiskey', 'tequila', 'wine and champagne'],
+    categories: ['cocktail', 'cocktail menu', 'liquor per shot', 'whiskey', 'tequila', 'wine and champagne'],
   },
-  { id: 'nonAlcoholic', label: 'Non-Alcoholic', categories: ['soda in can', 'fruit shakes', 'ade', 'coffee', 'frappe'] },
+  {
+    id: 'nonAlcoholic',
+    label: 'Non-Alcoholic',
+    categories: ['soda in can', 'fruit shakes', 'ade', 'coffee', 'frappe', 'other drinks'],
+  },
   { id: 'desserts', label: 'Desserts', categories: ['dessert'] },
-  // Catch-all: also gets any category restoAdmin adds later.
-  { id: 'extras', label: 'Extras', categories: ['others', 'additional', 'games'] },
+  // Catch-all: also gets any category restoAdmin adds later. "Room Charge"
+  // only ever shows its pax items here (see HIDDEN_CATEGORIES).
+  {
+    id: 'extras',
+    label: 'Extras',
+    categories: ['additional bar', 'additional food', 'additional', 'others', 'games', 'room charge'],
+  },
 ];
 
 const FALLBACK_GROUP_ID = 'extras';
 
 // Never offered on the order screens. restoAdmin's "Room Charge" items
 // (ROOM 1, ROOM 2, …) would bill a room a second time on top of the
-// dashboard's own room-charge stepper.
+// dashboard's own room-charge stepper. Pax items are the exception.
 const HIDDEN_CATEGORIES = ['room charge'];
 
+// The extra-guest charge. restoAdmin files it under Room Charge as
+// "ADDITONAL PAX" (sic), so it's matched by name, not category. It's offered
+// like any item, and New Order gives rooms a stepper for it.
+const PAX_NAME = /\bpax\b/i;
+
 // What Quick Add Drinks offers: everyday drinks a table reorders by the round,
-// not bottles or cocktails. Water and iced tea sit in restoAdmin's "Others".
+// not bottles or cocktails. Water and iced tea sit in restoAdmin's "Other Drinks".
 const QUICK_DRINK_CATEGORIES = ['local beer', 'imported beer', 'soju', 'cocktail soju', 'soda in can', 'fruit shakes', 'ade'];
 const QUICK_DRINK_NAME = /\b(water|iced tea)\b/i;
 const QUICK_DRINK_COUNT = 12;
@@ -68,6 +89,7 @@ export interface MenuCatalog {
   groups: CatalogGroup[]; // only groups with items
   topRevenue: CatalogItem[]; // by revenue; empty when restoAdmin has no sales data
   quickDrinks: CatalogItem[];
+  paxItem: CatalogItem | null; // the Additional Pax item, if restoAdmin has one
   byId: Map<number, CatalogItem>;
 }
 
@@ -92,7 +114,7 @@ export function buildMenuCatalog(
   for (const g of MENU_GROUPS) for (const c of g.categories) groupOfCategory.set(c, g.id);
 
   const items: CatalogItem[] = menu
-    .filter((m) => !HIDDEN_CATEGORIES.includes(normalize(m.categoryName)))
+    .filter((m) => !HIDDEN_CATEGORIES.includes(normalize(m.categoryName)) || PAX_NAME.test(m.name))
     .map((m) => ({
       ...m,
       groupId: groupOfCategory.get(normalize(m.categoryName)) ?? FALLBACK_GROUP_ID,
@@ -121,7 +143,9 @@ export function buildMenuCatalog(
     .sort(bySales)
     .slice(0, QUICK_DRINK_COUNT);
 
-  return { items, groups, topRevenue, quickDrinks, byId: new Map(items.map((it) => [it.id, it])) };
+  const paxItem = items.find((it) => PAX_NAME.test(it.name)) ?? null;
+
+  return { items, groups, topRevenue, quickDrinks, paxItem, byId: new Map(items.map((it) => [it.id, it])) };
 }
 
 // Shared by the order screens and the order detail's Quick Add Drinks, so

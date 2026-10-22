@@ -4,7 +4,9 @@ import '../util/format.dart';
 
 // The branch menu as the order screens browse it: restoAdmin's menu grouped
 // into staff-facing sections and ranked by sales. Same groups and rules as
-// the web dashboard's src/services/menuCatalog.ts.
+// the web dashboard's src/services/menuCatalog.ts. Old category names are kept
+// next to the current ones (restoAdmin renames categories), so a rename doesn't
+// silently move a category into Extras.
 
 class MenuGroup {
   final String id;
@@ -15,22 +17,30 @@ class MenuGroup {
 }
 
 const menuGroups = [
-  MenuGroup('sizzling', 'Sizzling & Pulutan', ['filipino food', 'platter', 'fries', 'shrimp']),
+  // "Other Foods" is restoAdmin's Korean pulutan (Takoyaki, Tteokbokki, …).
+  MenuGroup('sizzling', 'Sizzling & Pulutan', ['filipino food', 'platter', 'fries', 'shrimp', 'other foods']),
   MenuGroup('chicken', 'Chicken & Wings', ['chicken']),
   MenuGroup('mains', 'Mains & Rice', ['rice', 'pizza', 'pasta', 'noodle and soup', 'steak', 'salad', 'set menu']),
   MenuGroup('beers', 'Beers & Soju', ['local beer', 'imported beer', 'soju', 'cocktail soju']),
-  MenuGroup('liquor', 'Cocktails & Liquor', ['cocktail menu', 'liquor per shot', 'whiskey', 'tequila', 'wine and champagne']),
-  MenuGroup('nonAlcoholic', 'Non-Alcoholic', ['soda in can', 'fruit shakes', 'ade', 'coffee', 'frappe']),
+  MenuGroup('liquor', 'Cocktails & Liquor',
+      ['cocktail', 'cocktail menu', 'liquor per shot', 'whiskey', 'tequila', 'wine and champagne']),
+  MenuGroup('nonAlcoholic', 'Non-Alcoholic', ['soda in can', 'fruit shakes', 'ade', 'coffee', 'frappe', 'other drinks']),
   MenuGroup('desserts', 'Desserts', ['dessert']),
-  // Catch-all: also gets any category restoAdmin adds later.
-  MenuGroup('extras', 'Extras', ['others', 'additional', 'games']),
+  // Catch-all: also gets any category restoAdmin adds later. "Room Charge"
+  // only ever shows its pax items here (see _hiddenCategories).
+  MenuGroup('extras', 'Extras', ['additional bar', 'additional food', 'additional', 'others', 'games', 'room charge']),
 ];
 
 const _fallbackGroupId = 'extras';
 
 // restoAdmin's "Room Charge" items would bill a room twice on top of the
-// room-charge stepper.
+// room-charge stepper. Pax items are the exception.
 const _hiddenCategories = ['room charge'];
+
+// The extra-guest charge. restoAdmin files it under Room Charge as
+// "ADDITONAL PAX" (sic), so it's matched by name, not category. It's offered
+// like any item, and New Order gives rooms a stepper for it.
+final _paxName = RegExp(r'\bpax\b', caseSensitive: false);
 
 const _quickDrinkCategories = ['local beer', 'imported beer', 'soju', 'cocktail soju', 'soda in can', 'fruit shakes', 'ade'];
 final _quickDrinkName = RegExp(r'\b(water|iced tea)\b', caseSensitive: false);
@@ -66,7 +76,8 @@ class MenuCatalog {
   final List<CatalogGroup> groups;
   final List<CatalogItem> topRevenue;
   final List<CatalogItem> quickDrinks;
-  const MenuCatalog(this.items, this.groups, this.topRevenue, this.quickDrinks);
+  final CatalogItem? paxItem; // the Additional Pax item, if restoAdmin has one
+  const MenuCatalog(this.items, this.groups, this.topRevenue, this.quickDrinks, [this.paxItem]);
 }
 
 String _norm(String s) => s.trim().toLowerCase();
@@ -81,7 +92,7 @@ MenuCatalog buildMenuCatalog(List<MenuItem> menu, List<MenuPopularity> popularit
   int byName(CatalogItem a, CatalogItem b) => naturalCompare(a.name, b.name);
 
   final items = menu
-      .where((m) => !_hiddenCategories.contains(_norm(m.categoryName)))
+      .where((m) => !_hiddenCategories.contains(_norm(m.categoryName)) || _paxName.hasMatch(m.name))
       .map((m) => CatalogItem(
             m,
             groupOfCategory[_norm(m.categoryName)] ?? _fallbackGroupId,
@@ -127,6 +138,7 @@ MenuCatalog buildMenuCatalog(List<MenuItem> menu, List<MenuPopularity> popularit
     groups,
     topRevenue.take(_topRevenueCount).toList(),
     quickDrinks.take(_quickDrinkCount).toList(),
+    items.where((it) => _paxName.hasMatch(it.name)).firstOrNull,
   );
 }
 

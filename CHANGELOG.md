@@ -9,6 +9,14 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.10.0]
+
+### Added
+- **Additional Pax can be billed from the order screens.** restoAdmin keeps its ₱100 "ADDITONAL PAX" item in the Room Charge category, which the dashboard hides so rooms can't be billed twice on top of the room-charge stepper, so staff had to use the staff app for it. Pax items (matched by name) are now the one exception. On New Order, a room gets an **Additional Pax** stepper under Room Charge. Like Room Charge, it isn't repeated under Order Items, so there's one control for it. The item is in Extras and search for any table, including Add Items on an open order. It goes to restoAdmin as an ordinary item line. ROOM 1 … ON AIR 2 and their HALF items stay hidden. Ships in tablet app 0.4.0 (build 5) ([pubspec.yaml](mobile/pubspec.yaml), [menuCatalog.ts](src/services/menuCatalog.ts), [NewOrderScreen.tsx](src/components/NewOrderScreen.tsx), [OrderScreen.tsx](src/components/OrderScreen.tsx); app: [menu_catalog.dart](mobile/lib/state/menu_catalog.dart), [new_order_screen.dart](mobile/lib/ui/new_order_screen.dart), [order_screen.dart](mobile/lib/ui/order_screen.dart), [menu_catalog_test.dart](mobile/test/menu_catalog_test.dart); [order-sync-integration.md](docs/order-sync-integration.md)).
+
+### Changed
+- **Cocktails, Other Foods and Other Drinks are back in their sections instead of Extras.** restoAdmin renamed "Cocktail Menu" to "Cocktail" and split "Others" into "Other Foods" and "Other Drinks", and any category name the order screens don't know falls into Extras. So all 15 cocktails, the pulutan dishes (Takoyaki, Tteokbokki, Bulgogi, Nachos…) and drinks like Water, Iced Tea and Hot/Ice Choco were filed there, mixed in with add-ons like Broken glass. The new names now map to Cocktails & Liquor, Sizzling & Pulutan and Non-Alcoholic, each with its own sub-chip, and the old names are kept in case. Checked against the live Blue Moon menu: every item outside Room Charge shows, and Extras keeps only Additional Bar, Additional Food, Games and Additional Pax (same files as above).
+
 ## [2.9.1]
 
 ### Removed

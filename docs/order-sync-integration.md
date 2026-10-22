@@ -158,7 +158,10 @@ same rule; nothing had to be added to filter them out specifically.
    `/api/menu/top-revenue`, the endpoint behind the staff app's Top Revenue Items), merged in
    [menuCatalog.ts](../src/services/menuCatalog.ts). Items are grouped by restoAdmin category into a
    few sections, best sellers first, with Top Revenue and Quick Add Drinks built from the same data.
-   restoAdmin's "Room Charge" items are hidden, since the room-charge stepper already bills rooms.
+   A category name the catalog doesn't list lands in Extras, so a category renamed in restoAdmin needs
+   its new name added there.
+   restoAdmin's "Room Charge" items are hidden, since the room-charge stepper already bills rooms,
+   except its pax item ("ADDITONAL PAX"), which rooms also get a stepper for under Room Charge.
    Table and floor come from the zone being viewed, unlike restoAdmin's own New Order modal, which
    has its own Floor/Table pickers (restoDashboard doesn't need them: you're already looking at the
    table).

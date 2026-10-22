@@ -98,13 +98,17 @@ class OrderCart extends ChangeNotifier {
 class CartLineList extends StatelessWidget {
   final OrderCart cart;
   final String emptyText;
-  const CartLineList({super.key, required this.cart, required this.emptyText});
+  // Leaves out a line that has its own stepper elsewhere on the screen (New
+  // Order's Additional Pax), so it isn't listed twice.
+  final int? hideMenuId;
+  const CartLineList({super.key, required this.cart, required this.emptyText, this.hideMenuId});
 
   @override
   Widget build(BuildContext context) {
-    if (cart.isEmpty) return EmptyBox(emptyText);
+    final lines = cart.lines.where((l) => l.menuId != hideMenuId).toList();
+    if (lines.isEmpty) return EmptyBox(emptyText);
     return Column(children: [
-      for (final l in cart.lines)
+      for (final l in lines)
         Padding(
           padding: const EdgeInsets.only(bottom: 8),
           child: FaintCard(

@@ -84,14 +84,21 @@ export function useOrderCart() {
 
 export type OrderCart = ReturnType<typeof useOrderCart>;
 
-export const CartLineList: React.FC<{ cart: OrderCart; emptyText: string }> = ({ cart, emptyText }) =>
-  cart.lines.length === 0 ? (
+// hideMenuId leaves out a line that has its own stepper elsewhere on the
+// screen (New Order's Additional Pax), so it isn't listed twice.
+export const CartLineList: React.FC<{ cart: OrderCart; emptyText: string; hideMenuId?: number | null }> = ({
+  cart,
+  emptyText,
+  hideMenuId,
+}) => {
+  const lines = cart.lines.filter((l) => l.menuId !== hideMenuId);
+  return lines.length === 0 ? (
     <div className="p-5 rounded-2xl bg-white/[0.02] border border-dashed border-white/10 text-center text-slate-500 text-xs">
       {emptyText}
     </div>
   ) : (
     <div className="space-y-2">
-      {cart.lines.map((l) => (
+      {lines.map((l) => (
         <div key={l.menuId} className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between gap-2">
           <div className="text-sm text-white min-w-0 truncate" title={l.name}>
             {l.qty}x {l.name}
@@ -107,6 +114,7 @@ export const CartLineList: React.FC<{ cart: OrderCart; emptyText: string }> = ({
       ))}
     </div>
   );
+};
 
 // restoAdmin's "not enough stock" answer to a create/add.
 export const InsufficientAlert: React.FC<{ items: any[] }> = ({ items }) => (
