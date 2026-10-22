@@ -10,6 +10,16 @@ import { NEEDS_CONNECTION_TEXT, OfflineNotice, useOnline } from './OfflineNotice
 
 const roundToHalf = (v: number) => Math.round(v * 2) / 2;
 
+// "2h × ₱1,500", or "Waived" once the hours are down to 0.
+const RoomChargeLabel: React.FC<{ hours: number; rate: number }> = ({ hours, rate }) => (
+  <div className="text-sm text-white">
+    {hours <= 0 ? <span className="font-semibold text-emerald-400">Waived</span> : `${hours}h × ₱${rate.toLocaleString()}`}
+    <span className="block text-slate-500 text-[11px]">
+      {hours <= 0 ? `₱${rate.toLocaleString()}/hr not charged` : 'Lower to 0 to waive'}
+    </span>
+  </div>
+);
+
 interface NewOrderScreenProps {
   table: TableRoom; // must have adminTableId set — caller gates on this
   // Dismissed without creating an order. On success the screen only calls
@@ -55,7 +65,11 @@ export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, 
   }, [table.adminTableId]);
 
   const hasRoomCharge = roomChargeRate > 0;
+  // Staff can lower it to 0 to waive the room charge, as in the staff app.
+  // A waived room needs at least one item: restoAdmin won't take an empty order.
+  const roomWaived = hasRoomCharge && roomChargeQty <= 0;
   const roomChargeTotal = hasRoomCharge ? roomChargeQty * roomChargeRate : 0;
+  const canSubmit = cart.lines.length > 0 || (hasRoomCharge && !roomWaived);
   const total = cart.subtotal + roomChargeTotal;
 
   // Extra guests in a room. A plain cart line (it's also in Extras), so it's
@@ -73,7 +87,7 @@ export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, 
   const payloadItems = () => cart.lines.map((l) => ({ menuId: l.menuId, qty: l.qty, unitPrice: l.unitPrice }));
 
   const handleSubmit = async () => {
-    if (cart.lines.length === 0 && !hasRoomCharge) return;
+    if (!canSubmit) return;
     resetAlerts();
     setSubmitting(true);
     try {
@@ -161,17 +175,14 @@ export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, 
           <div>
             <label className="text-xs font-semibold text-slate-300 block mb-1.5">Room Charge</label>
             <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between gap-2">
-              <div className="text-sm text-white">
-                {roomChargeQty}h × ₱{roomChargeRate.toLocaleString()}
-                <span className="block text-slate-500 text-[11px]">1 hour minimum</span>
-              </div>
+              <RoomChargeLabel hours={roomChargeQty} rate={roomChargeRate} />
               <QtyStepper
                 amount={`₱${roomChargeTotal.toFixed(2)}`}
-                onDecrement={() => setRoomChargeQty((prev) => roundToHalf(Math.max(1, prev - 0.5)))}
+                onDecrement={() => setRoomChargeQty((prev) => roundToHalf(Math.max(0, prev - 0.5)))}
                 onIncrement={() => setRoomChargeQty((prev) => roundToHalf(prev + 0.5))}
-                decrementDisabled={roomChargeQty <= 1}
+                decrementDisabled={roomChargeQty <= 0}
                 onReset={() => setRoomChargeQty(1)}
-                resetDisabled={roomChargeQty <= 1}
+                resetDisabled={roomChargeQty === 1}
                 resetLabel="Reset to 1 hour"
               />
             </div>
@@ -205,6 +216,10 @@ export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, 
           </label>
           <CartLineList cart={cart} emptyText="Tap items on the menu to add them." hideMenuId={paxItem?.id} />
         </div>
+
+        {roomWaived && cart.lines.length === 0 && (
+          <div className="text-[11px] text-slate-500">A waived room needs at least one item to start an order.</div>
+        )}
 
         {insufficient && insufficient.length > 0 && <InsufficientAlert items={insufficient} />}
 
@@ -243,7 +258,7 @@ export const NewOrderScreen: React.FC<NewOrderScreenProps> = ({ table, onClose, 
         ) : (
           <button
             onClick={handleSubmit}
-            disabled={!online || submitting || (cart.lines.length === 0 && !hasRoomCharge)}
+            disabled={!online || submitting || !canSubmit}
             className="w-full h-11 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-60 disabled:cursor-not-allowed text-white text-sm font-bold shadow-lg shadow-indigo-600/20"
           >
             {submitting ? 'Creating…' : 'Create Order'}

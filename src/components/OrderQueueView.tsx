@@ -11,6 +11,7 @@ import {
 import { getStatusColors } from '../utils/statusColors';
 import { zoneKindLabel } from '../utils/zoneLabels';
 import {
+  bookedHours,
   getRoomTiming,
   getTimerTone,
   formatDuration,
@@ -60,9 +61,12 @@ type BreakdownRow = { key: string; label: React.ReactNode; amount: number; muted
 function orderBreakdown(order: AdminOrderSummary, roomRate: number): BreakdownRow[] {
   const rows: BreakdownRow[] = [];
   const serviceCharge = order.serviceCharge ?? 0;
-  if (serviceCharge > 0) {
-    // Booked hours, the same derivation as the order detail's stepper.
-    const hours = roomRate > 0 ? Math.max(1, Math.round((serviceCharge / roomRate) * 2) / 2) : 0;
+  // Booked hours, the same derivation as the order detail's stepper.
+  const hours = bookedHours(serviceCharge, roomRate);
+  if (roomRate > 0 && hours <= 0) {
+    // A waived room still gets its row, so it's clear it wasn't billed.
+    rows.push({ key: 'room', label: 'Room charge · Waived', amount: 0 });
+  } else if (serviceCharge > 0) {
     rows.push({
       key: 'room',
       label: roomRate > 0 ? `Room charge · ${formatHours(hours)}` : 'Service charge',

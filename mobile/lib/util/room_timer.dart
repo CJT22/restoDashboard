@@ -27,15 +27,18 @@ RoomTiming? getRoomTiming(OrderSummary? order, DateTime now, {double fallbackRat
   final start = DateTime.tryParse(order.createdAt!);
   if (start == null) return null;
   final hours = bookedHours(order.serviceCharge!, rate);
+  // A waived room (0 hours) has no booking to count down.
+  if (hours <= 0) return null;
   final end = start.add(Duration(milliseconds: (hours * 3600000).round()));
   return RoomTiming(hours, start.toLocal(), end.toLocal(), end.difference(now));
 }
 
-/// Booked hours from a service charge and hourly rate, to the half hour, 1h minimum.
+/// Booked hours from a service charge and hourly rate, to the half hour.
+/// 0 = the room charge was waived (restoAdmin billed nothing for the room).
 double bookedHours(double serviceCharge, double rate) {
   if (rate <= 0) return 0;
   final hours = ((serviceCharge / rate) * 2).round() / 2;
-  return hours < 1 ? 1 : hours;
+  return hours < 0 ? 0 : hours;
 }
 
 enum TimerTone { normal, endingSoon, expired }

@@ -8,7 +8,8 @@ import { AdminOrderSummary } from '../types';
 // creation + booked hours. An hours change in either app just moves the end
 // time, so extending an expired room brings its countdown back and cutting
 // hours below the time already used flips it straight to overtime.
-// Tables without a room charge get no timer at all.
+// Tables without a room charge get no timer at all, and neither does a room
+// whose charge was waived (0 hours): there's no booking to count down.
 export interface RoomTiming {
   hours: number;
   startMs: number;
@@ -27,10 +28,18 @@ export function getRoomTiming(order: AdminOrderSummary | undefined, nowMs: numbe
   const startMs = Date.parse(order.createdAt);
   if (!Number.isFinite(startMs)) return null;
 
-  const hours = Math.max(1, Math.round((order.serviceCharge / rate) * 2) / 2);
+  const hours = bookedHours(order.serviceCharge, rate);
+  if (hours <= 0) return null;
   const endMs = startMs + hours * HOUR_MS;
   const remainingMs = endMs - nowMs;
   return { hours, startMs, endMs, remainingMs, expired: remainingMs <= 0 };
+}
+
+// Booked hours from a service charge and hourly rate, to the half hour.
+// 0 = the room charge was waived (restoAdmin billed nothing for the room).
+export function bookedHours(serviceCharge: number, rate: number): number {
+  if (rate <= 0) return 0;
+  return Math.max(0, Math.round((serviceCharge / rate) * 2) / 2);
 }
 
 // How urgent a running room looks everywhere its timer is shown (zone label,

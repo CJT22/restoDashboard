@@ -9,6 +9,11 @@ here. They're kept as written for the record. restoAdmin now lives in its own re
 restoAdmin changes those entries describe are **not** part of it (see `[2.0.0]`). From `[2.0.0]` on,
 entries cover this app only and carry no prefix.
 
+## [2.11.0]
+
+### Added
+- **A room's charge can be waived.** As in the staff app, the room-charge stepper now goes down to 0. It still starts at 1 hour, on New Order and on an open order. At 0 the row shows **Waived** in green with "₱X/hr not charged", and the order card keeps a "Room charge · Waived" ₱0 row, so it's clear the room wasn't forgotten. A waived room has no countdown, since nothing is booked; the floor, sidebar and Room Timers widget leave it out. It's sent to restoAdmin the way the staff app sends it, as one hour less than its base charge. A waived room needs at least one item to start an order, since restoAdmin won't take an empty ₱0 order. Before this, the server also read a 0 as "no hours given" and billed one hour, which is fixed. Ships in tablet app 0.5.0 (build 6) ([pubspec.yaml](mobile/pubspec.yaml), [index.ts](server/index.ts), [adminClient.ts](server/adminClient.ts), [roomTimer.ts](src/utils/roomTimer.ts), [NewOrderScreen.tsx](src/components/NewOrderScreen.tsx), [TableDetailModal.tsx](src/components/TableDetailModal.tsx), [OrderQueueView.tsx](src/components/OrderQueueView.tsx); app: [room_timer.dart](mobile/lib/util/room_timer.dart), [new_order_screen.dart](mobile/lib/ui/new_order_screen.dart), [table_detail.dart](mobile/lib/ui/table_detail.dart), [order_queue_view.dart](mobile/lib/ui/order_queue_view.dart), [room_timer_test.dart](mobile/test/room_timer_test.dart)).
+
 ## [2.10.0]
 
 ### Added

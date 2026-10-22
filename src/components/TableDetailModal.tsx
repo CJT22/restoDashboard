@@ -17,7 +17,7 @@ import {
 import { getAdminTables } from '../services/adminSync';
 import { getStatusColors } from '../utils/statusColors';
 import { zoneKindLabel } from '../utils/zoneLabels';
-import { getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, getTimerTone, TIMER_TEXT_CLASS, TimerTone } from '../utils/roomTimer';
+import { bookedHours, getRoomTiming, formatDuration, formatHours, formatClockTime, useNow, getTimerTone, TIMER_TEXT_CLASS, TimerTone } from '../utils/roomTimer';
 import { NewOrderScreen } from './NewOrderScreen';
 import { AddItemsScreen } from './AddItemsScreen';
 import { QuickAddDrinks } from './QuickAddDrinks';
@@ -139,8 +139,8 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   // Derived from the order's current SERVICE_CHARGE (which already includes
   // the room charge — see AdminOrderSummary.serviceCharge) and this table's
   // rate; re-derives automatically whenever the order refreshes.
-  const roomChargeQty =
-    roomChargeRate > 0 ? Math.max(1, Math.round(((activeOrder?.serviceCharge ?? 0) / roomChargeRate) * 2) / 2) : 0;
+  // 0 = waived.
+  const roomChargeQty = bookedHours(activeOrder?.serviceCharge ?? 0, roomChargeRate);
 
   // Hourly room countdown, same as the map zone's (src/utils/roomTimer.ts).
   // Falls back to this modal's own fetched rate if the order doesn't carry one.
@@ -169,7 +169,7 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
     setRoomChargeSaving(true);
     setOrderError(null);
     try {
-      const result = await updateOrderRoomCharge(activeOrder.id, roundToHalf(Math.max(1, nextQty)));
+      const result = await updateOrderRoomCharge(activeOrder.id, roundToHalf(Math.max(0, nextQty)));
       if (result.ok) {
         await refreshOrder();
       } else {
@@ -434,17 +434,27 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
                 {roomChargeRate > 0 && (
                   <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/5 flex items-center justify-between">
                     <div className="text-sm text-white">
-                      Room Charge — {roomChargeQty}h × ₱{roomChargeRate.toLocaleString()}
-                      <span className="text-slate-500 text-xs ml-1.5">(1 hour minimum)</span>
+                      Room Charge —{' '}
+                      {roomChargeQty <= 0 ? (
+                        <>
+                          <span className="font-semibold text-emerald-400">Waived</span>
+                          <span className="text-slate-500 text-xs ml-1.5">(₱{roomChargeRate.toLocaleString()}/hr not charged)</span>
+                        </>
+                      ) : (
+                        <>
+                          {roomChargeQty}h × ₱{roomChargeRate.toLocaleString()}
+                          <span className="text-slate-500 text-xs ml-1.5">(0 to waive)</span>
+                        </>
+                      )}
                     </div>
                     <QtyStepper
                       amount={`₱${(roomChargeQty * roomChargeRate).toFixed(2)}`}
                       onDecrement={() => handleRoomChargeChange(roomChargeQty - 0.5)}
                       onIncrement={() => handleRoomChargeChange(roomChargeQty + 0.5)}
-                      decrementDisabled={!online || roomChargeSaving || roomChargeQty <= 1}
+                      decrementDisabled={!online || roomChargeSaving || roomChargeQty <= 0}
                       incrementDisabled={!online || roomChargeSaving}
                       onReset={() => handleRoomChargeChange(1)}
-                      resetDisabled={!online || roomChargeSaving || roomChargeQty <= 1}
+                      resetDisabled={!online || roomChargeSaving || roomChargeQty === 1}
                       resetLabel="Reset to 1 hour"
                     />
                   </div>

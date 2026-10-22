@@ -427,16 +427,17 @@ export interface CreateOrderParams {
   items: CreateOrderItemInput[];
   // Hours the room is booked for (1 = the base hour restoAdmin always adds
   // automatically for a table with a ROOM_CHARGE — see resolveServiceChargeWithRoomCharge).
-  // Anything beyond 1 is billed as additional SERVICE_CHARGE here. Omit/1 for
+  // Anything beyond 1 is billed as additional SERVICE_CHARGE here, and 0
+  // waives it (-rate cancels the base hour, as the staff app does). Omit for
   // a table with no room charge, or when the caller doesn't need to adjust it.
   roomChargeQty?: number;
 }
 
-// The SERVICE_CHARGE to send for the hours beyond the base one restoAdmin
-// adds by itself.
+// The SERVICE_CHARGE to send on top of the base hour restoAdmin adds by
+// itself: (hours - 1) x rate, so -rate when the room charge is waived.
 async function extraRoomCharge(session: AdminSession, tableId: number, roomChargeQty: number | undefined): Promise<number> {
-  const qty = Math.max(1, Number(roomChargeQty) || 1);
-  if (qty <= 1) return 0;
+  const qty = roomChargeQty == null || !Number.isFinite(Number(roomChargeQty)) ? 1 : Math.max(0, Number(roomChargeQty));
+  if (qty === 1) return 0;
   const tables = await getBlueMoonTables(session);
   const rate = tables.find((t) => t.id === tableId)?.roomCharge || 0;
   return (qty - 1) * rate;
@@ -705,7 +706,8 @@ export async function updateOrderRoomCharge(session: AdminSession, orderId: numb
     return { ok: false, message: 'This table has no room charge' };
   }
 
-  const clampedQty = Math.max(1, roomChargeQty);
+  // 0 waives it: -rate cancels the base hour restoAdmin re-adds on save.
+  const clampedQty = Math.max(0, roomChargeQty);
   const explicitServiceCharge = (clampedQty - 1) * rate;
   const grandTotal = order.subtotal + order.taxAmount + explicitServiceCharge - order.discountAmount;
 

@@ -53,7 +53,11 @@ class _NewOrderScreenState extends State<NewOrderScreen> with MenuCatalogLoader 
   }
 
   bool get _hasRoom => _roomRate > 0;
+  // Staff can lower it to 0 to waive the room charge, as in the staff app.
+  // A waived room needs at least one item: restoAdmin won't take an empty order.
+  bool get _roomWaived => _hasRoom && _roomQty <= 0;
   double get _roomTotal => _hasRoom ? _roomQty * _roomRate : 0;
+  bool get _canSubmit => !_cart.isEmpty || (_hasRoom && !_roomWaived);
 
   // After adding to the existing order: fetch it so the detail view opens on it.
   Future<void> _finish() async {
@@ -65,7 +69,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> with MenuCatalogLoader 
   // Sent, or saved on this tablet when restoAdmin can't be reached; the
   // zone shows it either way, and the detail view opens on it.
   Future<void> _submit() async {
-    if (_cart.isEmpty && !_hasRoom) return;
+    if (!_canSubmit) return;
     setState(() {
       _submitting = true;
       _error = null;
@@ -164,16 +168,20 @@ class _NewOrderScreenState extends State<NewOrderScreen> with MenuCatalogLoader 
               child: Row(children: [
                 Expanded(
                   child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${formatQty(_roomQty)}h × ${pesoShort(_roomRate)}',
-                        style: const TextStyle(fontSize: 13, color: Colors.white)),
-                    const Text('1 hour minimum', style: TextStyle(fontSize: 11, color: AppColors.slate500)),
+                    _roomWaived
+                        ? const Text('Waived',
+                            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.emerald400))
+                        : Text('${formatQty(_roomQty)}h × ${pesoShort(_roomRate)}',
+                            style: const TextStyle(fontSize: 13, color: Colors.white)),
+                    Text(_roomWaived ? '${pesoShort(_roomRate)}/hr not charged' : 'Lower to 0 to waive',
+                        style: const TextStyle(fontSize: 11, color: AppColors.slate500)),
                   ]),
                 ),
                 QtyStepper(
                   amount: peso(_roomTotal),
-                  onDecrement: _roomQty <= 1 ? null : () => setState(() => _roomQty = _roundToHalf(_roomQty - 0.5)),
+                  onDecrement: _roomQty <= 0 ? null : () => setState(() => _roomQty = _roundToHalf(_roomQty - 0.5)),
                   onIncrement: () => setState(() => _roomQty = _roundToHalf(_roomQty + 0.5)),
-                  onReset: _roomQty <= 1 ? null : () => setState(() => _roomQty = 1),
+                  onReset: _roomQty == 1 ? null : () => setState(() => _roomQty = 1),
                   resetLabel: 'Reset to 1 hour',
                 ),
               ]),
@@ -205,6 +213,11 @@ class _NewOrderScreenState extends State<NewOrderScreen> with MenuCatalogLoader 
           const SizedBox(height: 16),
           FieldLabel('Order Items', suffix: itemCount > 0 ? '$itemCount' : null),
           CartLineList(cart: _cart, emptyText: 'Tap items on the menu to add them.', hideMenuId: pax?.id),
+          if (_roomWaived && _cart.isEmpty) ...[
+            const SizedBox(height: 8),
+            const Text('A waived room needs at least one item to start an order.',
+                style: TextStyle(fontSize: 11, color: AppColors.slate500)),
+          ],
           if (_insufficient != null && _insufficient!.isNotEmpty) ...[
             const SizedBox(height: 12),
             InsufficientNotice(_insufficient!),
@@ -251,7 +264,7 @@ class _NewOrderScreenState extends State<NewOrderScreen> with MenuCatalogLoader 
                   label: _submitting ? 'Creating…' : 'Create Order',
                   height: 46,
                   expand: true,
-                  onPressed: _submitting || (_cart.isEmpty && !_hasRoom) ? null : _submit,
+                  onPressed: _submitting || !_canSubmit ? null : _submit,
                 ),
         ]),
       ),

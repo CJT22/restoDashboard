@@ -137,7 +137,7 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
     setState(() => _roomSaving = true);
     await _run(() async {
       // Saved on this tablet instead when restoAdmin can't be reached.
-      final r = await state.updateRoomCharge(zone, order, _roundToHalf(qty < 1 ? 1 : qty));
+      final r = await state.updateRoomCharge(zone, order, _roundToHalf(qty < 0 ? 0 : qty));
       if (!r.ok) _fail(r, 'Failed to update room charge');
     });
     if (mounted) setState(() => _roomSaving = false);
@@ -316,18 +316,27 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
                       Expanded(
                         child: Text.rich(
                           TextSpan(children: [
-                            TextSpan(text: 'Room Charge — ${formatQty(roomQty)}h × ${pesoShort(_roomRate)}'),
-                            const TextSpan(
-                                text: '  (1 hour minimum)', style: TextStyle(fontSize: 11, color: AppColors.slate500)),
+                            const TextSpan(text: 'Room Charge — '),
+                            if (roomQty <= 0) ...[
+                              const TextSpan(
+                                  text: 'Waived', style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.emerald400)),
+                              TextSpan(
+                                  text: '  (${pesoShort(_roomRate)}/hr not charged)',
+                                  style: const TextStyle(fontSize: 11, color: AppColors.slate500)),
+                            ] else ...[
+                              TextSpan(text: '${formatQty(roomQty)}h × ${pesoShort(_roomRate)}'),
+                              const TextSpan(
+                                  text: '  (0 to waive)', style: TextStyle(fontSize: 11, color: AppColors.slate500)),
+                            ],
                           ]),
                           style: const TextStyle(fontSize: 13, color: Colors.white),
                         ),
                       ),
                       QtyStepper(
                         amount: peso(roomQty * _roomRate),
-                        onDecrement: _roomSaving || roomQty <= 1 ? null : () => _changeRoomCharge(roomQty - 0.5),
+                        onDecrement: _roomSaving || roomQty <= 0 ? null : () => _changeRoomCharge(roomQty - 0.5),
                         onIncrement: _roomSaving ? null : () => _changeRoomCharge(roomQty + 0.5),
-                        onReset: _roomSaving || roomQty <= 1 ? null : () => _changeRoomCharge(1),
+                        onReset: _roomSaving || roomQty == 1 ? null : () => _changeRoomCharge(1),
                         resetLabel: 'Reset to 1 hour',
                       ),
                     ]),

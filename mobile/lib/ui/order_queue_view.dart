@@ -24,12 +24,12 @@ class _ReceiptRow {
 List<_ReceiptRow> _receipt(OrderSummary order, double roomRate) {
   final rows = <_ReceiptRow>[];
   final service = order.serviceCharge ?? 0;
-  if (service > 0) {
-    rows.add(_ReceiptRow(
-      'room',
-      roomRate > 0 ? 'Room charge · ${formatHours(bookedHours(service, roomRate))}' : 'Service charge',
-      service,
-    ));
+  final hours = bookedHours(service, roomRate);
+  if (roomRate > 0 && hours <= 0) {
+    // A waived room still gets its row, so it's clear it wasn't billed.
+    rows.add(const _ReceiptRow('room', 'Room charge · Waived', 0));
+  } else if (service > 0) {
+    rows.add(_ReceiptRow('room', roomRate > 0 ? 'Room charge · ${formatHours(hours)}' : 'Service charge', service));
   }
   final lines = groupOrderLines(order.items);
   for (final l in lines.take(maxListedOrderItems)) {
