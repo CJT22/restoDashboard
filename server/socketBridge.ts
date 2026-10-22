@@ -185,6 +185,10 @@ export function connectSocketBridge(): void {
   };
   socket.on('order_created', handleOrderEvent('order_created'));
   socket.on('order_updated', handleOrderEvent('order_updated'));
+  // Items added through the staff-app endpoint (the staff app's, and the
+  // dashboard's own since its actions are logged) come only as this event,
+  // with the order's full item list: to the dashboard it's an order update.
+  socket.on('order_items_added', handleOrderEvent('order_updated'));
 
   socket.on('disconnect', (reason) => {
     setBridgeConnected(false);

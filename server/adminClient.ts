@@ -468,17 +468,6 @@ export async function getOrderById(session: AdminSession, orderId: number): Prom
   return mapAdminOrder(orderJson.data, items);
 }
 
-// restoAdmin requires a unique ORDER_NO per branch, but the dashboard never
-// shows it to staff — so it's generated here rather than in the browser, in
-// the same ORD-YYYYMMDD-HHMMSS format restoAdmin's own order flows use (see
-// formatOrderNoWithDate in restoAdmin/server/services/orderReceiptHelpers.js).
-function formatOrderNo(date: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const ymd = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}`;
-  const hms = `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
-  return `ORD-${ymd}-${hms}`;
-}
-
 // How many later seconds to try when the generated number is already taken
 // (two orders created in the same second). Staff can't edit the number, so a
 // collision has to be resolved here instead of surfacing as an error.
@@ -506,12 +495,11 @@ async function extraRoomCharge(session: AdminSession, tableId: number, roomCharg
   return (qty - 1) * rate;
 }
 
-// Dashboard orders skip the Pending step and go straight to Confirmed.
-// This goes through restoAdmin's status endpoint rather than POSTing
-// STATUS: 2 because confirming is what deducts inventory
-// (InventoryDeductionService.deductOnOrderConfirmed) — a create alone
-// never would. If the confirm fails, cancel the just-created order so
-// the table isn't left holding a half-made one.
+// Dashboard orders skip the Pending step and go straight to Confirmed, the
+// same create-then-confirm the staff app does, so restoAdmin's Activity tab
+// shows "Confirmed order" after the new order like it does for a tablet's.
+// If the confirm fails, cancel the just-created order so the table isn't
+// left holding a half-made one.
 async function confirmNewOrder(session: AdminSession, id: number, orderNo: string): Promise<CreateOrderResult> {
   const confirmed = await updateOrderStatus(session, id, 2).catch((err: any) => ({ ok: false, message: err?.message }));
   if (!confirmed.ok) {
@@ -539,18 +527,22 @@ export interface CreateOrderAtResult extends CreateOrderResult {
   merged?: boolean;
 }
 
-// Creates an order taken at `createdAt`, safely repeatable: the tablet app
-// uses it for every order, so one it saved while offline (or whose answer
-// was lost) can be sent again without making a second order.
+// Creates an order taken at `createdAt` (the web passes "now"), safely
+// repeatable, so one the tablet saved while offline (or whose answer was
+// lost) can be sent again without making a second order.
 //
-// It goes through restoAdmin's staff-app endpoint, POST /api/orders, not
-// the admin POST /orders that createOrder uses, because only that one
-// keeps the given ENCODED_DT (so the room timer starts when the order was
-// really taken) and answers a repeated ORDER_NO with the order it already
-// made (`already_exists`) instead of an error. The number is derived from
+// It goes through restoAdmin's staff-app endpoint, POST /api/orders, the one
+// the staff app (restoapp) uses: restoAdmin logs it in the Activity tab
+// ("New order"), starts the room's clock in its room history, keeps the given
+// ENCODED_DT (so the room timer starts when the order was really taken) and
+// answers a repeated ORDER_NO with the order it already made
+// (`already_exists`) instead of an error. The number is derived from
 // `createdAt`, so every retry of one order sends the same number. If that
 // number belongs to another table's order (two orders in the same second),
-// it steps a second forward, as createOrder does.
+// it steps a second forward.
+//
+// Like the staff app, nothing here deducts ingredient stock: only restoAdmin's
+// admin endpoints do, and Blue Moon has no recipes set up.
 //
 // With `mergeOnConflict`, a table that already has an open order (someone
 // opened one while this order waited offline) gets these items added to it
@@ -613,7 +605,7 @@ export async function createOrderAt(
         // Nothing to add: the open order already bills the room.
         return { ok: true, id: existingOrderId, orderNo: String(json.existing_order_no), merged: true };
       }
-      const added = await addItemsToOrder(session, existingOrderId, params.items);
+      const added = await addItemsToOrder(session, existingOrderId, params.items, params.createdAt);
       if (!added.ok) return { ok: false, kind: added.kind, insufficient: added.insufficient, message: added.message };
       return { ok: true, id: existingOrderId, orderNo: String(json.existing_order_no), merged: true };
     }
@@ -631,81 +623,32 @@ export async function createOrderAt(
   return { ok: false, kind: 'error', message: json?.error || json?.message || `Failed to create order (${res.status})` };
 }
 
-export async function createOrder(session: AdminSession, params: CreateOrderParams): Promise<CreateOrderResult> {
-  const subtotal = params.items.reduce((sum, it) => sum + it.qty * it.unitPrice, 0);
-  const orderItems = params.items.map((it) => ({
-    menu_id: it.menuId,
-    qty: it.qty,
-    unit_price: it.unitPrice,
-    line_total: it.qty * it.unitPrice,
-    status: 3,
-  }));
-
-  const serviceCharge = await extraRoomCharge(session, params.tableId, params.roomChargeQty);
-
-  // OrderController.create ignores BRANCH_ID in the body for a non-admin
-  // caller and resolves the branch from the user's own token instead (then
-  // req.query.branch_id as a last resort). auth.ts only signs in users whose
-  // branch is ADMIN_BRANCH_ID, so both point at Blue Moon.
-  const postOrder = (orderNo: string) =>
-    authedFetch(session, `/orders?branch_id=${ADMIN_BRANCH_ID}`, {
-      method: 'POST',
-      body: JSON.stringify({
-        ORDER_NO: orderNo,
-        BRANCH_ID: ADMIN_BRANCH_ID,
-        TABLE_ID: params.tableId,
-        ORDER_TYPE: params.orderType,
-        STATUS: 3,
-        SUBTOTAL: subtotal,
-        TAX_AMOUNT: 0,
-        SERVICE_CHARGE: serviceCharge,
-        DISCOUNT_AMOUNT: 0,
-        GRAND_TOTAL: subtotal + serviceCharge,
-        ORDER_ITEMS: orderItems,
-      }),
-    });
-
-  // restoAdmin checks for a duplicate ORDER_NO before anything else and
-  // answers 400 "Order #… already exists", so on that exact response step
-  // the timestamp forward a second and try again.
-  const base = new Date();
-  let res!: Response;
-  let json: any;
-  for (let attempt = 0; attempt < ORDER_NO_ATTEMPTS; attempt++) {
-    res = await postOrder(formatOrderNo(new Date(base.getTime() + attempt * 1000)));
-    json = await res.json().catch(() => ({}));
-    const duplicate = res.status === 400 && /already exists/i.test(String(json?.error ?? ''));
-    if (!duplicate) break;
-  }
-
-  if (res.ok && json?.success !== false) {
-    return confirmNewOrder(session, Number(json.data.id), String(json.data.order_no));
-  }
-  if (res.status === 409 && json?.code === 'ACTIVE_ORDER_EXISTS') {
-    return {
-      ok: false,
-      kind: 'conflict',
-      existingOrderId: Number(json.existing_order_id),
-      existingOrderNo: String(json.existing_order_no),
-      // Not restoAdmin's own wording — that embeds the order number, which
-      // the dashboard keeps out of sight.
-      message: 'This table already has an active order.',
-    };
-  }
-  if (Array.isArray(json?.insufficient) && json.insufficient.length) {
-    return { ok: false, kind: 'insufficient', insufficient: json.insufficient, message: json.error || 'Insufficient inventory' };
-  }
-  if (res.status === 400 && /already exists/i.test(String(json?.error ?? ''))) {
-    return { ok: false, kind: 'error', message: 'Could not create the order right now. Please try again in a moment.' };
-  }
-  return { ok: false, kind: 'error', message: json?.error || json?.message || `Failed to create order (${res.status})` };
+// When something was really done, as restoAdmin's staff endpoints take it
+// (`client_at`, Manila 'YYYY-MM-DD HH:MM:SS'): a change the tablet saved while
+// offline and sends later is logged at the time it was made, not when it
+// synced. Undefined when not given, or not a valid time.
+function clientAt(at: string | undefined): string | undefined {
+  if (!at) return undefined;
+  const d = new Date(at);
+  if (Number.isNaN(d.getTime())) return undefined;
+  const { date, time } = manilaParts(d);
+  return `${date} ${time}`;
 }
 
-export async function addItemsToOrder(session: AdminSession, orderId: number, items: CreateOrderItemInput[]): Promise<AddItemsResult> {
-  const res = await authedFetch(session, `/orders/${orderId}/items`, {
+// Adds items to an open order through the staff app's endpoint, so restoAdmin
+// logs it ("Added: …") and the staff app's cashier is alerted as for a
+// tablet's. `at` is when it was really done (see clientAt).
+export async function addItemsToOrder(
+  session: AdminSession,
+  orderId: number,
+  items: CreateOrderItemInput[],
+  at?: string
+): Promise<AddItemsResult> {
+  const res = await authedFetch(session, `/api/orders/${orderId}/items?branch_id=${ADMIN_BRANCH_ID}`, {
     method: 'POST',
     body: JSON.stringify({
       items: items.map((it) => ({ menu_id: it.menuId, qty: it.qty, unit_price: it.unitPrice })),
+      client_at: clientAt(at),
     }),
   });
   const json: any = await res.json().catch(() => ({}));
@@ -734,11 +677,12 @@ export interface UpdateItemResult {
   message?: string;
 }
 
-// Confirm (2) or Cancel (-1) an order — restoAdmin already flips the table
-// to Available on cancel, and emits order_updated either way, which the
-// existing socketBridge -> SSE -> App.tsx chain already relays.
+// Confirm (2) or Cancel (-1) an order through the staff app's endpoint, so
+// restoAdmin logs it ("Confirmed order" / "Cancelled order") like a tablet's.
+// On cancel it also frees the table and stops the room's clock in the room
+// history. It emits order_updated either way, which socketBridge relays.
 export async function updateOrderStatus(session: AdminSession, orderId: number, status: 2 | -1): Promise<{ ok: boolean; message?: string }> {
-  const res = await authedFetch(session, `/orders/${orderId}/status`, {
+  const res = await authedFetch(session, `/api/waiter/orders/${orderId}/status?branch_id=${ADMIN_BRANCH_ID}`, {
     method: 'PATCH',
     body: JSON.stringify({ status }),
   });
@@ -757,11 +701,17 @@ export async function updateOrderStatus(session: AdminSession, orderId: number, 
 // PUT /orders/:id would change SERVICE_CHARGE behind the history's back: the
 // staff app would keep timing the old hours, and its next extend would bill
 // the difference a second time.
-export async function updateOrderRoomCharge(session: AdminSession, orderId: number, roomChargeQty: number): Promise<{ ok: boolean; message?: string }> {
+// `at` is when it was really done (see clientAt).
+export async function updateOrderRoomCharge(
+  session: AdminSession,
+  orderId: number,
+  roomChargeQty: number,
+  at?: string
+): Promise<{ ok: boolean; message?: string }> {
   const sessions = Math.round(Math.max(0, roomChargeQty) * 2) / 2;
   const res = await authedFetch(session, `/api/waiter/orders/${orderId}/extend-room-charge?branch_id=${ADMIN_BRANCH_ID}`, {
     method: 'POST',
-    body: JSON.stringify({ sessions }),
+    body: JSON.stringify({ sessions, client_at: clientAt(at) }),
   });
   const json: any = await res.json().catch(() => ({}));
   if (res.ok && json?.success !== false) {
@@ -770,6 +720,73 @@ export async function updateOrderRoomCharge(session: AdminSession, orderId: numb
   return { ok: false, message: json?.error || json?.message || `Failed to update room charge (${res.status})` };
 }
 
+// An order's item rows as restoAdmin stores them (order_items: IDNo, MENU_ID,
+// QTY, UNIT_PRICE, STATUS, REMARKS, ENCODED_DT), oldest first.
+async function getOrderItemRows(session: AdminSession, orderId: number): Promise<any[]> {
+  const res = await authedFetch(session, `/orders/${orderId}/items`);
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok || json?.success === false) {
+    throw new Error(json?.error || json?.message || `Failed to fetch the order's items (${res.status})`);
+  }
+  const timeOf = (row: any) => Date.parse(encodedDtToIso(row.ENCODED_DT) ?? '') || 0;
+  return (Array.isArray(json.data) ? json.data : []).sort(
+    (a: any, b: any) => timeOf(a) - timeOf(b) || Number(a.IDNo) - Number(b.IDNo)
+  );
+}
+
+// Changes item lines of an open order: `changes` maps an order_items IDNo to
+// its new qty, 0 removing the line. Goes through the staff app's edit-order
+// endpoint, so restoAdmin logs it ("Edited: …") and alerts the staff app's
+// cashier like a tablet's edit. That endpoint replaces the order's whole item
+// list, so this sends every current line with only these changed, each
+// keeping its price and kitchen status; restoAdmin carries the lines' notes
+// and order times over by menu item. It refuses an empty list, so removing an
+// order's last items goes through the admin delete instead (not logged).
+export async function editOrderItems(
+  session: AdminSession,
+  orderId: number,
+  changes: Map<number, number>
+): Promise<UpdateItemResult> {
+  const rows = await getOrderItemRows(session, orderId);
+  const ids = new Set(rows.map((r) => Number(r.IDNo)));
+  if (![...changes.keys()].every((id) => ids.has(id))) {
+    return { ok: false, kind: 'error', message: 'That item is no longer on this order. Refresh and try again.' };
+  }
+  const next = rows.flatMap((row) => {
+    const qty = changes.get(Number(row.IDNo));
+    if (qty == null) return [row];
+    return qty > 0 ? [{ ...row, QTY: qty }] : [];
+  });
+
+  if (next.length === 0) {
+    for (const id of changes.keys()) {
+      const removed = await deleteOrderItem(session, id);
+      if (!removed.ok) return { ok: false, kind: 'error', message: removed.message };
+    }
+    return { ok: true };
+  }
+
+  const res = await authedFetch(session, `/api/orders/${orderId}/items?branch_id=${ADMIN_BRANCH_ID}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      items: next.map((row) => ({
+        menu_id: Number(row.MENU_ID),
+        qty: Number(row.QTY),
+        unit_price: Number(row.UNIT_PRICE),
+        status: Number(row.STATUS) || 3,
+      })),
+    }),
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (res.ok && json?.success !== false) {
+    return { ok: true, newGrandTotal: Number(json.data?.new_grand_total) };
+  }
+  return { ok: false, kind: 'error', message: json?.error || json?.message || `Failed to update the order's items (${res.status})` };
+}
+
+// The admin endpoints for one line, for tablets on an app older than 0.5.3,
+// which don't send the order id editOrderItems needs. Not logged in the staff
+// app's Activity tab.
 export async function updateOrderItemQty(session: AdminSession, itemId: number, qty: number): Promise<UpdateItemResult> {
   const res = await authedFetch(session, `/order_items/${itemId}`, {
     method: 'PUT',
@@ -794,33 +811,100 @@ export async function deleteOrderItem(session: AdminSession, itemId: number): Pr
   return { ok: false, message: json?.error || json?.message || `Failed to delete item (${res.status})` };
 }
 
-export async function getBilling(session: AdminSession, orderId: number): Promise<AdminBilling | null> {
+async function getBillingRow(session: AdminSession, orderId: number): Promise<any | null> {
   const res = await authedFetch(session, `/billing/${orderId}`);
   if (res.status === 404) return null;
   const json: any = await res.json().catch(() => ({}));
   if (!res.ok || json?.success === false) {
     throw new Error(json?.error || json?.message || `Failed to fetch billing record (${res.status})`);
   }
-  const row = json.data;
+  return json.data ?? null;
+}
+
+// The order's billing, with amountDue the order's current GRAND_TOTAL rather
+// than billing.AMOUNT_DUE. restoAdmin doesn't keep the two in step: the staff
+// app's room-hours change (extend-room-charge) updates only the order, so
+// after one, AMOUNT_DUE still holds the old total, and a settle reading it
+// would ask for too little.
+export async function getBilling(session: AdminSession, orderId: number): Promise<AdminBilling | null> {
+  const [row, order] = await Promise.all([getBillingRow(session, orderId), getOrderById(session, orderId)]);
+  if (!row) return null;
   return {
     orderId: Number(row.ORDER_ID),
     paymentMethod: String(row.PAYMENT_METHOD ?? 'CASH'),
-    amountDue: Number(row.AMOUNT_DUE ?? 0),
+    amountDue: order ? order.grandTotal : Number(row.AMOUNT_DUE ?? 0),
     amountPaid: Number(row.AMOUNT_PAID ?? 0),
     status: Number(row.STATUS ?? 3),
   };
 }
 
-// Same call restoAdmin's own Billing.tsx "Process Payment" modal makes —
-// additive (server adds amountPaid to whatever's already on file), so the
-// caller must compute the remaining balance itself (getBilling first) rather
-// than assume the full grand total, since a partial payment may already
-// exist from restoAdmin's side.
+// Brings billing.AMOUNT_DUE up to the order's GRAND_TOTAL (see getBilling)
+// before a payment goes through restoAdmin's billing endpoint, which decides
+// Partial vs Paid from AMOUNT_DUE. restoAdmin has no billing-only update, so
+// this re-saves the order as it is through PUT /orders/:id, which rewrites
+// AMOUNT_DUE. That endpoint adds the table's room rate to the SERVICE_CHARGE
+// it's given, so it's sent the charge minus that rate to keep it unchanged.
+async function syncAmountDue(session: AdminSession, orderId: number): Promise<void> {
+  const [row, order] = await Promise.all([getBillingRow(session, orderId), getOrderById(session, orderId)]);
+  if (!row || !order || Math.abs(order.grandTotal - Number(row.AMOUNT_DUE ?? 0)) < 0.005) return;
+  const tables = order.tableId != null ? await getBlueMoonTables(session) : [];
+  const rate = tables.find((t) => t.id === order.tableId)?.roomCharge || 0;
+  const res = await authedFetch(session, `/orders/${orderId}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      TABLE_ID: order.tableId,
+      ORDER_TYPE: order.orderType,
+      STATUS: order.status,
+      SUBTOTAL: order.subtotal,
+      TAX_AMOUNT: order.taxAmount,
+      SERVICE_CHARGE: order.serviceCharge - rate,
+      DISCOUNT_AMOUNT: order.discountAmount,
+      GRAND_TOTAL: order.grandTotal,
+    }),
+  });
+  const json: any = await res.json().catch(() => ({}));
+  if (!res.ok || json?.success === false) {
+    throw new Error(json?.error || json?.message || `Failed to update the order's amount due (${res.status})`);
+  }
+}
+
+// Takes a payment. Paying the whole balance of an order nothing has been paid
+// on yet goes through the staff app's settle (the cashier app's), so
+// restoAdmin logs it in the Activity tab ("Settled ₱… · CASH"), stops the
+// room's clock in the room history and writes the billing record from the
+// order's current total. A partial payment, or the rest of a partly paid
+// bill, goes through restoAdmin's billing endpoint (its Billing screen's
+// "Process Payment"): the staff settle only settles in full, and it would
+// record the earlier payment a second time. That endpoint adds amountPaid to
+// what's already paid and settles the order once the total is covered; it's
+// not logged in the Activity tab.
 export async function settleOrder(
   session: AdminSession,
   orderId: number,
   params: { paymentMethod: string; amountPaid: number; paymentRef: string | null }
 ): Promise<{ ok: boolean; status?: number; message?: string }> {
+  const billing = await getBilling(session, orderId);
+  if (!billing) return { ok: false, message: 'This order has no billing record in restoAdmin.' };
+  const remaining = billing.amountDue - billing.amountPaid;
+
+  if (billing.amountPaid <= 0 && params.amountPaid >= remaining - 0.005) {
+    const res = await authedFetch(session, `/api/waiter/orders/${orderId}/status?branch_id=${ADMIN_BRANCH_ID}`, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        status: 1,
+        payment_method: params.paymentMethod,
+        amount_paid: params.amountPaid,
+        // restoAdmin fills a cash payment's empty reference with "Settled via
+        // Cashier App"; say where it really came from instead.
+        payment_ref: params.paymentRef || (params.paymentMethod === 'CASH' ? 'Settled via Dashboard' : null),
+      }),
+    });
+    const json: any = await res.json().catch(() => ({}));
+    if (res.ok && json?.success !== false) return { ok: true, status: 1 };
+    return { ok: false, message: json?.error || json?.message || `Failed to settle order (${res.status})` };
+  }
+
+  await syncAmountDue(session, orderId);
   const res = await authedFetch(session, `/billing/${orderId}`, {
     method: 'PUT',
     body: JSON.stringify({

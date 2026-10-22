@@ -146,10 +146,11 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
   // A ±1 acts on the row's newest line, leaving older ones (often already
   // prepared) alone; a newest line at its last unit is deleted instead.
   Future<void> _stepRow(OrderLineGroup row, int delta) async {
+    final order = zone.activeOrder;
+    if (order == null) return;
     final newest = row.lines.last;
-    final r = delta < 0 && newest.quantity <= 1
-        ? await state.api.deleteItem(newest.id)
-        : await state.api.updateItemQty(newest.id, newest.quantity + delta);
+    final qty = delta < 0 && newest.quantity <= 1 ? 0.0 : newest.quantity + delta;
+    final r = await state.api.editOrderItems(order.id, {newest.id: qty});
     if (r.ok) {
       await state.refreshOrder(zone);
     } else {
@@ -165,21 +166,17 @@ class _TableDetailDialogState extends State<TableDetailDialog> {
     if (mounted) setState(() => _savingItemId = null);
   }
 
-  // Trash removes the item entirely: every line it has on the order.
+  // Trash removes the item entirely: every line it has on the order, as one edit.
   Future<void> _deleteRow(OrderLineGroup row) async {
-    if (_savingItemId != null || _savingDrinkId != null) return;
+    final order = zone.activeOrder;
+    if (order == null || _savingItemId != null || _savingDrinkId != null) return;
     setState(() => _savingItemId = row.id);
     await _run(() async {
       try {
-        for (final line in row.lines) {
-          final r = await state.api.deleteItem(line.id);
-          if (!r.ok) {
-            _fail(r, 'Failed to delete item');
-            break;
-          }
-        }
+        final r = await state.api.editOrderItems(order.id, {for (final line in row.lines) line.id: 0.0});
+        if (!r.ok) _fail(r, 'Failed to delete item');
       } finally {
-        // Also after a partial failure, so the rows show what's really left.
+        // Also after a failure, so the rows show what's really left.
         await state.refreshOrder(zone).catchError((_) {});
       }
     });

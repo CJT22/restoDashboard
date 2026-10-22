@@ -271,17 +271,17 @@ export async function cancelOrder(orderId: number): Promise<{ ok: boolean; messa
   return res.json();
 }
 
-export async function updateItemQty(orderItemId: number, qty: number): Promise<UpdateItemResult> {
-  const res = await adminFetch(`/api/admin/order-items/${orderItemId}`, {
+// Changes item lines of an open order in one go (qty 0 removes a line), so
+// restoAdmin logs it as one edit (see server/adminClient.ts editOrderItems).
+export async function editOrderItems(
+  orderId: number,
+  changes: { itemId: number; qty: number }[]
+): Promise<UpdateItemResult> {
+  const res = await adminFetch(`/api/admin/orders/${orderId}/items`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ qty }),
+    body: JSON.stringify({ changes }),
   });
-  return res.json();
-}
-
-export async function deleteItem(orderItemId: number): Promise<{ ok: boolean; message?: string }> {
-  const res = await adminFetch(`/api/admin/order-items/${orderItemId}`, { method: 'DELETE' });
   return res.json();
 }
 

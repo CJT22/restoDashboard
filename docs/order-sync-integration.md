@@ -9,7 +9,7 @@ first if you haven't; this doc assumes the architecture it describes. For instal
 ## Why this exists
 
 restoAdmin's Orders page has a "Create New Order" flow — pick a table, add menu items, submit — that
-creates a real order against restoAdmin's `orders`/`order_items` tables, deducts inventory, and flips
+creates a real order against restoAdmin's `orders`/`order_items` tables and flips
 the table to Occupied. ("Manual Order" is a separate, auto-settling flow and is intentionally **not**
 part of this integration — it stays restoAdmin-only, see "Known limitations".)
 
@@ -47,22 +47,33 @@ restoDashboard React (:3500)         restoDashboard server/ (:3510)         rest
                                                   └─────────────────────────────────────┘
 ```
 
-restoAdmin endpoints used, all pre-existing and unchanged:
+restoAdmin endpoints used, all pre-existing and unchanged. Order changes go through the **staff-app
+endpoints** restoapp itself uses, so restoAdmin logs each one in restoapp's Activity tab, keeps its
+room history in step and alerts restoapp's cashier the same way as for a tablet's action:
 
-- `POST /orders` — creates an order, validates inventory, rejects duplicate order numbers, and
-  returns **409 `ACTIVE_ORDER_EXISTS`** if the table already has a Pending/Confirmed order, with the
-  existing order's id/number in the response.
-- `POST /orders/:id/items` / `PUT /order_items/:id` / `DELETE /order_items/:id` — add, edit the
-  quantity of, or remove a line item on an open order.
-- `PATCH /orders/:id/status` — Confirm (`status: 2`) or Cancel (`status: -1`) an order. restoAdmin
-  itself already flips the table back to Available the instant an order is Settled or Cancelled — this
-  is **not** something this integration added (see "Table status is derived, not pushed" below).
-- `GET /billing/:orderId` / `PUT /billing/:orderId` — read the current amount due/paid, and record a
-  payment (the same call restoAdmin's own Billing screen's "Process Payment" modal makes). Additive:
-  the server adds the given `amount_paid` to whatever's already on file, so the dashboard always reads
-  the current balance first rather than assuming the full grand total.
-- All of the above already emit `order_created`/`order_updated` (and, via `TableModel.updateStatus`,
-  `table_updated`) on the same Socket.IO server/rooms the table sync already uses.
+- `POST /api/orders` — creates an order (web and tablet alike), validates inventory, answers a
+  repeated order number with the existing order, and returns **409 `ACTIVE_ORDER_EXISTS`** if the
+  table already has a Pending/Confirmed order, with the existing order's id/number in the response.
+- `POST /api/orders/:id/items` / `PUT /api/orders/:id/items` — add items to, or edit the item lines of,
+  an open order. The edit replaces the whole item list, so the dashboard sends every current line with
+  only the changed ones different; restoAdmin carries the lines' notes and times over. Removing an
+  order's last items goes through the admin `DELETE /order_items/:id` (the edit refuses an empty list),
+  as do the item edits of tablet apps older than 0.5.3.
+- `PATCH /api/waiter/orders/:id/status` — Confirm (`2`), Cancel (`-1`), or settle in full (`1`, with
+  the payment). restoAdmin itself flips the table back to Available the instant an order is Settled or
+  Cancelled — this is **not** something this integration added (see "Table status is derived, not
+  pushed" below).
+- `POST /api/waiter/orders/:id/extend-room-charge` — a room's hours (0 = waived).
+- `GET /billing/:orderId` / `PUT /billing/:orderId` — read the amount paid, and record a partial
+  payment or the rest of a partly paid bill (the same call restoAdmin's own Billing screen's "Process
+  Payment" modal makes). Additive: the server adds the given `amount_paid` to whatever's already on
+  file. The amount due is taken from the order's total, not billing's `AMOUNT_DUE`, which a room-hours
+  change leaves behind; before a billing payment it's brought up to date with `PUT /orders/:id`.
+- None of these deduct ingredient stock: only restoAdmin's admin endpoints do, the staff app doesn't
+  either, and Blue Moon has no recipes set up.
+- All of the above emit `order_created`/`order_updated`/`order_items_added` (and, via
+  `TableModel.updateStatus`, `table_updated`) on the same Socket.IO server/rooms the table sync already
+  uses.
 
 **This works against restoAdmin exactly as it ships — no restoAdmin changes at all.** (An earlier
 version, from when both apps lived in one repo, patched restoAdmin to add room-timer fields to its
@@ -227,10 +238,9 @@ unreachable, or the server can't reach restoAdmin). It's modelled on the staff a
   There's no manual sync button: the stream reconnects every 3 s, so one would rarely beat it.
   Oldest first; a network failure stops the pass, and a refusal
   (e.g. not enough stock) is kept with its reason for **Retry** / **Discard**.
-- **Why replays are safe:** the app sends `createdAt` with every create. With it,
+- **Why replays are safe:** the app sends `createdAt` with every create (the web's are "now").
   `POST /api/admin/orders` runs `createOrderAt` ([adminClient.ts](../server/adminClient.ts)), which
-  goes through restoAdmin's staff-app `POST /api/orders` instead of the admin `POST /orders`. That
-  endpoint stores the given `encoded_dt`, so the room timer starts when the order was taken, and it
+  goes through restoAdmin's staff-app `POST /api/orders`. That endpoint stores the given `encoded_dt`, so the room timer starts when the order was taken, and it
   answers a repeated `order_no` with the existing order (`already_exists`) instead of an error. The
   order number is derived from `createdAt` (Manila time), so every retry of one order sends the same
   number. A number that belongs to another table's order steps a second forward. An order whose
@@ -243,8 +253,10 @@ unreachable, or the server can't reach restoAdmin). It's modelled on the staff a
   opens with no connection and checks the session once the server answers.
 - **Known gap:** an add-items request whose answer was lost (it reached restoAdmin, but the
   connection dropped before the reply) is sent again and adds the items twice. restoAdmin's
-  `POST /orders/:id/items` has no way to recognise a repeat. A dropped room-hours change is harmless
+  `POST /api/orders/:id/items` has no way to recognise a repeat. A dropped room-hours change is harmless
   to resend, since it sets the hours rather than adding them.
+- **When it happened:** a saved add-items or room-hours change is sent with the time it was made
+  (`client_at`), so restoAdmin's Activity tab lists it then, not when it synced.
 
 The web dashboard doesn't queue: offline, its order buttons turn off and a notice asks for the
 connection ([OfflineNotice.tsx](../src/components/OfflineNotice.tsx)).

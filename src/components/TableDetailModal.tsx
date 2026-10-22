@@ -3,8 +3,7 @@ import { TableRoom, AdminOrderSummary } from '../types';
 import {
   getActiveOrderForTable,
   addItemsToOrder,
-  updateItemQty,
-  deleteItem,
+  editOrderItems,
   confirmOrder,
   cancelOrder,
   updateOrderRoomCharge,
@@ -187,11 +186,10 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
   // deleted instead, so the row drops by one and its other lines keep theirs.
   // Callers hold the lock and clear the alerts.
   const stepRow = async (group: OrderLineGroup, delta: 1 | -1) => {
+    if (!activeOrder) return;
     const newest = group.lines[group.lines.length - 1];
-    const result: UpdateItemResult =
-      delta < 0 && newest.quantity <= 1
-        ? await deleteItem(newest.id)
-        : await updateItemQty(newest.id, newest.quantity + delta);
+    const qty = delta < 0 && newest.quantity <= 1 ? 0 : newest.quantity + delta;
+    const result: UpdateItemResult = await editOrderItems(activeOrder.id, [{ itemId: newest.id, qty }]);
     if (result.ok) {
       await refreshOrder();
     } else if (result.kind === 'insufficient') {
@@ -218,23 +216,21 @@ export const TableDetailModal: React.FC<TableDetailModalProps> = ({
     }
   };
 
-  // Trash removes the item entirely: every line it has on the order.
+  // Trash removes the item entirely: every line it has on the order, as one edit.
   const handleDeleteRow = async (group: OrderLineGroup) => {
-    if (savingItemId != null || savingDrinkId != null) return;
+    if (!activeOrder || savingItemId != null || savingDrinkId != null) return;
     setSavingItemId(group.id);
     setOrderError(null);
     try {
-      for (const line of group.lines) {
-        const result = await deleteItem(line.id);
-        if (!result.ok) {
-          setOrderError(result.message || 'Failed to delete item');
-          break;
-        }
-      }
+      const result = await editOrderItems(
+        activeOrder.id,
+        group.lines.map((line) => ({ itemId: line.id, qty: 0 }))
+      );
+      if (!result.ok) setOrderError(result.message || 'Failed to delete item');
     } catch (err: any) {
       setOrderError(err.message || 'Failed to delete item');
     } finally {
-      // Also after a partial failure, so the rows show what's really left.
+      // Also after a failure, so the rows show what's really left.
       await refreshOrder().catch(() => {});
       setSavingItemId(null);
     }

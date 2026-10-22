@@ -310,20 +310,32 @@ class ApiClient {
         if (mergeOnConflict) 'mergeOnConflict': true,
       });
 
-  Future<MutationResult> addItems(int orderId, List<Map<String, num>> items) =>
-      _mutate('POST', '/api/admin/orders/$orderId/items', {'items': items});
+  /// [clientAt] is when it was really done, for a change saved offline and
+  /// sent later: restoAdmin's Activity tab then shows that time.
+  Future<MutationResult> addItems(int orderId, List<Map<String, num>> items, {DateTime? clientAt}) =>
+      _mutate('POST', '/api/admin/orders/$orderId/items', {
+        'items': items,
+        if (clientAt != null) 'clientAt': clientAt.toUtc().toIso8601String(),
+      });
 
-  Future<MutationResult> updateRoomCharge(int orderId, double roomChargeQty) =>
-      _mutate('PATCH', '/api/admin/orders/$orderId/room-charge', {'roomChargeQty': roomChargeQty});
+  Future<MutationResult> updateRoomCharge(int orderId, double roomChargeQty, {DateTime? clientAt}) =>
+      _mutate('PATCH', '/api/admin/orders/$orderId/room-charge', {
+        'roomChargeQty': roomChargeQty,
+        if (clientAt != null) 'clientAt': clientAt.toUtc().toIso8601String(),
+      });
 
   Future<MutationResult> confirmOrder(int orderId) => _mutate('PATCH', '/api/admin/orders/$orderId/status', {'status': 2});
 
   Future<MutationResult> cancelOrder(int orderId) => _mutate('PATCH', '/api/admin/orders/$orderId/status', {'status': -1});
 
-  Future<MutationResult> updateItemQty(int orderItemId, double qty) =>
-      _mutate('PUT', '/api/admin/order-items/$orderItemId', {'qty': qty});
-
-  Future<MutationResult> deleteItem(int orderItemId) => _mutate('DELETE', '/api/admin/order-items/$orderItemId');
+  /// Changes item lines of an open order in one go: [changes] maps an order
+  /// item id to its new qty, 0 removing it. restoAdmin logs it as one edit.
+  Future<MutationResult> editOrderItems(int orderId, Map<int, double> changes) =>
+      _mutate('PUT', '/api/admin/orders/$orderId/items', {
+        'changes': [
+          for (final c in changes.entries) {'itemId': c.key, 'qty': c.value}
+        ],
+      });
 
   Future<Billing?> billing(int orderId) async {
     final data = await _getData('/api/admin/orders/$orderId/billing', 'Failed to load the billing record from restoAdmin');

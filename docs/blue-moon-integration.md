@@ -69,10 +69,11 @@ All stock restoAdmin endpoints and events:
 | Sign in / refresh | `POST /api/login`, `POST /api/refresh` |
 | Tables (status, name, room charge) | `GET /restaurant_tables?branch_id=` |
 | Menu | `GET /menus?branch_id=` |
-| Orders | `GET /orders/data?branch_id=`, `GET /orders/:id`, `GET /orders/:id/items`, `POST /orders`, `PATCH /orders/:id/status`, `POST /orders/:id/items`, `PUT`/`DELETE /order_items/:id` |
-| Staff-app endpoints (the ones restoapp uses, which keep its room history and Activity tab in step) | `POST /api/orders` (tablet orders), `GET /api/waiter/orders` (each open order's current room from `room_charges`), `POST /api/waiter/orders/:id/extend-room-charge` (room hours, 0 = waived) |
-| Billing / sales | `GET /billing/:orderId`, `PUT /billing/:orderId`, `GET /billing/data` |
-| Live updates | Socket.IO: `join_kitchen` / `join_cashier` / `join_waiter` rooms; `table_updated`, `order_created`, `order_updated` events |
+| Orders (reads) | `GET /orders/data?branch_id=`, `GET /orders/:id`, `GET /orders/:id/items` |
+| Order changes: the staff-app endpoints restoapp uses, so each is logged in its Activity tab and keeps its room history in step | `POST /api/orders` (create), `POST`/`PUT /api/orders/:id/items` (add / edit items), `PATCH /api/waiter/orders/:id/status` (confirm, cancel, settle in full), `POST /api/waiter/orders/:id/extend-room-charge` (room hours, 0 = waived), `GET /api/waiter/orders` (each open order's current room from `room_charges`) |
+| Admin order endpoints, for what the staff ones can't do | `DELETE /order_items/:id` (an order's last item; older tablet apps' item edits with `PUT /order_items/:id`), `PUT /orders/:id` (bring billing's amount due up to the order's total before a billing payment) |
+| Billing / sales | `GET /billing/:orderId`, `PUT /billing/:orderId` (partial payments), `GET /billing/data` |
+| Live updates | Socket.IO: `join_kitchen` / `join_cashier` / `join_waiter` rooms; `table_updated`, `order_created`, `order_updated`, `order_items_added` events |
 
 ## How linking works
 
@@ -190,8 +191,8 @@ created on a local restoAdmin isn't there, and sign-in fails with "User not foun
 
 Before switching:
 
-- **Everything becomes real.** Orders created from the dashboard are real orders: they deduct
-  inventory and count in sales. Don't test against production.
+- **Everything becomes real.** Orders created from the dashboard are real orders: they count in
+  sales and show in restoapp's Activity tab. Don't test against production.
 - **Check the startup link check** (browser console) on the first load: it confirms the
   `adminTableId`s in `floorLayout.json` exist on that server.
 - **The dashboard itself isn't deployable yet.** It only runs as a Vite dev server plus the backend.

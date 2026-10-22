@@ -373,8 +373,9 @@ class DashboardState extends ChangeNotifier {
         OfflineActionType.createOrder => api.createOrder(
             a.adminTableId, a.orderType ?? 'DINE_IN', itemsPayload(a.items), a.roomChargeQty,
             createdAt: a.createdAt, mergeOnConflict: true),
-        OfflineActionType.addItems => api.addItems(a.orderId!, itemsPayload(a.items)),
-        OfflineActionType.roomCharge => api.updateRoomCharge(a.orderId!, a.roomChargeQty!),
+        // Logged in restoAdmin at the time it was done, not when it synced.
+        OfflineActionType.addItems => api.addItems(a.orderId!, itemsPayload(a.items), clientAt: a.createdAt),
+        OfflineActionType.roomCharge => api.updateRoomCharge(a.orderId!, a.roomChargeQty!, clientAt: a.createdAt),
       };
 
   static String _refusal(MutationResult r) {
